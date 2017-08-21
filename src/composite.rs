@@ -749,19 +749,19 @@ impl<A : Composite,B : Composite> Composite for (A,B) {
 
 }
 
-pub trait GetElem<Em : Embed> {
-    fn get_elem(&self,u64,&mut Em) -> Result<Em::Expr,Em::Error>;
+pub trait GetElem {
+    fn get_elem<Em : Embed>(&self,u64,&mut Em) -> Result<Em::Expr,Em::Error>;
 }
 
 #[derive(Clone)]
-pub struct OffsetGetter<Em : Embed,Get : GetElem<Em>> {
+pub struct OffsetGetter<Get : GetElem> {
     getter: Get,
     offset: u64,
-    phantom: PhantomData<Em>
 }
 
-impl<Em : Embed,Get : GetElem<Em>> GetElem<Em> for OffsetGetter<Em,Get> {
-    fn get_elem(&self,n: u64,em: &mut Em) -> Result<Em::Expr,Em::Error> {
+impl<Get : GetElem> GetElem for OffsetGetter<Get> {
+    fn get_elem<Em : Embed>(&self,n: u64,em: &mut Em)
+                            -> Result<Em::Expr,Em::Error> {
         self.getter.get_elem(n+self.offset,em)
     }
 }
@@ -786,48 +786,48 @@ impl<'a,T : 'a + Clone> OptRef<'a,T> {
     }
 }
 
-pub trait Transition<'a,Em : Embed,Input : GetElem<Em>,
+pub trait Transition<'a,Input : GetElem,
                      Src : Composite,Trg : Composite> {
-    type Output : GetElem<Em>;
+    type Output : GetElem;
 
-    fn apply(&self,OptRef<'a,Src>,&Input,&mut Em)
-             -> Result<(OptRef<'a,Trg>,Self::Output),Em::Error>;
+    fn apply<Em : Embed>(&self,OptRef<'a,Src>,&Input,&mut Em)
+                         -> Result<(OptRef<'a,Trg>,Self::Output),Em::Error>;
 }
 
-pub struct Seq<'a,Em : 'a + Embed,
-               Input : 'a + GetElem<Em>,
+pub struct Seq<'a,Input : 'a + GetElem,
                A : Composite,B : Composite,C : Composite,
-               T1 : Transition<'a,Em,Input,A,B>,
-               T2 : Transition<'a,Em,T1::Output,B,C>> {
+               T1 : Transition<'a,Input,A,B>,
+               T2 : Transition<'a,T1::Output,B,C>> {
     t1: T1,
     t2: T2,
-    phantom: PhantomData<&'a (Em,Input,A,B,C)>,
+    phantom: PhantomData<&'a (Input,A,B,C)>,
 }
 
-impl<'a,Em : Embed, Input : GetElem<Em>,
+impl<'a,Input : GetElem,
      A : Composite, B : Composite, C : Composite,
-     T1 : Transition<'a,Em,Input,A,B>,
-     T2 : Transition<'a,Em,T1::Output,B,C>
-     > Transition<'a,Em,Input,A,C> for Seq<'a,Em,Input,A,B,C,T1,T2> {
+     T1 : Transition<'a,Input,A,B>,
+     T2 : Transition<'a,T1::Output,B,C>
+     > Transition<'a,Input,A,C> for Seq<'a,Input,A,B,C,T1,T2> {
 
     type Output = T2::Output;
 
-    fn apply(&self,a: OptRef<'a,A>,get_a: &Input,em: &mut Em)
-             -> Result<(OptRef<'a,C>,T2::Output),Em::Error> {
+    fn apply<Em : Embed>(&self,a: OptRef<'a,A>,get_a: &Input,em: &mut Em)
+                         -> Result<(OptRef<'a,C>,T2::Output),Em::Error> {
         let (b,get_b) = self.t1.apply(a,get_a,em)?;
         self.t2.apply(b,&get_b,em)
-    }    
+    }
 }
 
-pub struct GetVecElem<Em : Embed, Input : GetElem<Em>, T : Composite> {
+pub struct GetVecElem<Input : GetElem, T : Composite> {
     which: usize,
-    phantom: PhantomData<(Em,Input,T)>
+    phantom: PhantomData<(Input,T)>
 }
 
-impl<'a,Em : Embed, Input : GetElem<Em> + Clone, T : Composite + Clone
-     > Transition<'a,Em,Input,Vec<T>,T> for GetVecElem<Em,Input,T> {
-    type Output = OffsetGetter<Em,Input>;
-    fn apply(&self,vec: OptRef<'a,Vec<T>>,inp: &Input,_: &mut Em) -> Result<(OptRef<'a,T>,OffsetGetter<Em,Input>),Em::Error> {
+impl<'a,Input : GetElem + Clone, T : Composite + Clone
+     > Transition<'a,Input,Vec<T>,T> for GetVecElem<Input,T> {
+    type Output = OffsetGetter<Input>;
+    fn apply<Em : Embed>(&self,vec: OptRef<'a,Vec<T>>,inp: &Input,_: &mut Em)
+                         -> Result<(OptRef<'a,T>,OffsetGetter<Input>),Em::Error> {
         match vec {
             OptRef::Ref(rvec) => {
                 let mut off = 0;
@@ -836,8 +836,7 @@ impl<'a,Em : Embed, Input : GetElem<Em> + Clone, T : Composite + Clone
                 }
                 Ok((OptRef::Ref(&rvec[self.which]),
                     OffsetGetter { getter: (*inp).clone(),
-                                   offset: off,
-                                   phantom: PhantomData }))
+                                   offset: off }))
             },
             OptRef::Owned(mut rvec) => {
                 let mut off = 0;
@@ -846,30 +845,28 @@ impl<'a,Em : Embed, Input : GetElem<Em> + Clone, T : Composite + Clone
                 }
                 Ok((OptRef::Owned(rvec.remove(self.which)),
                     OffsetGetter { getter: (*inp).clone(),
-                                   offset: off,
-                                   phantom: PhantomData }))
+                                   offset: off }))
             }
         }
     }
 }
 
-pub struct SetVecElem<Em : Embed, Input : GetElem<Em>, T : Composite> {
+pub struct SetVecElem<Input : GetElem, T : Composite> {
     which: usize,
-    phantom: PhantomData<(Em,Input,T)>
+    phantom: PhantomData<(Input,T)>
 }
 
-pub struct SetVecElemGetter<Em : Embed,Get : GetElem<Em>> {
+pub struct SetVecElemGetter<Get : GetElem> {
     getter: Get,
     offset_store: u64,
     offset_elem: u64,
     old_size: u64,
     new_size: u64,
-    phantom: PhantomData<Em>
 }
 
-impl<Em : Embed,Get : GetElem<Em>> GetElem<Em> for SetVecElemGetter<Em,Get> {
-    fn get_elem(&self,n: u64,em: &mut Em)
-                -> Result<Em::Expr,Em::Error> {
+impl<Get : GetElem> GetElem for SetVecElemGetter<Get> {
+    fn get_elem<Em : Embed>(&self,n: u64,em: &mut Em)
+                            -> Result<Em::Expr,Em::Error> {
 
         if n >= self.offset_store {
             if n >= self.offset_store + self.new_size {
@@ -883,11 +880,11 @@ impl<Em : Embed,Get : GetElem<Em>> GetElem<Em> for SetVecElemGetter<Em,Get> {
     }
 }
 
-impl<'a,Em : Embed, Input : GetElem<Em> + Clone, T : Composite + Clone
-     > Transition<'a,Em,Input,(Vec<T>,T),Vec<T>> for SetVecElem<Em,Input,T> {
-    type Output = SetVecElemGetter<Em,Input>;
-    fn apply(&self,args: OptRef<'a,(Vec<T>,T)>,inp: &Input,_:&mut Em)
-             -> Result<(OptRef<'a,Vec<T>>,SetVecElemGetter<Em,Input>),Em::Error> {
+impl<'a,Input : GetElem + Clone, T : Composite + Clone
+     > Transition<'a,Input,(Vec<T>,T),Vec<T>> for SetVecElem<Input,T> {
+    type Output = SetVecElemGetter<Input>;
+    fn apply<Em : Embed>(&self,args: OptRef<'a,(Vec<T>,T)>,inp: &Input,_:&mut Em)
+                         -> Result<(OptRef<'a,Vec<T>>,SetVecElemGetter<Input>),Em::Error> {
         match args {
             OptRef::Ref(&(ref vec,ref el)) => {
                 let mut off_store = 0;
@@ -903,8 +900,7 @@ impl<'a,Em : Embed, Input : GetElem<Em> + Clone, T : Composite + Clone
                                        offset_store: off_store,
                                        offset_elem: vec.num_elem(),
                                        old_size: old,
-                                       new_size: new,
-                                       phantom: PhantomData }))
+                                       new_size: new }))
             },
             OptRef::Owned((mut vec,el)) => {
                 let mut off_store = 0;
@@ -920,28 +916,28 @@ impl<'a,Em : Embed, Input : GetElem<Em> + Clone, T : Composite + Clone
                                        offset_store: off_store,
                                        offset_elem: off_elem,
                                        old_size: old,
-                                       new_size: new,
-                                       phantom: PhantomData }))
+                                       new_size: new }))
             }
         }
     }
 }
 
-struct GetArrayElem<Em : Embed, Input : GetElem<Em>, T : Composite> {
-    phantom: PhantomData<(Em,Input,T)>
+struct GetArrayElem<Input : GetElem, T : Composite> {
+    phantom: PhantomData<(Input,T)>
 }
 
-struct GetArrayElemGetter<Em : Embed,Get : GetElem<Em>,Idx : Composite> {
+struct GetArrayElemGetter<Get : GetElem,Idx : Composite> {
     getter: Get,
     index_sz: u64,
     offset_index: u64,
-    phantom: PhantomData<(Em,Idx)>
+    phantom: PhantomData<Idx>
 }
 
-impl<Em : Embed, Get : GetElem<Em>,Idx : Composite
-     > GetElem<Em> for GetArrayElemGetter<Em,Get,Idx> {
+impl<Get : GetElem,Idx : Composite
+     > GetElem for GetArrayElemGetter<Get,Idx> {
     
-    fn get_elem(&self,n: u64,em: &mut Em) -> Result<Em::Expr,Em::Error> {
+    fn get_elem<Em : Embed>(&self,n: u64,em: &mut Em)
+                            -> Result<Em::Expr,Em::Error> {
         let mut idx_arr = Vec::with_capacity(self.index_sz as usize);
         for i in 0..self.index_sz {
             idx_arr.push(self.getter.get_elem(self.offset_index+i,em)?);
@@ -951,12 +947,13 @@ impl<Em : Embed, Get : GetElem<Em>,Idx : Composite
     }
 }
 
-impl<'a,Em : Embed, Input : GetElem<Em> + Clone,
+impl<'a,Input : GetElem + Clone,
      Idx : Composite + Eq + Clone, T : Composite
-     > Transition<'a,Em,Input,(Array<Idx,T>,Idx),T> for GetArrayElem<Em,Input,T> {
-    type Output = GetArrayElemGetter<Em,Input,Idx>;
-    fn apply(&self,args: OptRef<'a,(Array<Idx,T>,Idx)>,inp: &Input,em:&mut Em)
-             -> Result<(OptRef<'a,T>,GetArrayElemGetter<Em,Input,Idx>),Em::Error> {
+     > Transition<'a,Input,(Array<Idx,T>,Idx),T> for GetArrayElem<Input,T> {
+    type Output = GetArrayElemGetter<Input,Idx>;
+    fn apply<Em : Embed>(&self,args: OptRef<'a,(Array<Idx,T>,Idx)>,
+                         inp: &Input,em:&mut Em)
+             -> Result<(OptRef<'a,T>,GetArrayElemGetter<Input,Idx>),Em::Error> {
         match args {
             OptRef::Owned((arr,idx)) => {
                 assert!(arr.index==idx);
