@@ -786,33 +786,33 @@ impl<'a,T : 'a + Clone> OptRef<'a,T> {
     }
 }
 
-pub trait Transition<'a,Input : GetElem,
+pub trait Transition<Input : GetElem,
                      Src : Composite,Trg : Composite> {
     type Output : GetElem;
 
-    fn apply<Em : Embed>(&self,OptRef<'a,Src>,&Input,&mut Em)
-                         -> Result<(OptRef<'a,Trg>,Self::Output),Em::Error>;
+    fn apply<'a,Em : Embed>(&self,OptRef<'a,Src>,&Input,&mut Em)
+                            -> Result<(OptRef<'a,Trg>,Self::Output),Em::Error>;
 }
 
-pub struct Seq<'a,Input : 'a + GetElem,
+pub struct Seq<Input : GetElem,
                A : Composite,B : Composite,C : Composite,
-               T1 : Transition<'a,Input,A,B>,
-               T2 : Transition<'a,T1::Output,B,C>> {
+               T1 : Transition<Input,A,B>,
+               T2 : Transition<T1::Output,B,C>> {
     t1: T1,
     t2: T2,
-    phantom: PhantomData<&'a (Input,A,B,C)>,
+    phantom: PhantomData<(Input,A,B,C)>,
 }
 
-impl<'a,Input : GetElem,
+impl<Input : GetElem,
      A : Composite, B : Composite, C : Composite,
-     T1 : Transition<'a,Input,A,B>,
-     T2 : Transition<'a,T1::Output,B,C>
-     > Transition<'a,Input,A,C> for Seq<'a,Input,A,B,C,T1,T2> {
+     T1 : Transition<Input,A,B>,
+     T2 : Transition<T1::Output,B,C>
+     > Transition<Input,A,C> for Seq<Input,A,B,C,T1,T2> {
 
     type Output = T2::Output;
 
-    fn apply<Em : Embed>(&self,a: OptRef<'a,A>,get_a: &Input,em: &mut Em)
-                         -> Result<(OptRef<'a,C>,T2::Output),Em::Error> {
+    fn apply<'a,Em : Embed>(&self,a: OptRef<'a,A>,get_a: &Input,em: &mut Em)
+                            -> Result<(OptRef<'a,C>,T2::Output),Em::Error> {
         let (b,get_b) = self.t1.apply(a,get_a,em)?;
         self.t2.apply(b,&get_b,em)
     }
@@ -823,11 +823,11 @@ pub struct GetVecElem<Input : GetElem, T : Composite> {
     phantom: PhantomData<(Input,T)>
 }
 
-impl<'a,Input : GetElem + Clone, T : Composite + Clone
-     > Transition<'a,Input,Vec<T>,T> for GetVecElem<Input,T> {
+impl<Input : GetElem + Clone, T : Composite + Clone
+     > Transition<Input,Vec<T>,T> for GetVecElem<Input,T> {
     type Output = OffsetGetter<Input>;
-    fn apply<Em : Embed>(&self,vec: OptRef<'a,Vec<T>>,inp: &Input,_: &mut Em)
-                         -> Result<(OptRef<'a,T>,OffsetGetter<Input>),Em::Error> {
+    fn apply<'a,Em : Embed>(&self,vec: OptRef<'a,Vec<T>>,inp: &Input,_: &mut Em)
+                            -> Result<(OptRef<'a,T>,OffsetGetter<Input>),Em::Error> {
         match vec {
             OptRef::Ref(rvec) => {
                 let mut off = 0;
@@ -880,10 +880,10 @@ impl<Get : GetElem> GetElem for SetVecElemGetter<Get> {
     }
 }
 
-impl<'a,Input : GetElem + Clone, T : Composite + Clone
-     > Transition<'a,Input,(Vec<T>,T),Vec<T>> for SetVecElem<Input,T> {
+impl<Input : GetElem + Clone, T : Composite + Clone
+     > Transition<Input,(Vec<T>,T),Vec<T>> for SetVecElem<Input,T> {
     type Output = SetVecElemGetter<Input>;
-    fn apply<Em : Embed>(&self,args: OptRef<'a,(Vec<T>,T)>,inp: &Input,_:&mut Em)
+    fn apply<'a,Em : Embed>(&self,args: OptRef<'a,(Vec<T>,T)>,inp: &Input,_:&mut Em)
                          -> Result<(OptRef<'a,Vec<T>>,SetVecElemGetter<Input>),Em::Error> {
         match args {
             OptRef::Ref(&(ref vec,ref el)) => {
@@ -947,12 +947,12 @@ impl<Get : GetElem,Idx : Composite
     }
 }
 
-impl<'a,Input : GetElem + Clone,
+impl<Input : GetElem + Clone,
      Idx : Composite + Eq + Clone, T : Composite
-     > Transition<'a,Input,(Array<Idx,T>,Idx),T> for GetArrayElem<Input,T> {
+     > Transition<Input,(Array<Idx,T>,Idx),T> for GetArrayElem<Input,T> {
     type Output = GetArrayElemGetter<Input,Idx>;
-    fn apply<Em : Embed>(&self,args: OptRef<'a,(Array<Idx,T>,Idx)>,
-                         inp: &Input,em:&mut Em)
+    fn apply<'a,Em : Embed>(&self,args: OptRef<'a,(Array<Idx,T>,Idx)>,
+                            inp: &Input,em:&mut Em)
              -> Result<(OptRef<'a,T>,GetArrayElemGetter<Input,Idx>),Em::Error> {
         match args {
             OptRef::Owned((arr,idx)) => {
