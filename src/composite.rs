@@ -1,7 +1,7 @@
-use smt::expr;
-use smt::types;
-use smt::types::{SortKind};
-use smt::embed::Embed;
+use expr;
+use types;
+use types::{SortKind};
+use embed::Embed;
 use std::cmp::{Ordering,min,max};
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;

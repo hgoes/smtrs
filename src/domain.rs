@@ -1,6 +1,6 @@
-use smt::expr::{Expr,Function};
-use smt::types::{Sort,Value};
-use smt::composite::*;
+use expr::{Expr,Function};
+use types::{Sort,Value};
+use composite::*;
 use std::collections::HashMap;
 use std::any::*;
 

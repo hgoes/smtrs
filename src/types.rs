@@ -3,7 +3,7 @@ extern crate num_rational;
 
 use self::num_bigint::BigInt;
 use self::num_rational::Ratio;
-use smt::embed::Embed;
+use embed::Embed;
 use std::fmt::{Display,Formatter,Error};
 
 #[derive(Clone,Debug,PartialEq,Eq,Hash)]

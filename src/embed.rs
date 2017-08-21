@@ -1,5 +1,5 @@
-use smt::types::*;
-use smt::expr::{Expr,Function};
+use types::*;
+use expr::{Expr,Function};
 use std::fmt::Debug;
 
 pub trait Embed : Sized {

@@ -3,14 +3,14 @@ extern crate num_rational;
 
 use self::num_bigint::BigInt;
 use self::num_rational::Ratio;
-use smt::types::{SortKind};
-use smt::expr::{Expr,Function,OrdOp,ArithOp,BVOp};
-use smt::types::Value;
-use smt::embed::Embed;
-#[cfg(test)]
-use smt::test::{Simple};
+use types::{SortKind};
+use expr::{Expr,Function,OrdOp,ArithOp,BVOp};
+use types::Value;
+use embed::Embed;
 use std::str;
 use std::str::FromStr;
+#[cfg(test)]
+use test::{Simple};
 
 #[derive(PartialEq,Debug)]
 pub enum CheckSatResult {

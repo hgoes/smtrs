@@ -1,5 +1,5 @@
-use smt::types::{Value};
-use smt::embed::Embed;
+use types::{Value};
+use embed::Embed;
 use std::fmt::{Debug,Display,Formatter,Error};
 
 #[derive(Debug,PartialEq,Eq,Hash,Clone)]

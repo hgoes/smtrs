@@ -1,11 +1,11 @@
-use smt::expr::{Expr};
-use smt::types::{SortKind,Value};
-use smt::embed::{Embed};
+use expr::{Expr};
+use types::{SortKind,Value};
+use embed::{Embed};
 use std::io::{Read,Write,Error,stderr};
 use std::collections::HashMap;
 use std::process::{Command, Stdio, ChildStdin, ChildStdout };
-use smt::parser::*;
-use smt::unique::*;
+use parser::*;
+use unique::*;
 use std::str;
 use std::str::FromStr;
 use std::fmt;
