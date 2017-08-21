@@ -1,8 +1,6 @@
 use expr::{Expr,Function};
 use types::{Sort,Value};
 use composite::*;
-use std::collections::HashMap;
-use std::any::*;
 
 trait Domain<T : Composite> {
     fn full(&T) -> Self;
@@ -70,12 +68,6 @@ enum Const {
 }
 
 impl Const {
-    fn new(v: Value) -> Const {
-        Const::IsConst(v)
-    }
-    fn not_const() -> Const {
-        Const::NotConst
-    }
     fn is_const(&self) -> bool {
         match self {
             &Const::IsConst(_) => true,
@@ -152,8 +144,8 @@ impl Attribute for Const {
             Expr::Var(val)   => val,
             Expr::Const(val) => Const::IsConst(val),
             Expr::App(fun,args) => match fun {
-                Function::Eq(s,_) => if args.len()==0 {
-                    Const::new(Value::Bool(true))
+                Function::Eq(_,_) => if args.len()==0 {
+                    Const::IsConst(Value::Bool(true))
                 } else {
                     match args[0] {
                         Const::IsConst(ref v) => {

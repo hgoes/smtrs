@@ -771,13 +771,13 @@ pub enum OptRef<'a,T : 'a> {
 }
 
 impl<'a,T : 'a + Clone> OptRef<'a,T> {
-    fn as_ref(&'a self) -> &'a T {
+    pub fn as_ref(&'a self) -> &'a T {
         match *self {
             OptRef::Ref(r) => r,
             OptRef::Owned(ref x) => x
         }
     }
-    fn as_obj(self) -> T {
+    pub fn as_obj(self) -> T {
         match self {
             OptRef::Ref(x) => (*x).clone(),
             OptRef::Owned(x) => x
@@ -920,7 +920,7 @@ impl<T : Composite + Clone> Transition<(Vec<T>,T),Vec<T>> for SetVecElem<T> {
     }
 }
 
-struct GetArrayElem<T : Composite>(PhantomData<T>);
+pub struct GetArrayElem<T : Composite>(PhantomData<T>);
 
 struct GetArrayElemGetter<Em : Embed> {
     getter: Box<GetElem<Em>>,
@@ -944,7 +944,7 @@ impl<Em : Embed> GetElem<Em> for GetArrayElemGetter<Em> {
 impl<Idx : Composite + Eq + Clone, T : Composite
      > Transition<(Array<Idx,T>,Idx),T> for GetArrayElem<T> {
     fn apply<'a,Em : 'static + Embed>(&self,args: OptRef<'a,(Array<Idx,T>,Idx)>,
-                                      inp: Box<GetElem<Em>>,em:&mut Em)
+                                      inp: Box<GetElem<Em>>,_: &mut Em)
                                       -> Result<(OptRef<'a,T>,Box<GetElem<Em>>),Em::Error> {
         match args {
             OptRef::Owned((arr,idx)) => {

@@ -1,5 +1,3 @@
-use std::ops::Index;
-
 /*pub trait Lazy<'a> {
     type Result;
     fn base(Self::Result) -> Self;
