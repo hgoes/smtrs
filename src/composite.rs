@@ -6,20 +6,24 @@ use std::cmp::{Ordering,min,max};
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::marker::PhantomData;
+use std::rc::Rc;
+use std::cell;
+use std::cell::RefCell;
 
 pub trait Composite : Sized + 'static {
     
-    fn num_elem(&self) -> u64;
-    fn elem_sort<Em : Embed>(&self,u64,&mut Em)
+    fn num_elem(&self) -> usize;
+    fn elem_sort<Em : Embed>(&self,usize,&mut Em)
                              -> Result<Em::Sort,Em::Error>;
+
     fn combine(&self,&Self) -> Option<Self>;
 
-    fn combine_elem<FComb,FL,FR,Acc>(&self,&Self,&FComb,&FL,&FR,Acc,&mut u64,&mut u64,&mut u64) -> Acc
-        where FComb : Fn(Acc,u64,u64,u64) -> Acc, FL : Fn(Acc,u64,u64) -> Acc, FR : Fn(Acc,u64,u64) -> Acc;
+    fn combine_elem<FComb,FL,FR,Acc>(&self,&Self,&FComb,&FL,&FR,Acc,&mut usize,&mut usize,&mut usize) -> Acc
+        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc;
 
-    fn invariant<Em : Embed,F>(&self,&mut Em,&F,&mut u64,&mut Vec<Em::Expr>)
+    fn invariant<Em : Embed,F>(&self,&mut Em,&F,&mut usize,&mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
-        where F : Fn(u64,&mut Em) -> Result<Em::Expr,Em::Error> {
+        where F : Fn(usize,&mut Em) -> Result<Em::Expr,Em::Error> {
         Ok(())
     }
 }
@@ -29,44 +33,11 @@ pub struct CompExpr<C : Composite> {
     phantom: PhantomData<C>
 }
 
-pub fn view<'a,T : Composite,Em : Embed>(obj: &'a T) -> View<'a,T,Em> {
-    View { offset: 0,
-           comp: obj,
-           indirection: Vec::new() }
-}
-
-pub struct View<'a,T : Composite + 'a,Em : Embed> {
-    offset: u64,
-    comp: &'a T,
-    indirection: Vec<Indirection<Em>>
-}
-
-enum Indirection<Em: Embed> {
-    ArraySelect(Em::Expr)
-}
-
-impl<Em : Embed> Indirection<Em> {
-    fn apply(&self,em: &mut Em,e: Em::Expr) -> Result<Em::Expr,Em::Error> {
-        match *self {
-            Indirection::ArraySelect(ref idx) => em.select(e,vec![idx.clone()])
-        }
-    }
-}
-
-impl<Em : Embed> Clone for Indirection<Em> {
-    fn clone(&self) -> Indirection<Em> {
-        match *self {
-            Indirection::ArraySelect(ref e)
-                => Indirection::ArraySelect(e.clone())
-        }
-    }
-}
-
 pub struct Singleton(types::Sort);
 
 impl Composite for Singleton {
-    fn num_elem(&self) -> u64 { 1 }
-    fn elem_sort<Em : Embed>(&self,_:u64,em: &mut Em)
+    fn num_elem(&self) -> usize { 1 }
+    fn elem_sort<Em : Embed>(&self,_:usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         self.0.embed(em)
     }
@@ -77,25 +48,13 @@ impl Composite for Singleton {
             Some(Singleton(self.0.clone()))
         }
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,_: &Self,f: &FComb,_: &FL,_: &FR,acc: Acc,offl: &mut u64,offr: &mut u64,offn: &mut u64) -> Acc
-        where FComb : Fn(Acc,u64,u64,u64) -> Acc, FL : Fn(Acc,u64,u64) -> Acc, FR : Fn(Acc,u64,u64) -> Acc {
+    fn combine_elem<FComb,FL,FR,Acc>(&self,_: &Self,f: &FComb,_: &FL,_: &FR,acc: Acc,offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
+        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
         let nacc = f(acc,*offl,*offr,*offn);
         *offl+=1;
         *offr+=1;
         *offn+=1;
         nacc
-    }
-}
-
-impl<'a,Em : Embed> View<'a,Singleton,Em> {
-    pub fn get<F>(&self,em: &mut Em,f: &F) -> Result<Em::Expr,Em::Error>
-        where F : Fn(u64,&mut Em) -> Result<Em::Expr,Em::Error> {
-
-        let mut e = f(self.offset,em)?;
-        for indir in self.indirection.iter() {
-            e = indir.apply(em,e)?;
-        }
-        Ok(e)
     }
 }
 
@@ -104,16 +63,16 @@ pub struct SingletonBool {}
 pub static BOOL_SINGLETON : SingletonBool = SingletonBool {};
 
 impl Composite for SingletonBool {
-    fn num_elem(&self) -> u64 { 1 }
-    fn elem_sort<Em : Embed>(&self,_:u64,em: &mut Em)
+    fn num_elem(&self) -> usize { 1 }
+    fn elem_sort<Em : Embed>(&self,_:usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         em.tp_bool()
     }
     fn combine(&self,_: &Self) -> Option<Self> {
         Some(SingletonBool {})
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,_: &Self,f: &FComb,_: &FL,_: &FR,acc: Acc,offl: &mut u64,offr: &mut u64,offn: &mut u64) -> Acc
-        where FComb : Fn(Acc,u64,u64,u64) -> Acc, FL : Fn(Acc,u64,u64) -> Acc, FR : Fn(Acc,u64,u64) -> Acc {
+    fn combine_elem<FComb,FL,FR,Acc>(&self,_: &Self,f: &FComb,_: &FL,_: &FR,acc: Acc,offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
+        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
         let nacc = f(acc,*offl,*offr,*offn);
         *offl+=1;
         *offr+=1;
@@ -122,27 +81,15 @@ impl Composite for SingletonBool {
     }
 }
 
-impl<'a,Em : Embed> View<'a,SingletonBool,Em> {
-    pub fn get<F>(&self,em: &mut Em,f: &F) -> Result<Em::Expr,Em::Error>
-        where F : Fn(u64,&mut Em) -> Result<Em::Expr,Em::Error> {
-
-        let mut e = f(self.offset,em)?;
-        for indir in self.indirection.iter() {
-            e = indir.apply(em,e)?;
-        }
-        Ok(e)
-    }
-}
-
 impl<T : Composite + Clone> Composite for Vec<T> {
-    fn num_elem(&self) -> u64 {
+    fn num_elem(&self) -> usize {
         let mut acc = 0;
         for el in self.iter() {
             acc+=el.num_elem()
         }
         acc
     }
-    fn elem_sort<Em : Embed>(&self,n: u64,em: &mut Em)
+    fn elem_sort<Em : Embed>(&self,n: usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         let mut acc = 0;
         for el in self.iter() {
@@ -186,10 +133,10 @@ impl<T : Composite + Clone> Composite for Vec<T> {
                                      onlyl: &FL,
                                      onlyr: &FR,
                                      acc: Acc,
-                                     offl: &mut u64,
-                                     offr: &mut u64,
-                                     offn: &mut u64) -> Acc
-        where FComb : Fn(Acc,u64,u64,u64) -> Acc, FL : Fn(Acc,u64,u64) -> Acc, FR : Fn(Acc,u64,u64) -> Acc {
+                                     offl: &mut usize,
+                                     offr: &mut usize,
+                                     offn: &mut usize) -> Acc
+        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
 
         let ssize = self.len();
         let osize = oth.len();
@@ -219,9 +166,9 @@ impl<T : Composite + Clone> Composite for Vec<T> {
         }
         cacc
     }
-    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut u64,res: &mut Vec<Em::Expr>)
+    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
-        where F : Fn(u64,&mut Em) -> Result<Em::Expr,Em::Error> {
+        where F : Fn(usize,&mut Em) -> Result<Em::Expr,Em::Error> {
 
         for el in self.iter() {
             el.invariant(em,f,off,res)?;
@@ -230,58 +177,17 @@ impl<T : Composite + Clone> Composite for Vec<T> {
     }
 }
 
-impl<'a,T : 'a + Composite + Clone,Em : Embed> View<'a,Vec<T>,Em> {
-    pub fn get(self,n: usize) -> View<'a,T,Em> {
-        let mut off = self.offset;
-        for el in self.comp.iter().take(n) {
-            off+=el.num_elem();
-        }
-        View { offset: off,
-               comp: &self.comp[n],
-               indirection: self.indirection }
-    }
-}
-
 pub struct Choice<T>(Vec<T>);
 
-impl<'a,T : 'a + Composite + Ord + Clone,Em : Embed> View<'a,Choice<T>,Em> {
-    pub fn idx_of(&self,descr: &T) -> Option<usize> {
-        for (n,el) in self.comp.0.iter().enumerate() {
-            if *el==*descr {
-                return Some(n)
-            }
-        }
-        None
-    }
-    pub fn selector(self,n: usize) -> View<'a,SingletonBool,Em> {
-        let mut off = self.offset;
-        for el in self.comp.0.iter().take(n) {
-            off+=el.num_elem()+1;
-        }
-        View { offset: off,
-               comp: &BOOL_SINGLETON,
-               indirection: self.indirection }
-    }
-    pub fn get(self,n: usize) -> View<'a,T,Em> {
-        let mut off = self.offset;
-        for el in self.comp.0.iter().take(n) {
-            off+=el.num_elem()+1;
-        }
-        View { offset: off+1,
-               comp: &self.comp.0[n],
-               indirection: self.indirection }
-    }
-}
-
 impl<T : Composite + Ord + Clone> Composite for Choice<T> {
-    fn num_elem(&self) -> u64 {
+    fn num_elem(&self) -> usize {
         let mut acc = 0;
         for el in self.0.iter() {
             acc+=el.num_elem()+1
         }
         acc
     }
-    fn elem_sort<Em : Embed>(&self,n: u64,em: &mut Em)
+    fn elem_sort<Em : Embed>(&self,n: usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         let mut acc = 0;
         for el in self.0.iter() {
@@ -341,10 +247,10 @@ impl<T : Composite + Ord + Clone> Composite for Choice<T> {
                                      onlyl: &FL,
                                      onlyr: &FR,
                                      acc: Acc,
-                                     offl: &mut u64,
-                                     offr: &mut u64,
-                                     offn: &mut u64) -> Acc
-        where FComb : Fn(Acc,u64,u64,u64) -> Acc, FL : Fn(Acc,u64,u64) -> Acc, FR : Fn(Acc,u64,u64) -> Acc {
+                                     offl: &mut usize,
+                                     offr: &mut usize,
+                                     offn: &mut usize) -> Acc
+        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
 
         let mut offs = 0;
         let mut offo = 0;
@@ -403,9 +309,9 @@ impl<T : Composite + Ord + Clone> Composite for Choice<T> {
         }
         cacc
     }
-    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut u64,res: &mut Vec<Em::Expr>)
+    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
-        where F : Fn(u64,&mut Em) -> Result<Em::Expr,Em::Error> {
+        where F : Fn(usize,&mut Em) -> Result<Em::Expr,Em::Error> {
 
         let mut selectors = Vec::with_capacity(self.0.len());
 
@@ -434,14 +340,14 @@ impl<T : Composite + Ord + Clone> Composite for Choice<T> {
 }
 
 impl<K : Ord + Clone + 'static,T : Composite + Clone> Composite for BTreeMap<K,T> {
-    fn num_elem(&self) -> u64 {
+    fn num_elem(&self) -> usize {
         let mut acc = 0;
         for v in self.values() {
             acc+=v.num_elem();
         }
         acc
     }
-    fn elem_sort<Em : Embed>(&self,n: u64,em: &mut Em)
+    fn elem_sort<Em : Embed>(&self,n: usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         let mut acc = 0;
         for v in self.values() {
@@ -469,8 +375,8 @@ impl<K : Ord + Clone + 'static,T : Composite + Clone> Composite for BTreeMap<K,T
     fn combine_elem<FComb,FL,FR,Acc>(&self,oth: &BTreeMap<K,T>,
                                      comb: &FComb,onlyl: &FL,onlyr: &FR,
                                      acc: Acc,
-                                     offl: &mut u64,offr: &mut u64,offn: &mut u64) -> Acc
-        where FComb : Fn(Acc,u64,u64,u64) -> Acc, FL : Fn(Acc,u64,u64) -> Acc, FR : Fn(Acc,u64,u64) -> Acc {
+                                     offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
+        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
 
         let mut cacc = acc;
         let mut iter_l = self.iter();
@@ -551,9 +457,9 @@ impl<K : Ord + Clone + 'static,T : Composite + Clone> Composite for BTreeMap<K,T
             }
         }
     }
-    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut u64,res: &mut Vec<Em::Expr>)
+    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
-        where F : Fn(u64,&mut Em) -> Result<Em::Expr,Em::Error> {
+        where F : Fn(usize,&mut Em) -> Result<Em::Expr,Em::Error> {
 
         for el in self.values() {
             el.invariant(em,f,off,res)?;
@@ -562,25 +468,14 @@ impl<K : Ord + Clone + 'static,T : Composite + Clone> Composite for BTreeMap<K,T
     }
 }
 
-impl<'a,T : Composite + Clone,Em : Embed> View<'a,Option<T>,Em> {
-    pub fn get(self) -> Option<View<'a,T,Em>> {
-        match *self.comp {
-            None => None,
-            Some(ref x) => Some(View { offset: self.offset,
-                                       comp: x,
-                                       indirection: self.indirection })
-        }
-    }
-}
-
 impl<T : Composite + Clone> Composite for Option<T> {
-    fn num_elem(&self) -> u64 {
+    fn num_elem(&self) -> usize {
         match *self {
             None => 0,
             Some(ref c) => c.num_elem()
         }
     }
-    fn elem_sort<Em : Embed>(&self,n: u64,em: &mut Em)
+    fn elem_sort<Em : Embed>(&self,n: usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         match *self {
             None => panic!("Invalid index: {}",n),
@@ -601,8 +496,8 @@ impl<T : Composite + Clone> Composite for Option<T> {
     }
     fn combine_elem<FComb,FL,FR,Acc>(&self,oth: &Option<T>,
                                      comb: &FComb,onlyl: &FL,onlyr: &FR,
-                                     acc: Acc,offl: &mut u64,offr: &mut u64,offn: &mut u64) -> Acc
-        where FComb : Fn(Acc,u64,u64,u64) -> Acc, FL : Fn(Acc,u64,u64) -> Acc, FR : Fn(Acc,u64,u64) -> Acc {
+                                     acc: Acc,offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
+        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
 
         match *self {
             None => match *oth {
@@ -631,9 +526,9 @@ impl<T : Composite + Clone> Composite for Option<T> {
             }
         }
     }
-    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut u64,res: &mut Vec<Em::Expr>)
+    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
-        where F : Fn(u64,&mut Em) -> Result<Em::Expr,Em::Error> {
+        where F : Fn(usize,&mut Em) -> Result<Em::Expr,Em::Error> {
         match *self {
             None => Ok(()),
             Some(ref el) => el.invariant(em,f,off,res)
@@ -646,21 +541,11 @@ pub struct Array<Idx : Composite,T : Composite> {
     element: T
 }
 
-/*impl<'a,T : Composite,Em : Embed> View<'a,Array<T>,Em> {
-    pub fn get(self,idx: Em::Expr) -> View<'a,T,Em> {
-        let mut indir = self.indirection;
-        indir.push(Indirection::ArraySelect(idx));
-        View { offset: self.offset,
-               comp: &self.comp.element,
-               indirection: indir }
-    }
-}*/
-
 impl<Idx : Composite + Eq + Clone,T : Composite> Composite for Array<Idx,T> {
-    fn num_elem(&self) -> u64 {
+    fn num_elem(&self) -> usize {
         self.element.num_elem()
     }
-    fn elem_sort<Em : Embed>(&self,n: u64,em: &mut Em)
+    fn elem_sort<Em : Embed>(&self,n: usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         let srt = self.element.elem_sort(n,em)?;
         let idx_sz = self.index.num_elem();
@@ -682,8 +567,8 @@ impl<Idx : Composite + Eq + Clone,T : Composite> Composite for Array<Idx,T> {
     }
     fn combine_elem<FComb,FL,FR,Acc>(&self,oth: &Array<Idx,T>,
                                      comb: &FComb,onlyl: &FL,onlyr: &FR,
-                                     acc: Acc,offl: &mut u64,offr: &mut u64,offn: &mut u64) -> Acc
-        where FComb : Fn(Acc,u64,u64,u64) -> Acc, FL : Fn(Acc,u64,u64) -> Acc, FR : Fn(Acc,u64,u64) -> Acc {
+                                     acc: Acc,offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
+        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
         self.element.combine_elem(&oth.element,comb,onlyl,onlyr,
                                   acc,offl,offr,offn)
     }
@@ -691,8 +576,8 @@ impl<Idx : Composite + Eq + Clone,T : Composite> Composite for Array<Idx,T> {
 }
 
 impl Composite for () {
-    fn num_elem(&self) -> u64 { 0 }
-    fn elem_sort<Em : Embed>(&self,n: u64,_: &mut Em)
+    fn num_elem(&self) -> usize { 0 }
+    fn elem_sort<Em : Embed>(&self,n: usize,_: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         panic!("Invalid index: {}",n)
     }
@@ -700,19 +585,19 @@ impl Composite for () {
         Some(())
     }
     fn combine_elem<FComb,FL,FR,Acc>(&self,_:&(),_:&FComb,_:&FL,_:&FR,
-                                     acc:Acc,_:&mut u64,_:&mut u64,_:&mut u64)
+                                     acc:Acc,_:&mut usize,_:&mut usize,_:&mut usize)
                                      -> Acc
-        where FComb : Fn(Acc,u64,u64,u64) -> Acc, FL : Fn(Acc,u64,u64) -> Acc, FR : Fn(Acc,u64,u64) -> Acc {
+        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
         acc
     }
         
 }
 
 impl<A : Composite,B : Composite> Composite for (A,B) {
-    fn num_elem(&self) -> u64 {
+    fn num_elem(&self) -> usize {
         self.0.num_elem() + self.1.num_elem()
     }
-    fn elem_sort<Em : Embed>(&self,n: u64,em: &mut Em)
+    fn elem_sort<Em : Embed>(&self,n: usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         let sz0 = self.0.num_elem();
         if n>=sz0 {
@@ -732,16 +617,16 @@ impl<A : Composite,B : Composite> Composite for (A,B) {
     }
     fn combine_elem<FComb,FL,FR,Acc>(&self,oth: &(A,B),
                                      comb: &FComb,onlyl: &FL,onlyr: &FR,
-                                     acc: Acc,offl: &mut u64,offr: &mut u64,offn: &mut u64) -> Acc
-        where FComb : Fn(Acc,u64,u64,u64) -> Acc, FL : Fn(Acc,u64,u64) -> Acc, FR : Fn(Acc,u64,u64) -> Acc {
+                                     acc: Acc,offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
+        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
         let acc1 = self.0.combine_elem(&oth.0,comb,onlyl,onlyr,
                                        acc,offl,offr,offn);
         self.1.combine_elem(&oth.1,comb,onlyl,onlyr,
                             acc1,offl,offr,offn)
     }
-    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut u64,res: &mut Vec<Em::Expr>)
+    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
-        where F : Fn(u64,&mut Em) -> Result<Em::Expr,Em::Error> {
+        where F : Fn(usize,&mut Em) -> Result<Em::Expr,Em::Error> {
 
         self.0.invariant(em,f,off,res)?;
         self.1.invariant(em,f,off,res)
@@ -750,16 +635,16 @@ impl<A : Composite,B : Composite> Composite for (A,B) {
 }
 
 pub trait GetElem<Em : Embed> {
-    fn get_elem(&self,u64,&mut Em) -> Result<Em::Expr,Em::Error>;
+    fn get_elem(&self,usize,&mut Em) -> Result<Em::Expr,Em::Error>;
 }
 
 pub struct OffsetGetter<Em : Embed> {
-    offset: u64,
+    offset: usize,
     getter: Box<GetElem<Em>>,
 }
 
 impl<Em : Embed> GetElem<Em> for OffsetGetter<Em> {
-    fn get_elem(&self,n: u64,em: &mut Em)
+    fn get_elem(&self,n: usize,em: &mut Em)
                 -> Result<Em::Expr,Em::Error> {
         self.getter.get_elem(n+self.offset,em)
     }
@@ -785,12 +670,233 @@ impl<'a,T : 'a + Clone> OptRef<'a,T> {
     }
 }
 
+pub enum Transformation<Em : Embed> {
+    Id(usize),
+    View(usize,usize,Rc<Transformation<Em>>), // View with an offset and size
+    Concat(usize,Vec<Rc<Transformation<Em>>>), // Record size to prevent recursion
+    Constant(Vec<Em::Expr>),
+    Map(usize, // Resulting size
+        Box<Fn(&[Em::Expr],&mut Em) -> Vec<Em::Expr>>, // mapping function
+        Rc<Transformation<Em>>, // transformation
+        RefCell<Option<Vec<Em::Expr>>> // cache
+    ),
+    Write(usize, // Resulting size
+          usize, // Write offset
+          usize, // Previous size
+          Rc<Transformation<Em>>, // Write source
+          Rc<Transformation<Em>> // Write target
+    ),
+    MapByElem(Box<for <'a,'b> Fn(&'a [Em::Expr],usize,Em::Expr,&'b mut Em) -> Result<Em::Expr,Em::Error>>,
+              Rc<Transformation<Em>>)
+}
+
+enum BorrowedSlice<'a,T : 'a> {
+    BorrowedSlice(&'a [T]),
+    CachedSlice(cell::Ref<'a,Vec<T>>,usize,usize),
+    OwnedSlice(Vec<T>)
+}
+
+impl<'a,T : 'a> BorrowedSlice<'a,T> {
+    fn get(&'a self) -> &'a [T] {
+        match *self {
+            BorrowedSlice::BorrowedSlice(sl) => sl,
+            BorrowedSlice::CachedSlice(ref sl,start,end) => &(*sl)[start..end],
+            BorrowedSlice::OwnedSlice(ref sl) => &sl[..]
+        }
+    }
+}
+
+impl<Em : Embed> Transformation<Em> {
+    pub fn view(off: usize,len: usize,t: Rc<Transformation<Em>>) -> Rc<Transformation<Em>> {
+        if len==0 {
+            Rc::new(Transformation::Id(0))
+        } else if off==0 && t.size()==len {
+            t
+        } else {
+            Rc::new(Transformation::View(off,len,t))
+        }
+    }
+    pub fn concat(trs: &[Rc<Transformation<Em>>]) -> Rc<Transformation<Em>> {
+        let mut only_one = None;
+        let mut none = true;
+        let mut req_alloc = 0;
+        let mut sz = 0;
+        for tr in trs.iter() {
+            if tr.size()==0 {
+                continue
+            }
+            match **tr {
+                Transformation::Concat(nsz,ref ntrs) => {
+                    sz+=nsz;
+                    req_alloc+=ntrs.len();
+                },
+                _ => {
+                    sz+=tr.size();
+                    req_alloc+=1;
+                }
+            }
+            only_one = if none { Some(tr) } else { None };
+            none = false;
+        }
+        if none {
+            return Rc::new(Transformation::Id(0));
+        }
+        if let Some(only) = only_one {
+            return only.clone()
+        }
+        let mut rvec = Vec::with_capacity(req_alloc);
+        for tr in trs.iter() {
+            if tr.size()==0 {
+                continue
+            }
+            match **tr {
+                Transformation::Concat(_,ref ntrs) => {
+                    rvec.extend_from_slice(&ntrs[..]);
+                },
+                _ => {
+                    rvec.push(tr.clone());
+                }
+            }
+        }
+        Rc::new(Transformation::Concat(sz,rvec))
+    }
+    pub fn size(&self) -> usize {
+        match *self {
+            Transformation::Id(sz) => sz,
+            Transformation::View(_,nsz,_) => nsz,
+            Transformation::Concat(sz,_) => sz,
+            Transformation::Constant(ref vec) => vec.len(),
+            Transformation::Map(sz,_,_,_) => sz,
+            Transformation::Write(sz,_,_,_,_) => sz,
+            Transformation::MapByElem(_,ref tr) => tr.size()
+        }
+    }
+    pub fn clear_cache(&self) -> () {
+        match *self {
+            Transformation::Id(_) => (),
+            Transformation::View(_,_,ref tr) => tr.clear_cache(),
+            Transformation::Concat(_,ref vec) => for el in vec.iter() {
+                el.clear_cache()
+            },
+            Transformation::Constant(_) => (),
+            Transformation::Map(_,_,ref tr,ref cache) => {
+                tr.clear_cache();
+                *cache.borrow_mut() = None;
+            },
+            Transformation::Write(_,_,_,ref obj,ref trg) => {
+                obj.clear_cache();
+                trg.clear_cache();
+            },
+            Transformation::MapByElem(_,ref tr) => tr.clear_cache()
+        }
+    }
+    fn as_slice<'a>(&'a self,arr: &'a [Em::Expr],off: usize,len: usize)
+                    -> Option<BorrowedSlice<'a,Em::Expr>> {
+        match *self {
+            Transformation::Id(_) => Some(BorrowedSlice::BorrowedSlice(&arr[off..off+len])),
+            Transformation::View(noff,_,ref tr) => tr.as_slice(arr,off+noff,len),
+            Transformation::Concat(_,ref vec) => {
+                let mut acc = 0;
+                for el in vec.iter() {
+                    let sz = el.size();
+                    if off < acc+sz {
+                        if sz<=len {
+                            return el.as_slice(arr,off-acc,len)
+                        } else {
+                            return None
+                        }
+                    }
+                    acc+=sz;
+                }
+                panic!("Invalid index: {}",off)
+            },
+            Transformation::Constant(ref vec) => Some(BorrowedSlice::BorrowedSlice(&vec[off..off+len])),
+            Transformation::Map(_,_,_,ref cache) => {
+                let cache_ref : cell::Ref<Option<Vec<Em::Expr>>> = cache.borrow();
+                match *cache_ref {
+                    None => None,
+                    Some(_) => {
+                        let vec_ref : cell::Ref<Vec<Em::Expr>> = cell::Ref::map(cache_ref,|x| match x {
+                            &Some(ref x) => x,
+                            &None => unreachable!()
+                        });
+                        Some(BorrowedSlice::CachedSlice(vec_ref,off,off+len))
+                    }
+                }
+            },
+            Transformation::Write(_,wr_off,repl_sz,ref obj,ref trg) => if off+len <= wr_off {
+                trg.as_slice(arr,off,len)
+            } else if off >= wr_off && off+len <= wr_off+obj.size() {
+                obj.as_slice(arr,off-wr_off,len)
+            } else if off >= wr_off+obj.size() {
+                trg.as_slice(arr,off-obj.size()+repl_sz,len)
+            } else {
+                None
+            },
+            _ => None
+        }
+    }
+    fn to_slice<'a>(&'a self,arr: &'a [Em::Expr],off: usize,len: usize,em: &mut Em)
+                    -> Result<BorrowedSlice<'a,Em::Expr>,Em::Error> {
+        match self.as_slice(arr,off,len) {
+            Some(res) => Ok(res),
+            None => {
+                let mut rvec = Vec::with_capacity(len);
+                for i in 0..len {
+                    rvec.push(self.get(arr,off+i,em)?);
+                }
+                Ok(BorrowedSlice::OwnedSlice(rvec))
+            }
+        }
+    }
+    pub fn get(&self,arr: &[Em::Expr],idx: usize,em: &mut Em) -> Result<Em::Expr,Em::Error> {
+        match *self {
+            Transformation::Id(_) => Ok(arr[idx].clone()),
+            Transformation::View(off,_,ref tr)
+                => tr.get(arr,off+idx,em),
+            Transformation::Concat(_,ref vec) => {
+                let mut acc = 0;
+                for el in vec.iter() {
+                    let sz = el.size();
+                    if idx < acc+sz {
+                        return el.get(arr,idx-acc,em)
+                    }
+                    acc+=sz;
+                }
+                panic!("Invalid index: {}",idx)
+            },
+            Transformation::Constant(ref vec) => Ok(vec[idx].clone()),
+            Transformation::Map(_,ref f,ref tr,ref cache) => {
+                let mut cache_ref : cell::RefMut<Option<Vec<Em::Expr>>> = (*cache).borrow_mut();
+                match *cache_ref {
+                    Some(ref rcache) => return Ok(rcache[idx].clone()),
+                    None => {}
+                }
+                let sl = tr.to_slice(arr,0,arr.len(),em)?;
+                let narr = f(sl.get(),em);
+                let res = narr[idx].clone();
+                *cache_ref = Some(narr);
+                return Ok(res)
+            },
+            Transformation::Write(_,wr_off,repl_sz,ref obj,ref trg) => if idx < wr_off {
+                trg.get(arr,idx,em)
+            } else if idx >= wr_off && idx < wr_off+obj.size() {
+                obj.get(arr,idx-wr_off,em)
+            } else {
+                trg.get(arr,idx-obj.size()+repl_sz,em)
+            },
+            Transformation::MapByElem(ref f,ref tr)
+                => f(arr,idx,tr.get(arr,idx,em)?,em)
+        }
+    }
+}
+
 pub trait Transition<Src : Composite,Trg : Composite> {
 
     fn apply<'a,Em : 'static + Embed>
-        (&self,OptRef<'a,Src>,Box<GetElem<Em>>,&mut Em)
+        (&self,OptRef<'a,Src>,Rc<Transformation<Em>>,&mut Em)
          -> Result<(OptRef<'a,Trg>,
-                    Box<GetElem<Em>>),Em::Error>;
+                    Rc<Transformation<Em>>),Em::Error>;
 }
 
 pub struct Seq<A : Composite,B : Composite,C : Composite,
@@ -807,24 +913,23 @@ impl<A : Composite, B : Composite, C : Composite,
      > Transition<A,C> for Seq<A,B,C,T1,T2> {
 
     fn apply<'a,Em : 'static + Embed>(&self,a: OptRef<'a,A>,
-                                      get_a: Box<GetElem<Em>>,em: &mut Em)
+                                      get_a: Rc<Transformation<Em>>,em: &mut Em)
                                       -> Result<(OptRef<'a,C>,
-                                                 Box<GetElem<Em>>),Em::Error> {
+                                                 Rc<Transformation<Em>>),Em::Error> {
         let (b,get_b) = self.t1.apply(a,get_a,em)?;
         self.t2.apply(b,get_b,em)
     }
 }
 
-pub struct GetVecElem<T : Composite> {
-    which: usize,
-    phantom: PhantomData<T>
+pub struct GetVecElem {
+    which: usize
 }
 
-impl<T : Composite + Clone> Transition<Vec<T>,T> for GetVecElem<T> {
+impl<T : Composite + Clone> Transition<Vec<T>,T> for GetVecElem {
 
     fn apply<'a,Em : 'static + Embed>(&self,vec: OptRef<'a,Vec<T>>,
-                                      inp: Box<GetElem<Em>>,_: &mut Em)
-                                      -> Result<(OptRef<'a,T>,Box<GetElem<Em>>),
+                                      inp: Rc<Transformation<Em>>,_: &mut Em)
+                                      -> Result<(OptRef<'a,T>,Rc<Transformation<Em>>),
                                                 Em::Error> {
         match vec {
             OptRef::Ref(rvec) => {
@@ -832,59 +937,35 @@ impl<T : Composite + Clone> Transition<Vec<T>,T> for GetVecElem<T> {
                 for el in rvec.iter().take(self.which) {
                     off+=el.num_elem();
                 }
+                let len = rvec[self.which].num_elem();
                 Ok((OptRef::Ref(&rvec[self.which]),
-                    Box::new(OffsetGetter { getter: inp,
-                                            offset: off })))
+                    Transformation::view(off,len as usize,inp)))
             },
             OptRef::Owned(mut rvec) => {
                 let mut off = 0;
                 for el in rvec.iter().take(self.which) {
                     off+=el.num_elem();
                 }
+                let len = rvec[self.which].num_elem();
                 Ok((OptRef::Owned(rvec.remove(self.which)),
-                    Box::new(OffsetGetter { getter: inp,
-                                            offset: off })))
+                    Transformation::view(off as usize,len as usize,inp)))
             }
         }
     }
 }
 
-pub struct SetVecElem<T : Composite> {
-    which: usize,
-    phantom: PhantomData<T>
+pub struct SetVecElem {
+    which: usize
 }
 
-pub struct SetVecElemGetter<Em : Embed> {
-    getter: Box<GetElem<Em>>,
-    offset_store: u64,
-    offset_elem: u64,
-    old_size: u64,
-    new_size: u64,
-}
-
-impl<Em : Embed> GetElem<Em> for SetVecElemGetter<Em> {
-    fn get_elem(&self,n: u64,em: &mut Em)
-                -> Result<Em::Expr,Em::Error> {
-
-        if n >= self.offset_store {
-            if n >= self.offset_store + self.new_size {
-                self.getter.get_elem(n-self.new_size+self.old_size,em)
-            } else {
-                self.getter.get_elem(self.offset_elem - self.offset_store + n,em)
-            }
-        } else {
-            self.getter.get_elem(n,em)
-        }
-    }
-}
-
-impl<T : Composite + Clone> Transition<(Vec<T>,T),Vec<T>> for SetVecElem<T> {
+impl<T : Composite + Clone> Transition<(Vec<T>,T),Vec<T>> for SetVecElem {
 
     fn apply<'a,Em : 'static + Embed>(&self,args: OptRef<'a,(Vec<T>,T)>,
-                                      inp: Box<GetElem<Em>>,_:&mut Em)
-                                      -> Result<(OptRef<'a,Vec<T>>,Box<GetElem<Em>>),Em::Error> {
+                                      inp: Rc<Transformation<Em>>,_:&mut Em)
+                                      -> Result<(OptRef<'a,Vec<T>>,Rc<Transformation<Em>>),Em::Error> {
         match args {
             OptRef::Ref(&(ref vec,ref el)) => {
+                let vlen = vec.num_elem();
                 let mut off_store = 0;
                 for el in vec.iter().take(self.which) {
                     off_store+=el.num_elem();
@@ -894,78 +975,72 @@ impl<T : Composite + Clone> Transition<(Vec<T>,T),Vec<T>> for SetVecElem<T> {
                 let mut rvec = vec.clone();
                 rvec[self.which] = el.clone();
                 Ok((OptRef::Owned(rvec),
-                    Box::new(SetVecElemGetter { getter: inp,
-                                                offset_store: off_store,
-                                                offset_elem: vec.num_elem(),
-                                                old_size: old,
-                                                new_size: new })))
+                    Transformation::concat(&[Transformation::view(0,off_store,inp.clone()),
+                                             Transformation::view(vlen,new,inp.clone()),
+                                             Transformation::view(off_store+old,
+                                                                  vlen-off_store-old,inp)])))
             },
             OptRef::Owned((mut vec,el)) => {
+                let vlen = vec.num_elem();
                 let mut off_store = 0;
                 for el in vec.iter().take(self.which) {
                     off_store+=el.num_elem();
                 }
-                let off_elem = vec.num_elem();
                 let old = vec[self.which].num_elem();
                 let new = el.num_elem();
                 vec[self.which] = el;
                 Ok((OptRef::Owned(vec),
-                    Box::new(SetVecElemGetter { getter: inp,
-                                                offset_store: off_store,
-                                                offset_elem: off_elem,
-                                                old_size: old,
-                                                new_size: new })))
+                    Transformation::concat(&[Transformation::view(0,off_store,inp.clone()),
+                                             Transformation::view(vlen,new,inp.clone()),
+                                             Transformation::view(off_store+old,
+                                                                  vlen-off_store-old,inp)])))
             }
         }
     }
 }
 
-pub struct GetArrayElem<T : Composite>(PhantomData<T>);
-
-struct GetArrayElemGetter<Em : Embed> {
-    getter: Box<GetElem<Em>>,
-    index_sz: u64,
-    offset_index: u64,
-}
-
-impl<Em : Embed> GetElem<Em> for GetArrayElemGetter<Em> {
-    
-    fn get_elem(&self,n: u64,em: &mut Em)
-                -> Result<Em::Expr,Em::Error> {
-        let mut idx_arr = Vec::with_capacity(self.index_sz as usize);
-        for i in 0..self.index_sz {
-            idx_arr.push(self.getter.get_elem(self.offset_index+i,em)?);
-        }
-        let arr = self.getter.get_elem(n,em)?;
-        em.select(arr,idx_arr)
-    }
-}
+pub struct GetArrayElem {}
 
 impl<Idx : Composite + Eq + Clone, T : Composite
-     > Transition<(Array<Idx,T>,Idx),T> for GetArrayElem<T> {
+     > Transition<(Array<Idx,T>,Idx),T> for GetArrayElem {
     fn apply<'a,Em : 'static + Embed>(&self,args: OptRef<'a,(Array<Idx,T>,Idx)>,
-                                      inp: Box<GetElem<Em>>,_: &mut Em)
-                                      -> Result<(OptRef<'a,T>,Box<GetElem<Em>>),Em::Error> {
+                                      inp: Rc<Transformation<Em>>,_: &mut Em)
+                                      -> Result<(OptRef<'a,T>,Rc<Transformation<Em>>),Em::Error> {
         match args {
             OptRef::Owned((arr,idx)) => {
                 assert!(arr.index==idx);
                 let off_idx = arr.element.num_elem();
-                Ok((OptRef::Owned(arr.element),
-                    Box::new(GetArrayElemGetter { getter: inp,
-                                                  index_sz: arr.index.num_elem(),
-                                                  offset_index: off_idx})))
+                let num_idx = idx.num_elem();
+                let arr_elems = Transformation::view(0,off_idx,inp.clone());
+                let fun = move |carr: &[Em::Expr],_: usize,e: Em::Expr,em: &mut Em| -> Result<Em::Expr,Em::Error> {
+                    let mut rvec = Vec::with_capacity(num_idx);
+                    for i in 0..num_idx {
+                        let idx_el = inp.get(carr,off_idx+i,em)?;
+                        rvec.push(idx_el);
+                    }
+                    em.select(e,rvec)
+                };
+                let mp = Rc::new(Transformation::MapByElem(Box::new(fun),arr_elems));
+                Ok((OptRef::Owned(arr.element),mp))
             },
             OptRef::Ref(&(ref arr,ref idx)) => {
                 assert!(arr.index==*idx);
                 let off_idx = arr.element.num_elem();
-                Ok((OptRef::Ref(&arr.element),
-                    Box::new(GetArrayElemGetter { getter: inp,
-                                                  index_sz: arr.index.num_elem(),
-                                                  offset_index: off_idx })))
+                let num_idx = idx.num_elem();
+                let arr_elems = Transformation::view(0,off_idx,inp.clone());
+                let fun = move |carr: &[Em::Expr],_: usize,e: Em::Expr,em: &mut Em| -> Result<Em::Expr,Em::Error> {
+                    let mut rvec = Vec::with_capacity(num_idx);
+                    for i in 0..num_idx {
+                        let idx_el = inp.get(carr,off_idx+i,em)?;
+                        rvec.push(idx_el);
+                    }
+                    em.select(e,rvec)
+                };
+                let mp = Rc::new(Transformation::MapByElem(Box::new(fun),arr_elems));
+                Ok((OptRef::Ref(&arr.element),mp))
             }
         }
         
     }
         
 }
-
