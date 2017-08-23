@@ -672,13 +672,16 @@ pub enum OptRef<'a,T : 'a> {
     Owned(T)
 }
 
-impl<'a,T : 'a + Clone> OptRef<'a,T> {
+impl<'a,T : 'a> OptRef<'a,T> {
     pub fn as_ref(&'a self) -> &'a T {
         match *self {
             OptRef::Ref(r) => r,
             OptRef::Owned(ref x) => x
         }
     }
+}
+
+impl<'a,T : 'a + Clone> OptRef<'a,T> {
     pub fn as_obj(self) -> T {
         match self {
             OptRef::Ref(x) => (*x).clone(),
