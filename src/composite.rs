@@ -11,15 +11,20 @@ use std::cell;
 use std::cell::RefCell;
 
 pub trait Composite : Sized + 'static {
-    
+
     fn num_elem(&self) -> usize;
     fn elem_sort<Em : Embed>(&self,usize,&mut Em)
                              -> Result<Em::Sort,Em::Error>;
 
     fn combine(&self,&Self) -> Option<Self>;
 
-    fn combine_elem<FComb,FL,FR,Acc>(&self,&Self,&FComb,&FL,&FR,Acc,&mut usize,&mut usize,&mut usize) -> Acc
-        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc;
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,&Self,
+                                                  &'a[Em::Expr],&'b[Em::Expr],&mut Vec<Em::Expr>,
+                                                  &FComb,&FL,&FR,&mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>;
 
     fn invariant<Em : Embed,F>(&self,&mut Em,&F,&mut usize,&mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
@@ -48,13 +53,19 @@ impl Composite for Singleton {
             Some(Singleton(self.0.clone()))
         }
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,_: &Self,f: &FComb,_: &FL,_: &FR,acc: Acc,offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
-        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
-        let nacc = f(acc,*offl,*offr,*offn);
-        *offl+=1;
-        *offr+=1;
-        *offn+=1;
-        nacc
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,_: &Singleton,
+                                                  lhs: &'a[Em::Expr],
+                                                  rhs: &'b[Em::Expr],
+                                                  res: &mut Vec<Em::Expr>,
+                                                  comb: &FComb,_: &FL,_: &FR,
+                                                  em: &mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+
+        res.push(comb(&lhs[0],&rhs[0],em)?);
+        Ok((&lhs[1..],&rhs[1..]))
     }
 }
 
@@ -71,13 +82,19 @@ impl Composite for SingletonBool {
     fn combine(&self,_: &Self) -> Option<Self> {
         Some(SingletonBool {})
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,_: &Self,f: &FComb,_: &FL,_: &FR,acc: Acc,offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
-        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
-        let nacc = f(acc,*offl,*offr,*offn);
-        *offl+=1;
-        *offr+=1;
-        *offn+=1;
-        nacc
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,_: &SingletonBool,
+                                                  lhs: &'a[Em::Expr],
+                                                  rhs: &'b[Em::Expr],
+                                                  res: &mut Vec<Em::Expr>,
+                                                  comb: &FComb,_: &FL,_: &FR,
+                                                  em: &mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+
+        res.push(comb(&lhs[0],&rhs[0],em)?);
+        Ok((&lhs[1..],&rhs[1..]))
     }
 }
 
@@ -127,44 +144,43 @@ impl<T : Composite + Clone> Composite for Vec<T> {
         }
         Some(res)
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,
-                                     oth: &Vec<T>,
-                                     comb: &FComb,
-                                     onlyl: &FL,
-                                     onlyr: &FR,
-                                     acc: Acc,
-                                     offl: &mut usize,
-                                     offr: &mut usize,
-                                     offn: &mut usize) -> Acc
-        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &Vec<T>,
+                                                  lhs: &'a[Em::Expr],
+                                                  rhs: &'b[Em::Expr],
+                                                  res: &mut Vec<Em::Expr>,
+                                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                                  em: &mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
 
-        let ssize = self.len();
-        let osize = oth.len();
-        let min_size = min(ssize,osize);
-        let mut cacc = acc;
-        
+        let min_size = min(self.len(),oth.len());
+        let mut clhs = lhs;
+        let mut crhs = rhs;
         for i in 0..min_size {
-            cacc = self[i].combine_elem(&oth[i],comb,onlyl,onlyr,cacc,offl,offr,offn)
+            let (nlhs,nrhs) = self[i].combine_elem(&oth[i],clhs,crhs,res,comb,only_l,only_r,em)?;
+            clhs = nlhs;
+            crhs = nrhs;
         }
-
-        if ssize > osize {
-            for i in osize..ssize {
-                for _ in 0..self[i].num_elem() {
-                    cacc = onlyl(cacc,*offl,*offn);
-                    *offl += 1;
-                    *offn += 1;
+        if self.len() > oth.len() {
+            for i in min_size..self.len() {
+                let ref el = self[i];
+                for _ in 0..el.num_elem() {
+                    res.push(only_l(&clhs[0],em)?);
+                    clhs = &clhs[1..];
                 }
             }
-        } else if osize > ssize {
-            for i in ssize..osize {
-                for _ in 0..oth[i].num_elem() {
-                    cacc = onlyl(cacc,*offl,*offn);
-                    *offl += 1;
-                    *offn += 1;
+        } else if oth.len() > self.len() {
+            for i in min_size..oth.len() {
+                let ref el = self[i];
+                for _ in 0..el.num_elem() {
+                    res.push(only_r(&crhs[0],em)?);
+                    crhs = &crhs[1..];
                 }
             }
         }
-        cacc
+        Ok((clhs,crhs))
     }
     fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
@@ -241,74 +257,6 @@ impl<T : Composite + Ord + Clone> Composite for Choice<T> {
         }
         Some(Choice(res))
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,
-                                     oth: &Choice<T>,
-                                     comb: &FComb,
-                                     onlyl: &FL,
-                                     onlyr: &FR,
-                                     acc: Acc,
-                                     offl: &mut usize,
-                                     offr: &mut usize,
-                                     offn: &mut usize) -> Acc
-        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
-
-        let mut offs = 0;
-        let mut offo = 0;
-        let mut cacc = acc;
-
-        loop {
-            if offs >= self.0.len() {
-                for i in offo..oth.0.len() {
-                    for _ in 0..oth.0[i].num_elem()+1 {
-                        cacc = onlyr(cacc,*offr,*offn);
-                        *offr+=1;
-                        *offn+=1;
-                    }
-                }
-                break;
-            }
-            if offo >= oth.0.len() {
-                for i in offs..self.0.len() {
-                    for _ in 0..self.0[i].num_elem()+1 {
-                        cacc = onlyl(cacc,*offl,*offn);
-                        *offl+=1;
-                        *offn+=1;
-                    }
-                }
-                break;
-            }
-            let ref l = self.0[offs];
-            let ref r = oth.0[offo];
-            match l.cmp(&r) {
-                Ordering::Equal => {
-                    cacc = comb(cacc,*offl,*offr,*offn);
-                    *offl+=1;
-                    *offr+=1;
-                    *offn+=1;
-                    cacc = l.combine_elem(&r,comb,onlyl,onlyr,cacc,offl,offr,offn);
-                    offs+=1;
-                    offo+=1;
-                },
-                Ordering::Less => {
-                    for _ in 0..l.num_elem()+1 {
-                        cacc = onlyl(cacc,*offl,*offn);
-                        *offl+=1;
-                        *offn+=1;
-                    }
-                    offs+=1;
-                },
-                Ordering::Greater => {
-                    for _ in 0..r.num_elem()+1 {
-                        cacc = onlyr(cacc,*offr,*offn);
-                        *offr+=1;
-                        *offn+=1;
-                    }
-                    offo+=1;
-                }
-            }
-        }
-        cacc
-    }
     fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
         where F : Fn(usize,&mut Em) -> Result<Em::Expr,Em::Error> {
@@ -336,7 +284,72 @@ impl<T : Composite + Ord + Clone> Composite for Choice<T> {
         res.push(inv2);
         Ok(())
     }
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &Choice<T>,
+                                                  lhs: &'a[Em::Expr],
+                                                  rhs: &'b[Em::Expr],
+                                                  res: &mut Vec<Em::Expr>,
+                                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                                  em: &mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
 
+        let mut pos_l = 0;
+        let mut pos_r = 0;
+        let mut clhs = lhs;
+        let mut crhs = rhs;
+
+        loop {
+            if pos_l >= self.0.len() {
+                for i in pos_r..oth.0.len() {
+                    for _ in 0..oth.0[i].num_elem()+1 {
+                        res.push(only_r(&crhs[0],em)?);
+                        crhs = &crhs[1..];
+                    }
+                }
+                break;
+            }
+            if pos_r >= oth.0.len() {
+                for i in pos_l..self.0.len() {
+                    for _ in 0..self.0[i].num_elem()+1 {
+                        res.push(only_l(&clhs[0],em)?);
+                        clhs = &clhs[1..];
+                    }
+                }
+                break;
+            }
+            let ref l = self.0[pos_l];
+            let ref r = oth.0[pos_r];
+            match l.cmp(&r) {
+                Ordering::Equal => {
+                    res.push(comb(&clhs[0],&crhs[0],em)?);
+                    clhs = &clhs[1..];
+                    crhs = &crhs[1..];
+                    let (nlhs,nrhs) = l.combine_elem(&r,clhs,crhs,res,comb,only_l,only_r,em)?;
+                    clhs = nlhs;
+                    crhs = nrhs;
+                    pos_l+=1;
+                    pos_r+=1;
+                },
+                Ordering::Less => {
+                    for _ in 0..l.num_elem() {
+                        res.push(only_l(&clhs[0],em)?);
+                        clhs = &clhs[1..];
+                    }
+                    pos_l+=1;
+                },
+                Ordering::Greater => {
+                    for _ in 0..r.num_elem() {
+                        res.push(only_r(&crhs[0],em)?);
+                        crhs = &crhs[1..];
+                    }
+                    pos_r+=1;
+                }
+            }
+        }
+        Ok((clhs,crhs))
+    }
 }
 
 impl<K : Ord + Clone + 'static,T : Composite + Clone> Composite for BTreeMap<K,T> {
@@ -372,17 +385,23 @@ impl<K : Ord + Clone + 'static,T : Composite + Clone> Composite for BTreeMap<K,T
         }
         Some(res)
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,oth: &BTreeMap<K,T>,
-                                     comb: &FComb,onlyl: &FL,onlyr: &FR,
-                                     acc: Acc,
-                                     offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
-        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &BTreeMap<K,T>,
+                                                  lhs: &'a[Em::Expr],
+                                                  rhs: &'b[Em::Expr],
+                                                  res: &mut Vec<Em::Expr>,
+                                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                                  em: &mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
 
-        let mut cacc = acc;
         let mut iter_l = self.iter();
         let mut iter_r = oth.iter();
-        let mut cur_l = None;
+        let mut cur_l : Option<(&K,&T)> = None;
         let mut cur_r : Option<(&K,&T)> = None;
+        let mut clhs = lhs;
+        let mut crhs = rhs;
 
         loop {
             let (key_l,el_l) = match cur_l {
@@ -391,19 +410,17 @@ impl<K : Ord + Clone + 'static,T : Composite + Clone> Composite for BTreeMap<K,T
                         match cur_r {
                             None => {},
                             Some((_,el)) => for _ in 0..el.num_elem() {
-                                cacc = onlyr(cacc,*offr,*offn);
-                                *offr+=1;
-                                *offn+=1;
+                                res.push(only_r(&crhs[0],em)?);
+                                crhs = &crhs[1..];
                             }
                         }
                         for (_,el) in iter_r {
                             for _ in 0..el.num_elem() {
-                                cacc = onlyr(cacc,*offr,*offn);
-                                *offr+=1;
-                                *offn+=1;
+                                res.push(only_r(&crhs[0],em)?);
+                                crhs = &crhs[1..];
                             }
                         }
-                        return cacc
+                        return Ok((clhs,crhs))
                     },
                     Some(el) => el
                 },
@@ -413,18 +430,16 @@ impl<K : Ord + Clone + 'static,T : Composite + Clone> Composite for BTreeMap<K,T
                 None => match iter_r.next() {
                     None => {
                         for _ in 0..el_l.num_elem() {
-                            cacc = onlyl(cacc,*offl,*offn);
-                            *offl+=1;
-                            *offn+=1;
+                            res.push(only_l(&clhs[0],em)?);
+                            clhs = &clhs[1..];
                         }
                         for (_,el) in iter_l {
                             for _ in 0..el.num_elem() {
-                                cacc = onlyl(cacc,*offl,*offn);
-                                *offl+=1;
-                                *offn+=1;
+                                res.push(only_l(&clhs[0],em)?);
+                                clhs = &clhs[1..];
                             }
                         }
-                        return cacc
+                        return Ok((clhs,crhs))
                     },
                     Some(el) => el
                 },
@@ -432,24 +447,24 @@ impl<K : Ord + Clone + 'static,T : Composite + Clone> Composite for BTreeMap<K,T
             };
             match key_l.cmp(key_r) {
                 Ordering::Equal => {
-                    cacc = el_l.combine_elem(el_r,comb,onlyl,onlyr,cacc,offl,offr,offn);
+                    let (nlhs,nrhs) = el_l.combine_elem(el_r,clhs,crhs,res,comb,only_l,only_r,em)?;
+                    clhs = nlhs;
+                    crhs = nrhs;
                     cur_l = None;
                     cur_r = None;
                 },
                 Ordering::Less => {
                     for _ in 0..el_l.num_elem() {
-                        cacc = onlyl(cacc,*offl,*offn);
-                        *offl+=1;
-                        *offn+=1;
+                        res.push(only_l(&clhs[0],em)?);
+                        clhs = &clhs[1..];
                     }
                     cur_l = None;
                     cur_r = Some((key_r,el_r));
                 },
                 Ordering::Greater => {
                     for _ in 0..el_r.num_elem() {
-                        cacc = onlyr(cacc,*offr,*offn);
-                        *offr+=1;
-                        *offn+=1;
+                        res.push(only_r(&crhs[0],em)?);
+                        crhs = &crhs[1..];
                     }
                     cur_l = Some((key_l,el_r));
                     cur_r = None;
@@ -494,35 +509,39 @@ impl<T : Composite + Clone> Composite for Option<T> {
             }
         }
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,oth: &Option<T>,
-                                     comb: &FComb,onlyl: &FL,onlyr: &FR,
-                                     acc: Acc,offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
-        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &Option<T>,
+                                                  lhs: &'a[Em::Expr],
+                                                  rhs: &'b[Em::Expr],
+                                                  res: &mut Vec<Em::Expr>,
+                                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                                  em: &mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
 
         match *self {
             None => match *oth {
-                None => acc,
+                None => Ok((lhs,rhs)),
                 Some(ref el) => {
-                    let mut cacc = acc;
+                    let mut clhs = lhs;
                     for _ in 0..el.num_elem() {
-                        cacc = onlyr(cacc,*offr,*offn);
-                        *offr+=1;
-                        *offl+=1;
+                        res.push(only_r(&clhs[0],em)?);
+                        clhs = &clhs[1..];
                     }
-                    cacc
+                    Ok((clhs,rhs))
                 }
             },
             Some(ref el1) => match *oth {
                 None => {
-                    let mut cacc = acc;
+                    let mut crhs = rhs;
                     for _ in 0..el1.num_elem() {
-                        cacc = onlyl(cacc,*offl,*offn);
-                        *offl+=1;
-                        *offr+=1;
+                        res.push(only_l(&rhs[0],em)?);
+                        crhs = &crhs[1..];
                     }
-                    cacc
+                    Ok((lhs,crhs))
                 },
-                Some(ref el2) => el1.combine_elem(el2,comb,onlyl,onlyr,acc,offl,offr,offn)
+                Some(ref el2) => el1.combine_elem(el2,lhs,rhs,res,comb,only_l,only_r,em)
             }
         }
     }
@@ -565,12 +584,17 @@ impl<Idx : Composite + Eq + Clone,T : Composite> Composite for Array<Idx,T> {
                                       element: nel })
         }
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,oth: &Array<Idx,T>,
-                                     comb: &FComb,onlyl: &FL,onlyr: &FR,
-                                     acc: Acc,offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
-        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
-        self.element.combine_elem(&oth.element,comb,onlyl,onlyr,
-                                  acc,offl,offr,offn)
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &Array<Idx,T>,
+                                                  lhs: &'a[Em::Expr],
+                                                  rhs: &'b[Em::Expr],
+                                                  res: &mut Vec<Em::Expr>,
+                                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                                  em: &mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+        self.element.combine_elem(&oth.element,lhs,rhs,res,comb,only_l,only_r,em)
     }
     // FIXME: Forall invariants
 }
@@ -584,13 +608,18 @@ impl Composite for () {
     fn combine(&self,_:&()) -> Option<()> {
         Some(())
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,_:&(),_:&FComb,_:&FL,_:&FR,
-                                     acc:Acc,_:&mut usize,_:&mut usize,_:&mut usize)
-                                     -> Acc
-        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
-        acc
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,_: &(),
+                                                  lhs: &'a[Em::Expr],
+                                                  rhs: &'b[Em::Expr],
+                                                  _: &mut Vec<Em::Expr>,
+                                                  _: &FComb,_: &FL,_: &FR,
+                                                  _: &mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+        Ok((lhs,rhs))
     }
-        
 }
 
 impl<A : Composite,B : Composite> Composite for (A,B) {
@@ -615,14 +644,18 @@ impl<A : Composite,B : Composite> Composite for (A,B) {
             }
         }
     }
-    fn combine_elem<FComb,FL,FR,Acc>(&self,oth: &(A,B),
-                                     comb: &FComb,onlyl: &FL,onlyr: &FR,
-                                     acc: Acc,offl: &mut usize,offr: &mut usize,offn: &mut usize) -> Acc
-        where FComb : Fn(Acc,usize,usize,usize) -> Acc, FL : Fn(Acc,usize,usize) -> Acc, FR : Fn(Acc,usize,usize) -> Acc {
-        let acc1 = self.0.combine_elem(&oth.0,comb,onlyl,onlyr,
-                                       acc,offl,offr,offn);
-        self.1.combine_elem(&oth.1,comb,onlyl,onlyr,
-                            acc1,offl,offr,offn)
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &(A,B),
+                                                  lhs: &'a[Em::Expr],
+                                                  rhs: &'b[Em::Expr],
+                                                  res: &mut Vec<Em::Expr>,
+                                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                                  em: &mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+        let (lhs1,rhs1) = self.0.combine_elem(&oth.0,lhs,rhs,res,comb,only_l,only_r,em)?;
+        self.1.combine_elem(&oth.1,lhs1,rhs1,res,comb,only_l,only_r,em)
     }
     fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
@@ -632,22 +665,6 @@ impl<A : Composite,B : Composite> Composite for (A,B) {
         self.1.invariant(em,f,off,res)
     }
 
-}
-
-pub trait GetElem<Em : Embed> {
-    fn get_elem(&self,usize,&mut Em) -> Result<Em::Expr,Em::Error>;
-}
-
-pub struct OffsetGetter<Em : Embed> {
-    offset: usize,
-    getter: Box<GetElem<Em>>,
-}
-
-impl<Em : Embed> GetElem<Em> for OffsetGetter<Em> {
-    fn get_elem(&self,n: usize,em: &mut Em)
-                -> Result<Em::Expr,Em::Error> {
-        self.getter.get_elem(n+self.offset,em)
-    }
 }
 
 pub enum OptRef<'a,T : 'a> {
