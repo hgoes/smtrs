@@ -2,14 +2,14 @@ use expr::{Expr,Function};
 use types::{Sort,Value};
 use composite::*;
 
-trait Domain<T : Composite> {
+pub trait Domain<T : Composite> {
     fn full(&T) -> Self;
     fn is_full(&self) -> bool;
     fn union(&mut self,&Self) -> ();
     fn intersection(&mut self,&Self) -> bool;
 }
 
-trait Attribute : Sized + Clone {
+pub trait Attribute : Sized + Clone {
     fn full() -> Self;
     fn is_full(&self) -> bool;
     fn union(&self,&Self) -> Self;
@@ -18,7 +18,7 @@ trait Attribute : Sized + Clone {
     fn refine<T : Composite>(&CompExpr<T>,&mut Vec<Self>) -> bool;
 }
 
-struct AttributeDomain<Attr : Attribute> {
+pub struct AttributeDomain<Attr : Attribute> {
     attrs: Vec<Attr>
 }
 
@@ -167,3 +167,58 @@ impl Attribute for Const {
     }
 }
 
+impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
+    fn full(obj: &T) -> (D1,D2) {
+        let d1 = D1::full(obj);
+        let d2 = D2::full(obj);
+        (d1,d2)
+    }
+    fn is_full(&self) -> bool {
+        self.0.is_full() &&
+            self.1.is_full()
+    }
+    fn union(&mut self,oth: &(D1,D2)) -> () {
+        self.0.union(&oth.0);
+        self.1.union(&oth.1);
+    }
+    fn intersection(&mut self,oth: &(D1,D2)) -> bool {
+        if !self.0.intersection(&oth.0) {
+            return false
+        }
+        if !self.1.intersection(&oth.1) {
+            return false
+        }
+        true
+    }
+}
+
+impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>,D3 : Domain<T>> Domain<T> for (D1,D2,D3) {
+    fn full(obj: &T) -> (D1,D2,D3) {
+        let d1 = D1::full(obj);
+        let d2 = D2::full(obj);
+        let d3 = D3::full(obj);
+        (d1,d2,d3)
+    }
+    fn is_full(&self) -> bool {
+        self.0.is_full() &&
+            self.1.is_full() &&
+            self.2.is_full()
+    }
+    fn union(&mut self,oth: &(D1,D2,D3)) -> () {
+        self.0.union(&oth.0);
+        self.1.union(&oth.1);
+        self.2.union(&oth.2);
+    }
+    fn intersection(&mut self,oth: &(D1,D2,D3)) -> bool {
+        if !self.0.intersection(&oth.0) {
+            return false
+        }
+        if !self.1.intersection(&oth.1) {
+            return false
+        }
+        if !self.2.intersection(&oth.2) {
+            return false
+        }
+        true
+    }
+}
