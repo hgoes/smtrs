@@ -1,5 +1,7 @@
 use types::*;
 use expr::{Expr,Function};
+use num_bigint::BigInt;
+use num_rational::Ratio;
 use std::fmt::Debug;
 
 pub trait Embed : Sized {
@@ -50,7 +52,22 @@ pub trait Embed : Sized {
                 -> Result<Self::Sort,Self::Error> {
         self.embed_sort(SortKind::Array(idx,el))
     }
-
+    fn const_bool(&mut self,val: bool)
+                  -> Result<Self::Expr,Self::Error> {
+        self.embed(Expr::Const(Value::Bool(val)))
+    }
+    fn const_int(&mut self,val: BigInt)
+                  -> Result<Self::Expr,Self::Error> {
+        self.embed(Expr::Const(Value::Int(val)))
+    }
+    fn const_real(&mut self,val: Ratio<BigInt>)
+                  -> Result<Self::Expr,Self::Error> {
+        self.embed(Expr::Const(Value::Real(val)))
+    }
+    fn const_bitvec(&mut self,bw: usize,val: BigInt)
+                    -> Result<Self::Expr,Self::Error> {
+        self.embed(Expr::Const(Value::BitVec(bw,val)))
+    }
     fn eq(&mut self,e1: Self::Expr,e2: Self::Expr)
           -> Result<Self::Expr,Self::Error> {
         let tp1 = self.type_of(&e1)?;
