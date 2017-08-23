@@ -724,6 +724,9 @@ impl<'a,T : 'a> BorrowedSlice<'a,T> {
 }
 
 impl<Em : Embed> Transformation<Em> {
+    pub fn constant(els: Vec<Em::Expr>) -> Rc<Transformation<Em>> {
+        Rc::new(Transformation::Constant(els))
+    }
     pub fn view(off: usize,len: usize,t: Rc<Transformation<Em>>) -> Rc<Transformation<Em>> {
         if len==0 {
             Rc::new(Transformation::Id(0))
