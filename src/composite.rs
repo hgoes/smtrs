@@ -395,7 +395,7 @@ impl<T : Composite + Ord + Clone> Composite for Choice<T> {
     }
 }
 
-impl<K : Ord + Clone + Hash + 'static,T : Composite + Clone> Composite for BTreeMap<K,T> {
+impl<K : Ord + Clone + Hash,T : Composite + Clone> Composite for BTreeMap<K,T> {
     fn num_elem(&self) -> usize {
         let mut acc = 0;
         for v in self.values() {
