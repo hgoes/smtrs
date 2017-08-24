@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::cell;
 use std::cell::RefCell;
 
-pub trait Composite : Sized + 'static {
+pub trait Composite : Sized {
 
     fn num_elem(&self) -> usize;
     fn elem_sort<Em : Embed>(&self,usize,&mut Em)
@@ -916,36 +916,6 @@ impl<Em : Embed> Transformation<Em> {
     }
 }
 
-pub trait Transition<Src : Composite,Trg : Composite> {
-
-    fn apply<'a,Em : 'static + Embed>
-        (&self,OptRef<'a,Src>,Rc<Transformation<Em>>,&mut Em)
-         -> Result<(OptRef<'a,Trg>,
-                    Rc<Transformation<Em>>),Em::Error>;
-}
-
-pub struct Seq<A : Composite,B : Composite,C : Composite,
-               T1 : Transition<A,B>,
-               T2 : Transition<B,C>> {
-    t1: T1,
-    t2: T2,
-    phantom: PhantomData<(A,B,C)>,
-}
-
-impl<A : Composite, B : Composite, C : Composite,
-     T1 : Transition<A,B>,
-     T2 : Transition<B,C>
-     > Transition<A,C> for Seq<A,B,C,T1,T2> {
-
-    fn apply<'a,Em : 'static + Embed>(&self,a: OptRef<'a,A>,
-                                      get_a: Rc<Transformation<Em>>,em: &mut Em)
-                                      -> Result<(OptRef<'a,C>,
-                                                 Rc<Transformation<Em>>),Em::Error> {
-        let (b,get_b) = self.t1.apply(a,get_a,em)?;
-        self.t2.apply(b,get_b,em)
-    }
-}
-
 pub fn get_vec_elem<'a,T,Em>(pos: usize,vec: OptRef<'a,Vec<T>>,inp: Transf<Em>) -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>
     where T : Composite + Clone, Em : Embed {
     let mut off = 0;
@@ -958,23 +928,6 @@ pub fn get_vec_elem<'a,T,Em>(pos: usize,vec: OptRef<'a,Vec<T>>,inp: Transf<Em>) 
         OptRef::Owned(mut rvec) => OptRef::Owned(rvec.remove(pos))
     };
     Ok((rvec,Transformation::view(off,len as usize,inp)))
-}
-
-pub struct GetVecElem {
-    which: usize
-}
-
-impl<T : Composite + Clone> Transition<Vec<T>,T> for GetVecElem {
-
-    fn apply<'a,Em : 'static + Embed>(&self,vec: OptRef<'a,Vec<T>>,
-                                      inp: Rc<Transformation<Em>>,_: &mut Em)
-                                      -> Result<(OptRef<'a,T>,Rc<Transformation<Em>>),Em::Error> {
-        get_vec_elem(self.which,vec,inp)
-    }
-}
-
-pub struct SetVecElem {
-    which: usize
 }
 
 pub fn set_vec_elem<'a,T,Em>(pos: usize,
@@ -999,53 +952,11 @@ pub fn set_vec_elem<'a,T,Em>(pos: usize,
                                                       vlen-off_store-old,inp_vec)])))
 }
 
-impl<T : Composite + Clone> Transition<(Vec<T>,T),Vec<T>> for SetVecElem {
-
-    fn apply<'a,Em : 'static + Embed>(&self,args: OptRef<'a,(Vec<T>,T)>,
-                                      inp: Rc<Transformation<Em>>,_:&mut Em)
-                                      -> Result<(OptRef<'a,Vec<T>>,Rc<Transformation<Em>>),Em::Error> {
-        match args {
-            OptRef::Ref(&(ref vec,ref el)) => {
-                let vlen = vec.num_elem();
-                let mut off_store = 0;
-                for el in vec.iter().take(self.which) {
-                    off_store+=el.num_elem();
-                }
-                let old = vec[self.which].num_elem();
-                let new = el.num_elem();
-                let mut rvec = vec.clone();
-                rvec[self.which] = el.clone();
-                Ok((OptRef::Owned(rvec),
-                    Transformation::concat(&[Transformation::view(0,off_store,inp.clone()),
-                                             Transformation::view(vlen,new,inp.clone()),
-                                             Transformation::view(off_store+old,
-                                                                  vlen-off_store-old,inp)])))
-            },
-            OptRef::Owned((mut vec,el)) => {
-                let vlen = vec.num_elem();
-                let mut off_store = 0;
-                for el in vec.iter().take(self.which) {
-                    off_store+=el.num_elem();
-                }
-                let old = vec[self.which].num_elem();
-                let new = el.num_elem();
-                vec[self.which] = el;
-                Ok((OptRef::Owned(vec),
-                    Transformation::concat(&[Transformation::view(0,off_store,inp.clone()),
-                                             Transformation::view(vlen,new,inp.clone()),
-                                             Transformation::view(off_store+old,
-                                                                  vlen-off_store-old,inp)])))
-            }
-        }
-    }
-}
-
-fn get_array_elem<'a,Idx,T,Em>(arr: OptRef<'a,Array<Idx,T>>,
-                               inp_arr: Transf<Em>,
-                               inp_idx: Transf<Em>) -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>
+pub fn get_array_elem<'a,Idx,T,Em>(arr: OptRef<'a,Array<Idx,T>>,
+                                   inp_arr: Transf<Em>,
+                                   inp_idx: Transf<Em>) -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>
     where Idx : Composite, T : Composite, Em : 'static + Embed {
 
-    let off_idx = arr.as_ref().element.num_elem();
     let num_idx = arr.as_ref().index.num_elem();
     let fun = move |carr: &[Em::Expr],_: usize,e: Em::Expr,em: &mut Em| -> Result<Em::Expr,Em::Error> {
         let mut rvec = Vec::with_capacity(num_idx);
@@ -1061,50 +972,4 @@ fn get_array_elem<'a,Idx,T,Em>(arr: OptRef<'a,Array<Idx,T>>,
         OptRef::Ref(rarr) => OptRef::Ref(&rarr.element)
     };
     Ok((res,mp))
-}
-
-pub struct GetArrayElem {}
-
-impl<Idx : Composite + Eq + Clone, T : Composite
-     > Transition<(Array<Idx,T>,Idx),T> for GetArrayElem {
-    fn apply<'a,Em : 'static + Embed>(&self,args: OptRef<'a,(Array<Idx,T>,Idx)>,
-                                      inp: Rc<Transformation<Em>>,_: &mut Em)
-                                      -> Result<(OptRef<'a,T>,Rc<Transformation<Em>>),Em::Error> {
-        match args {
-            OptRef::Owned((arr,idx)) => {
-                assert!(arr.index==idx);
-                let off_idx = arr.element.num_elem();
-                let num_idx = idx.num_elem();
-                let arr_elems = Transformation::view(0,off_idx,inp.clone());
-                let fun = move |carr: &[Em::Expr],_: usize,e: Em::Expr,em: &mut Em| -> Result<Em::Expr,Em::Error> {
-                    let mut rvec = Vec::with_capacity(num_idx);
-                    for i in 0..num_idx {
-                        let idx_el = inp.get(carr,off_idx+i,em)?;
-                        rvec.push(idx_el);
-                    }
-                    em.select(e,rvec)
-                };
-                let mp = Rc::new(Transformation::MapByElem(Box::new(fun),arr_elems));
-                Ok((OptRef::Owned(arr.element),mp))
-            },
-            OptRef::Ref(&(ref arr,ref idx)) => {
-                assert!(arr.index==*idx);
-                let off_idx = arr.element.num_elem();
-                let num_idx = idx.num_elem();
-                let arr_elems = Transformation::view(0,off_idx,inp.clone());
-                let fun = move |carr: &[Em::Expr],_: usize,e: Em::Expr,em: &mut Em| -> Result<Em::Expr,Em::Error> {
-                    let mut rvec = Vec::with_capacity(num_idx);
-                    for i in 0..num_idx {
-                        let idx_el = inp.get(carr,off_idx+i,em)?;
-                        rvec.push(idx_el);
-                    }
-                    em.select(e,rvec)
-                };
-                let mp = Rc::new(Transformation::MapByElem(Box::new(fun),arr_elems));
-                Ok((OptRef::Ref(&arr.element),mp))
-            }
-        }
-        
-    }
-        
 }
