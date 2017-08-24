@@ -2,6 +2,7 @@ use expr;
 use types;
 use types::{SortKind};
 use embed::Embed;
+use unique::{Uniquer,UniqueRef};
 use std::cmp::{Ordering,min,max};
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -9,8 +10,10 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::cell;
 use std::cell::RefCell;
+use std::hash::Hash;
+use std::fmt::Debug;
 
-pub trait Composite : Sized {
+pub trait Composite : Sized + Eq + Hash {
 
     fn num_elem(&self) -> usize;
     fn elem_sort<Em : Embed>(&self,usize,&mut Em)
@@ -33,11 +36,50 @@ pub trait Composite : Sized {
     }
 }
 
-pub struct CompExpr<C : Composite> {
-    pub expr: Box<expr::Expr<types::Sort,u64,CompExpr<C>,()>>,
-    phantom: PhantomData<C>
+#[derive(PartialEq,Eq,Hash,Clone,Debug)]
+pub struct CompExpr<C : Composite>(pub UniqueRef<expr::Expr<types::Sort,usize,CompExpr<C>,()>>);
+
+pub struct Comp<'a,C : Composite + 'a> {
+    referenced: &'a C,
+    exprs: Uniquer<expr::Expr<types::Sort,usize,CompExpr<C>,()>>
 }
 
+impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
+    type Sort = types::Sort;
+    type Var = usize;
+    type Expr = CompExpr<C>;
+    type Fun = ();
+    type Error = ();
+    fn embed_sort(&mut self,tp: SortKind<types::Sort>)
+                  -> Result<types::Sort,()> {
+        Ok(types::Sort::from_kind(tp))
+    }
+    fn unbed_sort(&mut self,tp: &types::Sort) -> Result<SortKind<types::Sort>,()> {
+        Ok(tp.kind())
+    }
+    fn embed(&mut self,e: expr::Expr<types::Sort,usize,CompExpr<C>,()>)
+             -> Result<CompExpr<C>,()> {
+        Ok(CompExpr(self.exprs.get(e)))
+    }
+    fn unbed(&mut self,e: &CompExpr<C>)
+             -> Result<expr::Expr<types::Sort,usize,CompExpr<C>,()>,()> {
+        Ok((*e.0).clone())
+    }
+    fn type_of_var(&mut self,var: &usize) -> Result<types::Sort,()> {
+        self.referenced.elem_sort(*var,self)
+    }
+    fn type_of_fun(&mut self,_:&()) -> Result<types::Sort,()> {
+        panic!("Composite expressions don't have functions")
+    }
+    fn arity(&mut self,_:&()) -> Result<usize,()> {
+        panic!("Composite expressions don't have functions")
+    }
+    fn type_of_arg(&mut self,_:&(),_:usize) -> Result<types::Sort,()> {
+        panic!("Composite expressions don't have functions")
+    }
+}
+
+#[derive(PartialEq,Eq,Hash)]
 pub struct Singleton(types::Sort);
 
 impl Composite for Singleton {
@@ -69,6 +111,7 @@ impl Composite for Singleton {
     }
 }
 
+#[derive(PartialEq,Eq,Hash)]
 pub struct SingletonBool {}
 
 pub static BOOL_SINGLETON : SingletonBool = SingletonBool {};
@@ -193,6 +236,7 @@ impl<T : Composite + Clone> Composite for Vec<T> {
     }
 }
 
+#[derive(PartialEq,Eq,Hash)]
 pub struct Choice<T>(Vec<T>);
 
 impl<T : Composite + Ord + Clone> Composite for Choice<T> {
@@ -352,7 +396,7 @@ impl<T : Composite + Ord + Clone> Composite for Choice<T> {
     }
 }
 
-impl<K : Ord + Clone + 'static,T : Composite + Clone> Composite for BTreeMap<K,T> {
+impl<K : Ord + Clone + Hash + 'static,T : Composite + Clone> Composite for BTreeMap<K,T> {
     fn num_elem(&self) -> usize {
         let mut acc = 0;
         for v in self.values() {
@@ -555,6 +599,7 @@ impl<T : Composite + Clone> Composite for Option<T> {
     }
 }
 
+#[derive(PartialEq,Eq,Hash)]
 pub struct Array<Idx : Composite,T : Composite> {
     index: Idx,
     element: T

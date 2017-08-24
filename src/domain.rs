@@ -110,7 +110,7 @@ impl Attribute for Const {
         }
     }
     fn refine<T : Composite>(e: &CompExpr<T>,mp: &mut Vec<Const>) -> bool {
-        match *e.expr {
+        match *e.0 {
             Expr::Const(Value::Bool(v)) => v,
             Expr::Var(ref v) => match mp[*v as usize] {
                 Const::IsConst(Value::Bool(false))
@@ -119,7 +119,7 @@ impl Attribute for Const {
                        true }
             },
             Expr::App(ref fun,ref args) => match *fun {
-                Function::Not => match *args[0].expr {
+                Function::Not => match *args[0].0 {
                     Expr::Var(ref v) => match mp[*v as usize] {
                         Const::IsConst(Value::Bool(false))
                             => false,

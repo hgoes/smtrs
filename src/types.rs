@@ -24,7 +24,17 @@ pub enum Value {
 }
 
 #[derive(Clone,Debug,PartialEq,Eq,Hash)]
-pub struct Sort(pub Box<SortKind<Sort>>);
+pub struct Sort(SortKind<Box<Sort>>);
+
+impl Sort {
+    pub fn from_kind(tp: SortKind<Sort>) -> Sort {
+        let ntp = tp.consume(Box::new);
+        Sort(ntp)
+    }
+    pub fn kind(&self) -> SortKind<Sort> {
+        self.0.map(|b| (**b).clone())
+    }
+}
 
 impl Value {
     pub fn sort<E : Embed>(&self,em: &mut E) -> Result<E::Sort,E::Error> {
@@ -49,7 +59,22 @@ impl<T> SortKind<T> {
                 for e in arr.iter() {
                     narr.push(f(e))
                 }
-                SortKind::Array(narr,f(&el))
+                SortKind::Array(narr,f(el))
+            }
+        }
+    }
+    pub fn consume<U,F : Fn(T) -> U>(self,f: F) -> SortKind<U> {
+        match self {
+            SortKind::Bool => SortKind::Bool,
+            SortKind::Int => SortKind::Int,
+            SortKind::Real => SortKind::Real,
+            SortKind::BitVec(sz) => SortKind::BitVec(sz),
+            SortKind::Array(mut arr,el) => {
+                let mut narr = Vec::with_capacity(arr.len());
+                for e in arr.drain(0..) {
+                    narr.push(f(e))
+                }
+                SortKind::Array(narr,f(el))
             }
         }
     }
@@ -92,7 +117,7 @@ impl Display for Value {
 impl Sort {
     pub fn embed<Em : Embed>(&self,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
-        match *self.0 {
+        match self.0 {
             SortKind::Bool => em.embed_sort(SortKind::Bool),
             SortKind::Int => em.embed_sort(SortKind::Int),
             SortKind::Real => em.embed_sort(SortKind::Real),
