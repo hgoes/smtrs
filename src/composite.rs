@@ -6,7 +6,6 @@ use unique::{Uniquer,UniqueRef};
 use std::cmp::{Ordering,min,max};
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
-use std::marker::PhantomData;
 use std::rc::Rc;
 use std::cell;
 use std::cell::RefCell;
@@ -747,6 +746,12 @@ pub enum Transformation<Em : Embed> {
         Rc<Transformation<Em>>, // transformation
         RefCell<Option<Vec<Em::Expr>>> // cache
     ),
+    Zip2(usize,
+         Box<Fn(&[Em::Expr],&[Em::Expr],&mut Em) -> Vec<Em::Expr>>,
+         Rc<Transformation<Em>>,
+         Rc<Transformation<Em>>,
+         RefCell<Option<Vec<Em::Expr>>>
+    ),
     Write(usize, // Resulting size
           usize, // Write offset
           usize, // Previous size
@@ -837,6 +842,7 @@ impl<Em : Embed> Transformation<Em> {
             Transformation::Concat(sz,_) => sz,
             Transformation::Constant(ref vec) => vec.len(),
             Transformation::Map(sz,_,_,_) => sz,
+            Transformation::Zip2(sz,_,_,_,_) => sz,
             Transformation::Write(sz,_,_,_,_) => sz,
             Transformation::MapByElem(_,ref tr) => tr.size()
         }
@@ -851,6 +857,11 @@ impl<Em : Embed> Transformation<Em> {
             Transformation::Constant(_) => (),
             Transformation::Map(_,_,ref tr,ref cache) => {
                 tr.clear_cache();
+                *cache.borrow_mut() = None;
+            },
+            Transformation::Zip2(_,_,ref tr1,ref tr2,ref cache) => {
+                tr1.clear_cache();
+                tr2.clear_cache();
                 *cache.borrow_mut() = None;
             },
             Transformation::Write(_,_,_,ref obj,ref trg) => {
@@ -882,6 +893,19 @@ impl<Em : Embed> Transformation<Em> {
             },
             Transformation::Constant(ref vec) => Some(BorrowedSlice::BorrowedSlice(&vec[off..off+len])),
             Transformation::Map(_,_,_,ref cache) => {
+                let cache_ref : cell::Ref<Option<Vec<Em::Expr>>> = cache.borrow();
+                match *cache_ref {
+                    None => None,
+                    Some(_) => {
+                        let vec_ref : cell::Ref<Vec<Em::Expr>> = cell::Ref::map(cache_ref,|x| match x {
+                            &Some(ref x) => x,
+                            &None => unreachable!()
+                        });
+                        Some(BorrowedSlice::CachedSlice(vec_ref,off,off+len))
+                    }
+                }
+            },
+            Transformation::Zip2(_,_,_,_,ref cache) => {
                 let cache_ref : cell::Ref<Option<Vec<Em::Expr>>> = cache.borrow();
                 match *cache_ref {
                     None => None,
@@ -944,6 +968,19 @@ impl<Em : Embed> Transformation<Em> {
                 }
                 let sl = tr.to_slice(arr,0,arr.len(),em)?;
                 let narr = f(sl.get(),em);
+                let res = narr[idx].clone();
+                *cache_ref = Some(narr);
+                return Ok(res)
+            },
+            Transformation::Zip2(_,ref f,ref tr1,ref tr2,ref cache) => {
+                let mut cache_ref : cell::RefMut<Option<Vec<Em::Expr>>> = (*cache).borrow_mut();
+                match *cache_ref {
+                    Some(ref rcache) => return Ok(rcache[idx].clone()),
+                    None => {}
+                }
+                let sl1 = tr1.to_slice(arr,0,arr.len(),em)?;
+                let sl2 = tr2.to_slice(arr,0,arr.len(),em)?;
+                let narr = f(sl1.get(),sl2.get(),em);
                 let res = narr[idx].clone();
                 *cache_ref = Some(narr);
                 return Ok(res)
