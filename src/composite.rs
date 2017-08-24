@@ -1077,7 +1077,7 @@ pub fn get_array_elem<'a,Idx,T,Em>(arr: OptRef<'a,Array<Idx,T>>,
     Ok((res,mp))
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
 pub struct Data<T>(pub T);
 
 impl<T : Eq + Hash + Clone> Composite for Data<T> {
