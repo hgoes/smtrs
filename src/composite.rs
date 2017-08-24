@@ -1025,7 +1025,7 @@ pub fn set_vec_elem<'a,T,Em>(pos: usize,
                              vec: OptRef<'a,Vec<T>>,
                              el: OptRef<'a,T>,
                              inp_vec: Transf<Em>,
-                             inp_el: Transf<Em>) -> Result<(OptRef<'a,Vec<T>>,Rc<Transformation<Em>>),Em::Error>
+                             inp_el: Transf<Em>) -> Result<(OptRef<'a,Vec<T>>,Transf<Em>),Em::Error>
     where T : Composite + Clone, Em : Embed {
 
     let vlen = vec.as_ref().num_elem();
@@ -1041,6 +1041,18 @@ pub fn set_vec_elem<'a,T,Em>(pos: usize,
                                  inp_el,
                                  Transformation::view(off_store+old,
                                                       vlen-off_store-old,inp_vec)])))
+}
+
+pub fn push_vec_elem<'a,T,Em>(vec: OptRef<'a,Vec<T>>,
+                              el: OptRef<'a,T>,
+                              inp_vec: Transf<Em>,
+                              inp_el: Transf<Em>) -> Result<(OptRef<'a,Vec<T>>,Transf<Em>),Em::Error>
+    where T : Composite + Clone, Em : Embed {
+
+    let mut rvec = vec.as_obj();
+    rvec.push(el.as_obj());
+    Ok((OptRef::Owned(rvec),
+        Transformation::concat(&[inp_vec,inp_el])))
 }
 
 pub fn get_array_elem<'a,Idx,T,Em>(arr: OptRef<'a,Array<Idx,T>>,
@@ -1063,4 +1075,72 @@ pub fn get_array_elem<'a,Idx,T,Em>(arr: OptRef<'a,Array<Idx,T>>,
         OptRef::Ref(rarr) => OptRef::Ref(&rarr.element)
     };
     Ok((res,mp))
+}
+
+#[derive(PartialEq,Eq,Hash,Debug)]
+pub struct Data<T>(pub T);
+
+impl<T : Eq + Hash + Clone> Composite for Data<T> {
+    fn num_elem(&self) -> usize { 0 }
+    fn elem_sort<Em : Embed>(&self,_:usize,_:&mut Em)
+                             -> Result<Em::Sort,Em::Error> {
+        panic!("Cannot get sort of Data")
+    }
+    fn combine(&self,oth: &Data<T>) -> Option<Data<T>> {
+        if self.0==oth.0 {
+            Some(Data(self.0.clone()))
+        } else {
+            None
+        }
+    }
+    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,_:&Self,
+                                                  lhs:&'a[Em::Expr],rhs:&'b[Em::Expr],
+                                                  _:&mut Vec<Em::Expr>,
+                                                  _:&FComb,_:&FL,_:&FR,_:&mut Em)
+                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
+        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+
+        Ok((lhs,rhs))
+    }
+}
+
+pub trait Pool<T : Composite,Em : Embed> : Composite {
+    type PoolIndex : Composite;
+    fn empty<'a>(OptRef<'a,T>,Transf<Em>,&mut Em) -> Result<(OptRef<'a,Self>,Transf<Em>),Em::Error>;
+    fn alloc<'a,F>(&F,OptRef<'a,T>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
+                   -> Result<(OptRef<'a,Self::PoolIndex>,OptRef<'a,Self>,Transf<Em>,Transf<Em>),Em::Error>
+        where F : Fn(&T,Transf<Em>) -> bool;
+    fn index<'a>(OptRef<'a,Self::PoolIndex>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
+                 -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>;
+}
+
+impl<T : Composite + Clone,Em : Embed> Pool<T,Em> for Vec<T> {
+    type PoolIndex = Data<usize>;
+    fn empty<'a>(_:OptRef<'a,T>,_:Transf<Em>,_:&mut Em) -> Result<(OptRef<'a,Vec<T>>,Transf<Em>),Em::Error> {
+        Ok((OptRef::Owned(Vec::new()),Transformation::constant(Vec::new())))
+    }
+    fn alloc<'a,F>(is_free:&F,el: OptRef<'a,T>,vec: OptRef<'a,Vec<T>>,inp_el: Transf<Em>,inp_vec: Transf<Em>)
+                   -> Result<(OptRef<'a,Data<usize>>,OptRef<'a,Vec<T>>,Transf<Em>,Transf<Em>),Em::Error>
+        where F : Fn(&T,Transf<Em>) -> bool {
+
+        let len = vec.as_ref().len();
+        for i in 0..len {
+            let can_use = {
+                let (cel,cinp) = get_vec_elem(i,OptRef::Ref(vec.as_ref()),inp_vec.clone())?;
+                is_free(cel.as_ref(),cinp)
+            };
+            if can_use {
+                let (nvec,ninp_vec) = set_vec_elem(i,vec,el,inp_vec,inp_el)?;
+                return Ok((OptRef::Owned(Data(i)),nvec,Transformation::constant(vec![]),ninp_vec))
+            }
+        }
+        let (nvec,ninp_vec) = push_vec_elem(vec,el,inp_vec,inp_el)?;
+        Ok((OptRef::Owned(Data(len)),nvec,Transformation::constant(vec![]),ninp_vec))
+    }
+    fn index<'a>(idx: OptRef<'a,Data<usize>>,vec: OptRef<'a,Vec<T>>,_:Transf<Em>,inp_vec: Transf<Em>)
+                 -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error> {
+        get_vec_elem(idx.as_ref().0,vec,inp_vec)
+    }
 }
