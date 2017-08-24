@@ -835,6 +835,13 @@ impl<Em : Embed> Transformation<Em> {
         }
         Rc::new(Transformation::Concat(sz,rvec))
     }
+    pub fn zip2(sz: usize,
+                f: Box<Fn(&[Em::Expr],&[Em::Expr],&mut Vec<Em::Expr>,&mut Em) -> Result<(),Em::Error>>,
+                lhs: Rc<Transformation<Em>>,
+                rhs: Rc<Transformation<Em>>)
+                -> Rc<Transformation<Em>> {
+        Rc::new(Transformation::Zip2(sz,f,lhs,rhs,RefCell::new(None)))
+    }
     pub fn size(&self) -> usize {
         match *self {
             Transformation::Id(sz) => sz,
