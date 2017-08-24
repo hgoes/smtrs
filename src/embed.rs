@@ -1,5 +1,5 @@
 use types::*;
-use expr::{Expr,Function};
+use expr::{Expr,Function,BVOp,ArithOp};
 use num_bigint::BigInt;
 use num_rational::Ratio;
 use std::fmt::Debug;
@@ -52,7 +52,12 @@ pub trait Embed : Sized {
     fn tp_bitvec(&mut self,sz: usize) -> Result<Self::Sort,Self::Error> {
         self.embed_sort(SortKind::BitVec(sz))
     }
-    
+    fn is_bitvec(&mut self,srt: &Self::Sort) -> Result<Option<usize>,Self::Error> {
+        match self.unbed_sort(srt)? {
+            SortKind::BitVec(bw) => Ok(Some(bw)),
+            _ => Ok(None)
+        }
+    }
     fn tp_array(&mut self,idx: Vec<Self::Sort>,el: Self::Sort)
                 -> Result<Self::Sort,Self::Error> {
         self.embed_sort(SortKind::Array(idx,el))
@@ -106,6 +111,23 @@ pub trait Embed : Sized {
             }
         });
         self.embed(Expr::App(Function::ITE(srt),vec![cond,if_t,if_f]))
+    }
+    fn bvadd(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        let srt_lhs = self.type_of(&lhs)?;
+        let bw = match self.is_bitvec(&srt_lhs)? {
+            Some(r) => r,
+            None => panic!("Argument to bvadd not a bitvector")
+        };
+        debug_assert!(match self.type_of(&rhs) {
+            Ok(tp_r) => match self.is_bitvec(&tp_r) {
+                Ok(Some(bw_r)) => bw==bw_r,
+                _ => false
+            },
+            Err(_) => false
+        });
+        self.embed(Expr::App(Function::BV(bw,BVOp::Arith(ArithOp::Add)),
+                             vec![lhs,rhs]))
     }
     fn select(&mut self,arr: Self::Expr,idx: Vec<Self::Expr>)
               -> Result<Self::Expr,Self::Error> {
