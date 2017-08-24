@@ -35,7 +35,12 @@ pub trait Embed : Sized {
     fn tp_bool(&mut self) -> Result<Self::Sort,Self::Error> {
         self.embed_sort(SortKind::Bool)
     }
-    
+    fn is_bool(&mut self,srt: &Self::Sort) -> Result<bool,Self::Error> {
+        match self.unbed_sort(srt)? {
+            SortKind::Bool => Ok(true),
+            _ => Ok(false)
+        }
+    }
     fn tp_int(&mut self) -> Result<Self::Sort,Self::Error> {
         self.embed_sort(SortKind::Int)
     }
@@ -73,18 +78,35 @@ pub trait Embed : Sized {
         let tp1 = self.type_of(&e1)?;
         self.embed(Expr::App(Function::Eq(tp1,2),vec![e1,e2]))
     }
-    fn not(&mut self,e: Self::Expr)
-           -> Result<Self::Expr,Self::Error> {
-        self.embed(Expr::App(Function::Not,vec![e]))
-    }
     fn eq_many(&mut self,args: Vec<Self::Expr>)
                -> Result<Self::Expr,Self::Error> {
         debug_assert!(args.len() > 0);
         let srt = self.type_of(&args[0])?;
-        //debug_assert!(args[1..].iter().all(|el| el.sort()==srt));
+        debug_assert!(args[1..].iter().all(|el| match self.type_of(el) {
+            Ok(srt2) => srt==srt2,
+            Err(_) => false
+        }));
         self.embed(Expr::App(Function::Eq(srt,args.len()),args))
     }
-
+    fn not(&mut self,e: Self::Expr)
+           -> Result<Self::Expr,Self::Error> {
+        self.embed(Expr::App(Function::Not,vec![e]))
+    }
+    fn ite(&mut self,cond: Self::Expr,if_t: Self::Expr,if_f: Self::Expr)
+           -> Result<Self::Expr,Self::Error> {
+        let srt = self.type_of(&if_t)?;
+        debug_assert!(match self.type_of(&cond) {
+            Err(_) => false,
+            Ok(srt_cond) => match self.type_of(&if_f) {
+                Err(_) => false,
+                Ok(srt_f) => match self.is_bool(&srt_cond) {
+                    Ok(true) => srt==srt_f,
+                    _ => false
+                }
+            }
+        });
+        self.embed(Expr::App(Function::ITE(srt),vec![cond,if_t,if_f]))
+    }
     fn select(&mut self,arr: Self::Expr,idx: Vec<Self::Expr>)
               -> Result<Self::Expr,Self::Error> {
         let arr_tp = self.type_of(&arr)?;
