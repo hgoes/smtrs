@@ -742,12 +742,12 @@ pub enum Transformation<Em : Embed> {
     Concat(usize,Vec<Rc<Transformation<Em>>>), // Record size to prevent recursion
     Constant(Vec<Em::Expr>),
     Map(usize, // Resulting size
-        Box<Fn(&[Em::Expr],&mut Em) -> Vec<Em::Expr>>, // mapping function
+        Box<Fn(&[Em::Expr],&mut Vec<Em::Expr>,&mut Em) -> Result<(),Em::Error>>, // mapping function
         Rc<Transformation<Em>>, // transformation
         RefCell<Option<Vec<Em::Expr>>> // cache
     ),
     Zip2(usize,
-         Box<Fn(&[Em::Expr],&[Em::Expr],&mut Em) -> Vec<Em::Expr>>,
+         Box<Fn(&[Em::Expr],&[Em::Expr],&mut Vec<Em::Expr>,&mut Em) -> Result<(),Em::Error>>,
          Rc<Transformation<Em>>,
          Rc<Transformation<Em>>,
          RefCell<Option<Vec<Em::Expr>>>
@@ -960,19 +960,20 @@ impl<Em : Embed> Transformation<Em> {
                 panic!("Invalid index: {}",idx)
             },
             Transformation::Constant(ref vec) => Ok(vec[idx].clone()),
-            Transformation::Map(_,ref f,ref tr,ref cache) => {
+            Transformation::Map(sz,ref f,ref tr,ref cache) => {
                 let mut cache_ref : cell::RefMut<Option<Vec<Em::Expr>>> = (*cache).borrow_mut();
                 match *cache_ref {
                     Some(ref rcache) => return Ok(rcache[idx].clone()),
                     None => {}
                 }
                 let sl = tr.to_slice(arr,0,arr.len(),em)?;
-                let narr = f(sl.get(),em);
+                let mut narr = Vec::with_capacity(sz);
+                f(sl.get(),&mut narr,em)?;
                 let res = narr[idx].clone();
                 *cache_ref = Some(narr);
                 return Ok(res)
             },
-            Transformation::Zip2(_,ref f,ref tr1,ref tr2,ref cache) => {
+            Transformation::Zip2(sz,ref f,ref tr1,ref tr2,ref cache) => {
                 let mut cache_ref : cell::RefMut<Option<Vec<Em::Expr>>> = (*cache).borrow_mut();
                 match *cache_ref {
                     Some(ref rcache) => return Ok(rcache[idx].clone()),
@@ -980,7 +981,8 @@ impl<Em : Embed> Transformation<Em> {
                 }
                 let sl1 = tr1.to_slice(arr,0,arr.len(),em)?;
                 let sl2 = tr2.to_slice(arr,0,arr.len(),em)?;
-                let narr = f(sl1.get(),sl2.get(),em);
+                let mut narr = Vec::with_capacity(sz);
+                f(sl1.get(),sl2.get(),&mut narr,em)?;
                 let res = narr[idx].clone();
                 *cache_ref = Some(narr);
                 return Ok(res)
