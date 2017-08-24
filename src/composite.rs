@@ -1106,21 +1106,45 @@ impl<T : Eq + Hash + Clone> Composite for Data<T> {
     }
 }
 
-pub trait Pool<T : Composite,Em : Embed> : Composite {
-    type PoolIndex : Composite;
+pub trait Container<T : Composite,Em : Embed> : Composite {
+    type Index : Composite;
     fn empty<'a>(OptRef<'a,T>,Transf<Em>,&mut Em) -> Result<(OptRef<'a,Self>,Transf<Em>),Em::Error>;
-    fn alloc<'a,F>(&F,OptRef<'a,T>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
-                   -> Result<(OptRef<'a,Self::PoolIndex>,OptRef<'a,Self>,Transf<Em>,Transf<Em>),Em::Error>
-        where F : Fn(&T,Transf<Em>) -> bool;
-    fn index<'a>(OptRef<'a,Self::PoolIndex>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
+    fn index<'a>(OptRef<'a,Self::Index>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
                  -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>;
 }
 
-impl<T : Composite + Clone,Em : Embed> Pool<T,Em> for Vec<T> {
-    type PoolIndex = Data<usize>;
+pub trait Stack<T : Composite,Em : Embed> : Container<T,Em> {
+    fn stack_push<'a>(OptRef<'a,T>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
+                      -> Result<(OptRef<'a,Self::Index>,OptRef<'a,Self>,Transf<Em>,Transf<Em>),Em::Error>;
+}
+
+pub trait Pool<T : Composite,Em : Embed> : Container<T,Em> {
+    fn alloc<'a,F>(&F,OptRef<'a,T>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
+                   -> Result<(OptRef<'a,Self::Index>,OptRef<'a,Self>,Transf<Em>,Transf<Em>),Em::Error>
+        where F : Fn(&T,Transf<Em>) -> bool;
+}
+
+impl<T : Composite + Clone,Em : Embed> Container<T,Em> for Vec<T> {
+    type Index = Data<usize>;
     fn empty<'a>(_:OptRef<'a,T>,_:Transf<Em>,_:&mut Em) -> Result<(OptRef<'a,Vec<T>>,Transf<Em>),Em::Error> {
         Ok((OptRef::Owned(Vec::new()),Transformation::constant(Vec::new())))
     }
+    fn index<'a>(idx: OptRef<'a,Data<usize>>,vec: OptRef<'a,Vec<T>>,_:Transf<Em>,inp_vec: Transf<Em>)
+                 -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error> {
+        get_vec_elem(idx.as_ref().0,vec,inp_vec)
+    }
+}
+
+impl<T : Composite + Clone,Em : Embed> Stack<T,Em> for Vec<T> {
+    fn stack_push<'a>(el: OptRef<'a,T>,vec: OptRef<'a,Vec<T>>,inp_el: Transf<Em>,inp_vec: Transf<Em>)
+                      -> Result<(OptRef<'a,Data<usize>>,OptRef<'a,Vec<T>>,Transf<Em>,Transf<Em>),Em::Error> {
+        let len = vec.as_ref().len();
+        let (nvec,ninp_vec) = push_vec_elem(vec,el,inp_vec,inp_el)?;
+        Ok((OptRef::Owned(Data(len)),nvec,Transformation::constant(vec![]),ninp_vec))
+    }
+}
+
+impl<T : Composite + Clone,Em : Embed> Pool<T,Em> for Vec<T> {
     fn alloc<'a,F>(is_free:&F,el: OptRef<'a,T>,vec: OptRef<'a,Vec<T>>,inp_el: Transf<Em>,inp_vec: Transf<Em>)
                    -> Result<(OptRef<'a,Data<usize>>,OptRef<'a,Vec<T>>,Transf<Em>,Transf<Em>),Em::Error>
         where F : Fn(&T,Transf<Em>) -> bool {
@@ -1139,8 +1163,5 @@ impl<T : Composite + Clone,Em : Embed> Pool<T,Em> for Vec<T> {
         let (nvec,ninp_vec) = push_vec_elem(vec,el,inp_vec,inp_el)?;
         Ok((OptRef::Owned(Data(len)),nvec,Transformation::constant(vec![]),ninp_vec))
     }
-    fn index<'a>(idx: OptRef<'a,Data<usize>>,vec: OptRef<'a,Vec<T>>,_:Transf<Em>,inp_vec: Transf<Em>)
-                 -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error> {
-        get_vec_elem(idx.as_ref().0,vec,inp_vec)
-    }
 }
+
