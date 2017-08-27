@@ -711,6 +711,38 @@ impl<A : Composite,B : Composite> Composite for (A,B) {
 
 }
 
+pub fn fst<'a,A,B,Em>(tuple: OptRef<'a,(A,B)>,inp: Transf<Em>)
+                      -> Result<(OptRef<'a,A>,Transf<Em>),Em::Error>
+    where A : Composite,B : Composite,Em : Embed {
+    let el = match tuple {
+        OptRef::Owned(t) => OptRef::Owned(t.0),
+        OptRef::Ref(t) => OptRef::Ref(&t.0)
+    };
+    let outp = Transformation::view(0,el.as_ref().num_elem(),inp);
+    Ok((el,outp))
+}
+
+pub fn snd<'a,A,B,Em>(tuple: OptRef<'a,(A,B)>,inp: Transf<Em>)
+                      -> Result<(OptRef<'a,B>,Transf<Em>),Em::Error>
+    where A : Composite,B : Composite,Em : Embed {
+    let off = tuple.as_ref().0.num_elem();
+    let el = match tuple {
+        OptRef::Owned(t) => OptRef::Owned(t.1),
+        OptRef::Ref(t) => OptRef::Ref(&t.1)
+    };
+    let outp = Transformation::view(off,el.as_ref().num_elem(),inp);
+    Ok((el,outp))
+}
+
+pub fn tuple<'a,A,B,Em>(el_a: OptRef<'a,A>,el_b: OptRef<'a,B>,
+                        inp_a: Transf<Em>,inp_b: Transf<Em>)
+                        -> Result<(OptRef<'a,(A,B)>,Transf<Em>),Em::Error>
+    where A : Composite + Clone,B : Composite + Clone,Em : Embed {
+    let res = OptRef::Owned((el_a.as_obj(),el_b.as_obj()));
+    let outp = Transformation::concat(&[inp_a,inp_b]);
+    Ok((res,outp))
+}
+
 pub enum OptRef<'a,T : 'a> {
     Ref(&'a T),
     Owned(T)
