@@ -1317,12 +1317,13 @@ pub fn get_vec_elem_dyn<'a,'b,T,Par,Dom
     }
 }
 
-pub fn set_vec_elem<'a,T,Em>(pos: usize,
-                             vec: OptRef<'a,Vec<T>>,
-                             el: OptRef<'a,T>,
-                             inp_vec: Transf<Em>,
-                             inp_el: Transf<Em>)
-                             -> Result<(OptRef<'a,Vec<T>>,Transf<Em>),Em::Error>
+pub fn set_vec_elem<'a,T,Em
+                    >(pos: usize,
+                      vec: OptRef<'a,Vec<T>>,
+                      el: OptRef<'a,T>,
+                      inp_vec: Transf<Em>,
+                      inp_el: Transf<Em>)
+                      -> Result<(OptRef<'a,Vec<T>>,Transf<Em>),Em::Error>
     where T : Composite + Clone, Em : Embed {
 
     let vlen = vec.as_ref().num_elem();
