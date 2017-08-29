@@ -1,5 +1,5 @@
 use expr::{Expr,Function};
-use types::{Sort,Value};
+use types::{Value};
 use embed::Embed;
 use composite::*;
 use std::fmt::Debug;
@@ -182,7 +182,7 @@ impl Attribute for Const {
             _ => Ok(true)
         }
     }
-    fn derive<Em : Embed,Fun : Debug>(e: Expr<Em::Sort,Const,Const,Fun>,em: &mut Em) -> Const {
+    fn derive<Em : Embed,Fun : Debug>(e: Expr<Em::Sort,Const,Const,Fun>,_: &mut Em) -> Const {
         match e {
             Expr::Var(val)   => val,
             Expr::Const(val) => Const::IsConst(val),

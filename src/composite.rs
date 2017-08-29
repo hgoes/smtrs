@@ -1251,7 +1251,7 @@ pub fn get_vec_elem<'a,T,Em>(pos: usize,vec: OptRef<'a,Vec<T>>,inp: Transf<Em>)
 }
 
 pub fn get_vec_elem_dyn<'a,'b,T,Par,Dom
-                        >(pos: OptRef<'a,Singleton>,
+                        >(_: OptRef<'a,Singleton>,
                           vec: OptRef<'a,Vec<T>>,
                           inp_pos: Transf<Comp<'b,Par>>,
                           inp_vec: Transf<Comp<'b,Par>>,
@@ -1485,7 +1485,7 @@ pub fn ite<'a,T,Em>(if_t: OptRef<'a,T>,if_f: OptRef<'a,T>,
     where T : Composite, Em : Embed {
 
     T::combine(if_t,if_f,inp_if_t,inp_if_f,
-               &|inp_l,inp_r,em| {
+               &|inp_l,inp_r,_| {
                    Ok(Transformation::zip3(inp_l.size(),
                                            Box::new(|c:&[Em::Expr],le:&[Em::Expr],re:&[Em::Expr],res: &mut Vec<Em::Expr>,em:&mut Em| {
                                                for (et,ef) in le.iter().zip(re.iter()) {
