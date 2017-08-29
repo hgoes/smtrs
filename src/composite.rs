@@ -1340,6 +1340,73 @@ pub fn set_vec_elem<'a,T,Em>(pos: usize,
                                                       vlen-off_store-old,inp_vec)])))
 }
 
+pub fn set_vec_elem_dyn<'a,'b,T,Par,Dom
+                        >(pos: OptRef<'a,Singleton>,
+                          vec: OptRef<'a,Vec<T>>,
+                          el: OptRef<'a,T>,
+                          inp_pos: Transf<Comp<'b,Par>>,
+                          inp_vec: Transf<Comp<'b,Par>>,
+                          inp_el: Transf<Comp<'b,Par>>,
+                          exprs: &[CompExpr<Par>],
+                          dom: &Dom,
+                          em: &mut Comp<'b,Par>)
+                          -> Result<Option<(OptRef<'a,Vec<T>>,Transf<Comp<'b,Par>>)>,()>
+    where T : Composite + Clone,
+          Par : Composite + Clone + Debug,
+          Dom : Domain<Par> {
+
+    let idx = inp_pos.get(exprs,0,em)?;
+    let c = dom.is_const(&idx,em,&|x| *x)?;
+    match c {
+        Some(Value::Bool(x)) => if x {
+            Ok(Some(set_vec_elem(1,vec,el,inp_vec,inp_el)?))
+        } else {
+            Ok(Some(set_vec_elem(0,vec,el,inp_vec,inp_el)?))
+        },
+        Some(Value::Int(x)) => match x.to_usize() {
+            Some(rx) => Ok(Some(set_vec_elem(rx,vec,el,inp_vec,inp_el)?)),
+            None => panic!("Index overflow")
+        },
+        Some(Value::BitVec(_,x)) => match x.to_usize() {
+            Some(rx) => Ok(Some(set_vec_elem(rx,vec,el,inp_vec,inp_el)?)),
+            None => panic!("Index overflow")
+        },
+        Some(Value::Real(_)) => panic!("Cannot index vector with Real"),
+        None => {
+            let srt = em.type_of(&idx)?;
+            let mut nvec = OptRef::Owned(vec.as_ref().clone());
+            let mut inp_nvec = inp_vec.clone();
+            match em.unbed_sort(&srt)? {
+                SortKind::BitVec(sz) => {
+                    for i in 0..vec.as_ref().len() {
+                        let (cel,inp_cel) = get_vec_elem(i,OptRef::Ref(vec.as_ref()),inp_vec.clone())?;
+                        let cond_fun = move |vec:&[CompExpr<Par>],res:&mut Vec<CompExpr<Par>>,em:&mut Comp<Par>| {
+                            let val = em.const_bitvec(sz,BigInt::from(i))?;
+                            let expr = em.eq(vec[0].clone(),val)?;
+                            res.push(expr);
+                            Ok(())
+                        };
+                        let cond = Transformation::map(1,Box::new(cond_fun),
+                                                       inp_pos.clone());
+                        let (nel,inp_nel) = match ite(OptRef::Ref(el.as_ref()),
+                                                      cel,cond,
+                                                      inp_el.clone(),
+                                                      inp_cel,em)? {
+                            Some(r) => r,
+                            None => return Ok(None)
+                        };
+                        let (cvec,inp_cvec) = set_vec_elem(i,nvec,nel,inp_nvec,inp_nel)?;
+                        nvec = cvec;
+                        inp_nvec = inp_cvec;
+                    }
+                },
+                _ => unimplemented!()
+            }
+            Ok(Some((OptRef::Owned(nvec.as_obj()),inp_nvec)))
+        }
+    }
+}
+
 pub fn push_vec_elem<'a,T,Em>(vec: OptRef<'a,Vec<T>>,
                               el: OptRef<'a,T>,
                               inp_vec: Transf<Em>,
