@@ -1,16 +1,20 @@
 use expr;
 use types;
-use types::{SortKind};
+use types::{SortKind,Value};
 use embed::Embed;
+use domain::Domain;
 use unique::{Uniquer,UniqueRef};
-use std::cmp::{Ordering,min,max};
+use std::cmp::{Ordering,max};
 use std::collections::BTreeMap;
-use std::collections::btree_map::Entry;
 use std::rc::Rc;
 use std::cell;
 use std::cell::RefCell;
 use std::hash::Hash;
 use std::fmt::Debug;
+use std::slice;
+use std::vec;
+use num_bigint::BigInt;
+use num_traits::cast::ToPrimitive;
 
 pub trait Composite : Sized + Eq + Hash {
 
@@ -18,15 +22,14 @@ pub trait Composite : Sized + Eq + Hash {
     fn elem_sort<Em : Embed>(&self,usize,&mut Em)
                              -> Result<Em::Sort,Em::Error>;
 
-    fn combine(&self,&Self) -> Option<Self>;
-
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,&Self,
-                                                  &'a[Em::Expr],&'b[Em::Expr],&mut Vec<Em::Expr>,
-                                                  &FComb,&FL,&FR,&mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>;
+    fn combine<'a,Em,FComb,FL,FR>(OptRef<'a,Self>,OptRef<'a,Self>,
+                                  Transf<Em>,Transf<Em>,
+                                  &FComb,&FL,&FR,&mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>;
 
     fn invariant<Em : Embed,F>(&self,&mut Em,&F,&mut usize,&mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
@@ -87,26 +90,21 @@ impl Composite for Singleton {
                              -> Result<Em::Sort,Em::Error> {
         self.0.embed(em)
     }
-    fn combine(&self,oth: &Self) -> Option<Self> {
-        if self.0==oth.0 {
-            None
-        } else {
-            Some(Singleton(self.0.clone()))
-        }
-    }
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,_: &Singleton,
-                                                  lhs: &'a[Em::Expr],
-                                                  rhs: &'b[Em::Expr],
-                                                  res: &mut Vec<Em::Expr>,
-                                                  comb: &FComb,_: &FL,_: &FR,
-                                                  em: &mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
+                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
+                                  comb: &FComb,_: &FL,_: &FR,
+                                  em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
 
-        res.push(comb(&lhs[0],&rhs[0],em)?);
-        Ok((&lhs[1..],&rhs[1..]))
+        if lhs.as_ref().0 == rhs.as_ref().0 {
+            Ok(Some((lhs,comb(inp_lhs,inp_rhs,em)?)))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -121,22 +119,44 @@ impl Composite for SingletonBool {
                              -> Result<Em::Sort,Em::Error> {
         em.tp_bool()
     }
-    fn combine(&self,_: &Self) -> Option<Self> {
-        Some(SingletonBool {})
-    }
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,_: &SingletonBool,
-                                                  lhs: &'a[Em::Expr],
-                                                  rhs: &'b[Em::Expr],
-                                                  res: &mut Vec<Em::Expr>,
-                                                  comb: &FComb,_: &FL,_: &FR,
-                                                  em: &mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,_: OptRef<'a,Self>,
+                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
+                                  comb: &FComb,_: &FL,_: &FR,
+                                  em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
 
-        res.push(comb(&lhs[0],&rhs[0],em)?);
-        Ok((&lhs[1..],&rhs[1..]))
+        Ok(Some((lhs,comb(inp_lhs,inp_rhs,em)?)))
+    }
+}
+
+#[derive(PartialEq,Eq,Hash)]
+pub struct SingletonBitVec(usize);
+
+impl Composite for SingletonBitVec {
+    fn num_elem(&self) -> usize { 1 }
+    fn elem_sort<Em : Embed>(&self,_:usize,em: &mut Em)
+                             -> Result<Em::Sort,Em::Error> {
+        em.tp_bitvec(self.0)
+    }
+    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
+                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
+                                  comb: &FComb,_: &FL,_: &FR,
+                                  em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
+
+        if lhs.as_ref().0==rhs.as_ref().0 {
+            Ok(Some((lhs,comb(inp_lhs,inp_rhs,em)?)))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -160,69 +180,73 @@ impl<T : Composite + Clone> Composite for Vec<T> {
         }
         panic!("Invalid index {}",n)
     }
-    fn combine(&self,oth: &Vec<T>) -> Option<Vec<T>> {
-        let ssize = self.len();
-        let osize = oth.len();
-        let min_size = min(ssize,osize);
-        let max_size = max(ssize,osize);
+    fn combine<'a,Em,FComb,FL,FR>(mut lhs: OptRef<'a,Self>,mut rhs: OptRef<'a,Self>,
+                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
+                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                  em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
 
-        let mut res = Vec::with_capacity(max_size);
-        
-        for i in 0..min_size {
-            match self[i].combine(&oth[i]) {
-                None => return None,
-                Some(nel) => { res.push(nel) }
-            }
-        }
+        let l_size = lhs.as_ref().len();
+        let r_size = rhs.as_ref().len();
+        let max_size = max(l_size,r_size);
 
-        if ssize > osize {
-            for i in osize..ssize {
-                res.push(self[i].clone())
-            }
-        } else if osize > ssize {
-            for i in ssize..osize {
-                res.push(oth[i].clone())
-            }
-        }
-        Some(res)
-    }
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &Vec<T>,
-                                                  lhs: &'a[Em::Expr],
-                                                  rhs: &'b[Em::Expr],
-                                                  res: &mut Vec<Em::Expr>,
-                                                  comb: &FComb,only_l: &FL,only_r: &FR,
-                                                  em: &mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+        let mut new = Vec::with_capacity(max_size);
+        let mut ntrans = Vec::with_capacity(max_size);
+        let mut l_off = 0;
+        let mut r_off = 0;
 
-        let min_size = min(self.len(),oth.len());
-        let mut clhs = lhs;
-        let mut crhs = rhs;
-        for i in 0..min_size {
-            let (nlhs,nrhs) = self[i].combine_elem(&oth[i],clhs,crhs,res,comb,only_l,only_r,em)?;
-            clhs = nlhs;
-            crhs = nrhs;
-        }
-        if self.len() > oth.len() {
-            for i in min_size..self.len() {
-                let ref el = self[i];
-                for _ in 0..el.num_elem() {
-                    res.push(only_l(&clhs[0],em)?);
-                    clhs = &clhs[1..];
+        let mut l_iter = lhs.iter();
+        let mut r_iter = rhs.iter();
+
+        loop {
+            match l_iter.next() {
+                None => {
+                    for el in r_iter {
+                        let sz = el.as_ref().num_elem();
+                        new.push(el.as_obj());
+                        ntrans.push(only_r(Transformation::view(r_off,sz,inp_rhs.clone()),em)?);
+                        r_off+=sz;
+                    }
+                    break
+                },
+                Some(l_el) => match r_iter.next() {
+                    None => {
+                        let l_sz = l_el.as_ref().num_elem();
+                        new.push(l_el.as_obj());
+                        ntrans.push(only_l(Transformation::view(l_off,l_sz,inp_lhs.clone()),em)?);
+                        l_off+=l_sz;
+                        for el in l_iter {
+                            let sz = el.as_ref().num_elem();
+                            new.push(el.as_obj());
+                            ntrans.push(only_l(Transformation::view(l_off,sz,inp_lhs.clone()),em)?);
+                            l_off+=sz;
+                        }
+                        break
+                    },
+                    Some(r_el) => {
+                        let l_sz = l_el.as_ref().num_elem();
+                        let r_sz = r_el.as_ref().num_elem();
+                        match T::combine(l_el,r_el,
+                                         Transformation::view(l_off,l_sz,inp_lhs.clone()),
+                                         Transformation::view(r_off,r_sz,inp_rhs.clone()),
+                                         comb,only_l,only_r,em)? {
+                            None => return Ok(None),
+                            Some((nel,ntr)) => {
+                                new.push(nel.as_obj());
+                                ntrans.push(ntr);
+                                l_off+=l_sz;
+                                r_off+=r_sz;
+                            }
+                        }
+                    }
                 }
             }
-        } else if oth.len() > self.len() {
-            for i in min_size..oth.len() {
-                let ref el = self[i];
-                for _ in 0..el.num_elem() {
-                    res.push(only_r(&crhs[0],em)?);
-                    crhs = &crhs[1..];
-                }
-            }
         }
-        Ok((clhs,crhs))
+        Ok(Some((OptRef::Owned(new),Transformation::concat(&ntrans[0..]))))
     }
     fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
@@ -237,6 +261,15 @@ impl<T : Composite + Clone> Composite for Vec<T> {
 
 #[derive(PartialEq,Eq,Hash)]
 pub struct Choice<T>(Vec<T>);
+
+impl<'a,T : 'a> OptRef<'a,Choice<T>> {
+    fn elements(self) -> OptRef<'a,Vec<T>> {
+        match self {
+            OptRef::Ref(r) => OptRef::Ref(&r.0),
+            OptRef::Owned(r) => OptRef::Owned(r.0)
+        }
+    }
+}
 
 impl<T : Composite + Ord + Clone> Composite for Choice<T> {
     fn num_elem(&self) -> usize {
@@ -262,43 +295,124 @@ impl<T : Composite + Ord + Clone> Composite for Choice<T> {
         }
         panic!("Invalid index {}",n)
     }
-    fn combine(&self,oth: &Choice<T>) -> Option<Choice<T>> {
-        let mut offs = 0;
-        let mut offo = 0;
-        let mut res = Vec::new();
+    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
+                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
+                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                  em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
+
+        let l_size = lhs.as_ref().0.len();
+        let r_size = rhs.as_ref().0.len();
+        let max_size = max(l_size,r_size);
+
+        let mut new = Vec::with_capacity(max_size);
+        let mut ntrans = Vec::with_capacity(max_size);
+        let mut l_off = 0;
+        let mut r_off = 0;
+
+        let mut l_elems = lhs.elements();
+        let mut r_elems = rhs.elements();
+        let mut l_iter = l_elems.iter();
+        let mut r_iter = r_elems.iter();
+
+        let mut l_cur : Option<OptRef<'a,T>> = None;
+        let mut r_cur : Option<OptRef<'a,T>> = None;
+        
         loop {
-            if offs >= self.0.len() {
-                for i in offo..oth.0.len() {
-                    res.push(oth.0[i].clone())
-                }
-                break
-            }
-            if offo >= oth.0.len() {
-                for i in offs..self.0.len() {
-                    res.push(self.0[i].clone())
-                }
-                break
-            }
-            match self.0[offs].cmp(&oth.0[offo]) {
-                Ordering::Equal => match self.0[offs].combine(&oth.0[offo]) {
-                    None => return None,
-                    Some(nel) => {
-                        offs+=1;
-                        offo+=1;
-                        res.push(nel);
+            let l_el = match l_cur {
+                None => match l_iter.next() {
+                    None => {
+                        match r_cur {
+                            None => {},
+                            Some(r_el) => {
+                                let obj = r_el.as_obj();
+                                let sz = obj.num_elem();
+                                new.push(obj);
+                                ntrans.push(only_r(Transformation::view(r_off,sz+1,inp_rhs.clone()),em)?);
+                                r_off+=sz+1;
+                            }
+                        }
+                        for el in r_iter {
+                            let obj = el.as_obj();
+                            let sz = obj.num_elem();
+                            new.push(obj);
+                            ntrans.push(only_r(Transformation::view(r_off,sz+1,inp_rhs.clone()),em)?);
+                            r_off+=sz+1;
+                        }
+                        break
+                    },
+                    Some(r) => r
+                },
+                Some(r) => r
+            };
+            let r_el = match r_cur {
+                None => match r_iter.next() {
+                    None => {
+                        let l_obj = l_el.as_obj();
+                        let l_sz = l_obj.num_elem();
+                        new.push(l_obj);
+                        ntrans.push(only_l(Transformation::view(l_off,l_sz+1,inp_lhs.clone()),em)?);
+                        l_off+=l_sz+1;
+                        for el in l_iter {
+                            let obj = el.as_obj();
+                            let sz = obj.num_elem();
+                            new.push(obj);
+                            ntrans.push(only_l(Transformation::view(l_off,sz+1,inp_lhs.clone()),em)?);
+                            l_off+=sz+1;
+                        }
+                        break
+                    },
+                    Some(r) => r
+                },
+                Some(r) => r
+            };
+            match l_el.as_ref().cmp(r_el.as_ref()) {
+                Ordering::Equal => {
+                    let l_sz = l_el.as_ref().num_elem();
+                    let r_sz = r_el.as_ref().num_elem();
+                    let ncond = comb(Transformation::view(l_off,1,inp_lhs.clone()),
+                                     Transformation::view(r_off,1,inp_rhs.clone()),em)?;
+                    match T::combine(l_el,r_el,
+                                     Transformation::view(l_off+1,l_sz,inp_lhs.clone()),
+                                     Transformation::view(r_off+1,r_sz,inp_rhs.clone()),
+                                     comb,only_l,only_r,em)? {
+                        None => return Ok(None),
+                        Some((nel,ntr)) => {
+                            new.push(nel.as_obj());
+                            ntrans.push(ncond);
+                            ntrans.push(ntr);
+                            l_off+=l_sz+1;
+                            r_off+=r_sz+1;
+                            l_cur = None;
+                            r_cur = None;
+                        }
                     }
                 },
                 Ordering::Less => {
-                    offs+=1;
-                    res.push(self.0[offs].clone());
+                    let l_obj = l_el.as_obj();
+                    let l_sz = l_obj.num_elem();
+                    new.push(l_obj);
+                    ntrans.push(only_l(Transformation::view(l_off,l_sz+1,inp_lhs.clone()),em)?);
+                    l_off+=l_sz+1;
+                    l_cur = None;
+                    r_cur = Some(r_el);
                 },
                 Ordering::Greater => {
-                    offo+=1;
-                    res.push(oth.0[offo].clone());
+                    let r_obj = r_el.as_obj();
+                    let r_sz = r_obj.num_elem();
+                    new.push(r_obj);
+                    ntrans.push(only_r(Transformation::view(r_off,r_sz+1,inp_rhs.clone()),em)?);
+                    r_off+=r_sz+1;
+                    l_cur = Some(l_el);
+                    r_cur = None;
                 }
             }
         }
-        Some(Choice(res))
+        Ok(Some((OptRef::Owned(Choice(new)),Transformation::concat(&ntrans[0..]))))
     }
     fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
@@ -327,72 +441,6 @@ impl<T : Composite + Ord + Clone> Composite for Choice<T> {
         res.push(inv2);
         Ok(())
     }
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &Choice<T>,
-                                                  lhs: &'a[Em::Expr],
-                                                  rhs: &'b[Em::Expr],
-                                                  res: &mut Vec<Em::Expr>,
-                                                  comb: &FComb,only_l: &FL,only_r: &FR,
-                                                  em: &mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
-
-        let mut pos_l = 0;
-        let mut pos_r = 0;
-        let mut clhs = lhs;
-        let mut crhs = rhs;
-
-        loop {
-            if pos_l >= self.0.len() {
-                for i in pos_r..oth.0.len() {
-                    for _ in 0..oth.0[i].num_elem()+1 {
-                        res.push(only_r(&crhs[0],em)?);
-                        crhs = &crhs[1..];
-                    }
-                }
-                break;
-            }
-            if pos_r >= oth.0.len() {
-                for i in pos_l..self.0.len() {
-                    for _ in 0..self.0[i].num_elem()+1 {
-                        res.push(only_l(&clhs[0],em)?);
-                        clhs = &clhs[1..];
-                    }
-                }
-                break;
-            }
-            let ref l = self.0[pos_l];
-            let ref r = oth.0[pos_r];
-            match l.cmp(&r) {
-                Ordering::Equal => {
-                    res.push(comb(&clhs[0],&crhs[0],em)?);
-                    clhs = &clhs[1..];
-                    crhs = &crhs[1..];
-                    let (nlhs,nrhs) = l.combine_elem(&r,clhs,crhs,res,comb,only_l,only_r,em)?;
-                    clhs = nlhs;
-                    crhs = nrhs;
-                    pos_l+=1;
-                    pos_r+=1;
-                },
-                Ordering::Less => {
-                    for _ in 0..l.num_elem() {
-                        res.push(only_l(&clhs[0],em)?);
-                        clhs = &clhs[1..];
-                    }
-                    pos_l+=1;
-                },
-                Ordering::Greater => {
-                    for _ in 0..r.num_elem() {
-                        res.push(only_r(&crhs[0],em)?);
-                        crhs = &crhs[1..];
-                    }
-                    pos_r+=1;
-                }
-            }
-        }
-        Ok((clhs,crhs))
-    }
 }
 
 impl<K : Ord + Clone + Hash,T : Composite + Clone> Composite for BTreeMap<K,T> {
@@ -415,105 +463,109 @@ impl<K : Ord + Clone + Hash,T : Composite + Clone> Composite for BTreeMap<K,T> {
         }
         panic!("Invalid index: {}",n)
     }
-    fn combine(&self,oth: &BTreeMap<K,T>) -> Option<BTreeMap<K,T>> {
-        let mut res = (*self).clone();
-        for (k,v) in oth.iter() {
-            match res.entry(k.clone()) {
-                Entry::Occupied(mut e) => match e.get().combine(v) {
-                    None => return None,
-                    Some(nv) => { e.insert(nv); }
-                },
-                Entry::Vacant(e) => { e.insert(v.clone()) ; }
-            }
-        }
-        Some(res)
-    }
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &BTreeMap<K,T>,
-                                                  lhs: &'a[Em::Expr],
-                                                  rhs: &'b[Em::Expr],
-                                                  res: &mut Vec<Em::Expr>,
-                                                  comb: &FComb,only_l: &FL,only_r: &FR,
-                                                  em: &mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
+                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
+                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                  em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
 
-        let mut iter_l = self.iter();
-        let mut iter_r = oth.iter();
-        let mut cur_l : Option<(&K,&T)> = None;
-        let mut cur_r : Option<(&K,&T)> = None;
-        let mut clhs = lhs;
-        let mut crhs = rhs;
+        let mut new = BTreeMap::new();
+        let mut ntrans = Vec::new();
+        
+        let mut l_iter = lhs.as_ref().iter();
+        let mut r_iter = rhs.as_ref().iter();
+        let mut l_off = 0;
+        let mut r_off = 0;
+
+        let mut l_cur : Option<(&K,&T)> = None;
+        let mut r_cur : Option<(&K,&T)> = None;
 
         loop {
-            let (key_l,el_l) = match cur_l {
-                None => match iter_l.next() {
+            let (l_key,l_el) = match l_cur {
+                None => match l_iter.next() {
                     None => {
-                        match cur_r {
+                        match r_cur {
                             None => {},
-                            Some((_,el)) => for _ in 0..el.num_elem() {
-                                res.push(only_r(&crhs[0],em)?);
-                                crhs = &crhs[1..];
+                            Some((k,el)) => {
+                                let sz = el.num_elem();
+                                new.insert(k.clone(),el.clone());
+                                ntrans.push(only_r(Transformation::view(r_off,sz,inp_rhs.clone()),em)?);
+                                r_off+=sz;
                             }
                         }
-                        for (_,el) in iter_r {
-                            for _ in 0..el.num_elem() {
-                                res.push(only_r(&crhs[0],em)?);
-                                crhs = &crhs[1..];
-                            }
+                        for (k,el) in r_iter {
+                            let sz = el.num_elem();
+                            new.insert(k.clone(),el.clone());
+                            ntrans.push(only_r(Transformation::view(r_off,sz,inp_rhs.clone()),em)?);
+                            r_off+=sz;
                         }
-                        return Ok((clhs,crhs))
+                        break
                     },
                     Some(el) => el
                 },
                 Some(el) => el
             };
-            let (key_r,el_r) = match cur_r {
-                None => match iter_r.next() {
+            let (r_key,r_el) = match r_cur {
+                None => match r_iter.next() {
                     None => {
-                        for _ in 0..el_l.num_elem() {
-                            res.push(only_l(&clhs[0],em)?);
-                            clhs = &clhs[1..];
+                        let l_sz = l_el.num_elem();
+                        new.insert(l_key.clone(),l_el.clone());
+                        ntrans.push(only_l(Transformation::view(l_off,l_sz,inp_lhs.clone()),em)?);
+                        l_off+=l_sz;
+                        for (k,el) in l_iter {
+                            let sz = el.num_elem();
+                            new.insert(k.clone(),el.clone());
+                            ntrans.push(only_r(Transformation::view(l_off,sz,inp_lhs.clone()),em)?);
+                            l_off+=sz;
                         }
-                        for (_,el) in iter_l {
-                            for _ in 0..el.num_elem() {
-                                res.push(only_l(&clhs[0],em)?);
-                                clhs = &clhs[1..];
-                            }
-                        }
-                        return Ok((clhs,crhs))
+                        break
                     },
                     Some(el) => el
                 },
                 Some(el) => el
             };
-            match key_l.cmp(key_r) {
+            match l_key.cmp(r_key) {
                 Ordering::Equal => {
-                    let (nlhs,nrhs) = el_l.combine_elem(el_r,clhs,crhs,res,comb,only_l,only_r,em)?;
-                    clhs = nlhs;
-                    crhs = nrhs;
-                    cur_l = None;
-                    cur_r = None;
+                    let l_sz = l_el.num_elem();
+                    let r_sz = r_el.num_elem();
+                    match T::combine(OptRef::Ref(l_el),OptRef::Ref(r_el),
+                                     Transformation::view(l_off,l_sz,inp_lhs.clone()),
+                                     Transformation::view(r_off,r_sz,inp_rhs.clone()),
+                                     comb,only_l,only_r,em)? {
+                        None => return Ok(None),
+                        Some((nel,ntr)) => {
+                            new.insert(l_key.clone(),nel.as_obj());
+                            ntrans.push(ntr);
+                            l_off+=l_sz;
+                            r_off+=r_sz;
+                            l_cur = None;
+                            r_cur = None;
+                        }
+                    }
                 },
                 Ordering::Less => {
-                    for _ in 0..el_l.num_elem() {
-                        res.push(only_l(&clhs[0],em)?);
-                        clhs = &clhs[1..];
-                    }
-                    cur_l = None;
-                    cur_r = Some((key_r,el_r));
+                    let l_sz = l_el.num_elem();
+                    new.insert(l_key.clone(),l_el.clone());
+                    ntrans.push(only_l(Transformation::view(l_off,l_sz,inp_lhs.clone()),em)?);
+                    l_off+=l_sz;
+                    l_cur = None;
+                    r_cur = Some((r_key,r_el));
                 },
                 Ordering::Greater => {
-                    for _ in 0..el_r.num_elem() {
-                        res.push(only_r(&crhs[0],em)?);
-                        crhs = &crhs[1..];
-                    }
-                    cur_l = Some((key_l,el_r));
-                    cur_r = None;
+                    let r_sz = r_el.num_elem();
+                    new.insert(r_key.clone(),r_el.clone());
+                    ntrans.push(only_r(Transformation::view(r_off,r_sz,inp_rhs.clone()),em)?);
+                    r_off+=r_sz;
+                    l_cur = Some((l_key,l_el));
+                    r_cur = None;
                 }
             }
         }
+        Ok(Some((OptRef::Owned(new),Transformation::concat(&ntrans[0..]))))
     }
     fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
@@ -540,51 +592,54 @@ impl<T : Composite + Clone> Composite for Option<T> {
             Some(ref c) => c.elem_sort(n,em)
         }
     }
-    fn combine(&self,oth: &Option<T>) -> Option<Option<T>> {
-        match *self {
-            None => Some((*oth).clone()),
-            Some(ref c1) => match *oth {
-                None => Some(Some(c1.clone())),
-                Some(ref c2) => match c1.combine(&c2) {
-                    None => None,
-                    Some(r) => Some(Some(r))
-                }
-            }
-        }
-    }
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &Option<T>,
-                                                  lhs: &'a[Em::Expr],
-                                                  rhs: &'b[Em::Expr],
-                                                  res: &mut Vec<Em::Expr>,
-                                                  comb: &FComb,only_l: &FL,only_r: &FR,
-                                                  em: &mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
+                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
+                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                  em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
 
-        match *self {
-            None => match *oth {
-                None => Ok((lhs,rhs)),
-                Some(ref el) => {
-                    let mut clhs = lhs;
-                    for _ in 0..el.num_elem() {
-                        res.push(only_r(&clhs[0],em)?);
-                        clhs = &clhs[1..];
-                    }
-                    Ok((clhs,rhs))
+        match lhs {
+            OptRef::Ref(&None) |
+            OptRef::Owned(None) => match rhs {
+                OptRef::Ref(&None) |
+                OptRef::Owned(None) => Ok(Some((OptRef::Owned(None),Transformation::id(0)))),
+                _ => Ok(Some((rhs,only_r(inp_rhs,em)?)))
+            },
+            OptRef::Ref(&Some(ref x)) => match rhs {
+                OptRef::Ref(&None) |
+                OptRef::Owned(None) => Ok(Some((lhs,only_l(inp_lhs,em)?))),
+                OptRef::Ref(&Some(ref y)) => match T::combine(OptRef::Ref(x),OptRef::Ref(y),
+                                                              inp_lhs,inp_rhs,
+                                                              comb,only_l,only_r,em)? {
+                    None => Ok(None),
+                    Some((nel,ntrans)) => Ok(Some((nel.some(),ntrans)))
+                },
+                OptRef::Owned(Some(y)) => match T::combine(OptRef::Ref(x),OptRef::Owned(y),
+                                                           inp_lhs,inp_rhs,
+                                                           comb,only_l,only_r,em)? {
+                    None => Ok(None),
+                    Some((nel,ntrans)) => Ok(Some((nel.some(),ntrans)))
                 }
             },
-            Some(ref el1) => match *oth {
-                None => {
-                    let mut crhs = rhs;
-                    for _ in 0..el1.num_elem() {
-                        res.push(only_l(&rhs[0],em)?);
-                        crhs = &crhs[1..];
-                    }
-                    Ok((lhs,crhs))
+            OptRef::Owned(Some(x)) => match rhs {
+                OptRef::Ref(&None) |
+                OptRef::Owned(None) => Ok(Some((OptRef::Owned(Some(x)),only_l(inp_lhs,em)?))),
+                OptRef::Ref(&Some(ref y)) => match T::combine(OptRef::Owned(x),OptRef::Ref(y),
+                                                              inp_lhs,inp_rhs,
+                                                              comb,only_l,only_r,em)? {
+                    None => Ok(None),
+                    Some((nel,ntrans)) => Ok(Some((nel.some(),ntrans)))
                 },
-                Some(ref el2) => el1.combine_elem(el2,lhs,rhs,res,comb,only_l,only_r,em)
+                OptRef::Owned(Some(y)) => match T::combine(OptRef::Owned(x),OptRef::Owned(y),
+                                                           inp_lhs,inp_rhs,
+                                                           comb,only_l,only_r,em)? {
+                    None => Ok(None),
+                    Some((nel,ntrans)) => Ok(Some((nel.some(),ntrans)))
+                }
             }
         }
     }
@@ -604,7 +659,7 @@ pub struct Array<Idx : Composite,T : Composite> {
     element: T
 }
 
-impl<Idx : Composite + Eq + Clone,T : Composite> Composite for Array<Idx,T> {
+impl<Idx : Composite + Eq + Clone,T : Composite + Clone> Composite for Array<Idx,T> {
     fn num_elem(&self) -> usize {
         self.element.num_elem()
     }
@@ -618,27 +673,33 @@ impl<Idx : Composite + Eq + Clone,T : Composite> Composite for Array<Idx,T> {
         }
         em.embed_sort(SortKind::Array(idx_arr,srt))
     }
-    fn combine(&self,oth: &Array<Idx,T>) -> Option<Array<Idx,T>> {
-        if self.index!=oth.index {
-            return None
+    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
+                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
+                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                  em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
+
+        if lhs.as_ref().index != rhs.as_ref().index {
+            return Ok(None)
         }
-        match self.element.combine(&oth.element) {
-            None => None,
-            Some(nel) => Some(Array { index: self.index.clone(),
-                                      element: nel })
+        let (idx,n_lhs) = match lhs {
+            OptRef::Ref(ref x) => (x.index.clone(),OptRef::Ref(&x.element)),
+            OptRef::Owned(x) => (x.index,OptRef::Owned(x.element))
+        };
+        let n_rhs = match rhs {
+            OptRef::Ref(ref x) => OptRef::Ref(&x.element),
+            OptRef::Owned(x) => OptRef::Owned(x.element)
+        };
+        match T::combine(n_lhs,n_rhs,inp_lhs,inp_rhs,
+                         comb,only_l,only_r,em)? {
+            None => Ok(None),
+            Some((nel,ninp)) => Ok(Some((OptRef::Owned(Array { index: idx,
+                                                               element: nel.as_obj() }),ninp)))
         }
-    }
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &Array<Idx,T>,
-                                                  lhs: &'a[Em::Expr],
-                                                  rhs: &'b[Em::Expr],
-                                                  res: &mut Vec<Em::Expr>,
-                                                  comb: &FComb,only_l: &FL,only_r: &FR,
-                                                  em: &mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
-        self.element.combine_elem(&oth.element,lhs,rhs,res,comb,only_l,only_r,em)
     }
     // FIXME: Forall invariants
 }
@@ -649,24 +710,21 @@ impl Composite for () {
                              -> Result<Em::Sort,Em::Error> {
         panic!("Invalid index: {}",n)
     }
-    fn combine(&self,_:&()) -> Option<()> {
-        Some(())
-    }
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,_: &(),
-                                                  lhs: &'a[Em::Expr],
-                                                  rhs: &'b[Em::Expr],
-                                                  _: &mut Vec<Em::Expr>,
-                                                  _: &FComb,_: &FL,_: &FR,
-                                                  _: &mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
-        Ok((lhs,rhs))
+    fn combine<'a,Em,FComb,FL,FR>(_: OptRef<'a,Self>,_: OptRef<'a,Self>,
+                                  _: Transf<Em>,_: Transf<Em>,
+                                  _: &FComb,_: &FL,_: &FR,
+                                  _: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
+
+        Ok(Some((OptRef::Owned(()),Transformation::id(0))))
     }
 }
 
-impl<A : Composite,B : Composite> Composite for (A,B) {
+impl<A : Composite + Clone,B : Composite + Clone> Composite for (A,B) {
     fn num_elem(&self) -> usize {
         self.0.num_elem() + self.1.num_elem()
     }
@@ -679,27 +737,43 @@ impl<A : Composite,B : Composite> Composite for (A,B) {
             self.0.elem_sort(n,em)
         }
     }
-    fn combine(&self,oth: &(A,B)) -> Option<(A,B)> {
-        match self.0.combine(&oth.0) {
-            None => None,
-            Some(n0) => match self.1.combine(&oth.1) {
-                None => None,
-                Some(n1) => Some((n0,n1))
+    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
+                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
+                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                  em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
+
+        let (l_fst,l_snd) = match lhs {
+            OptRef::Ref(&(ref x,ref y)) => (OptRef::Ref(x),OptRef::Ref(y)),
+            OptRef::Owned((x,y)) => (OptRef::Owned(x),OptRef::Owned(y))
+        };
+        let (r_fst,r_snd) = match rhs {
+            OptRef::Ref(&(ref x,ref y)) => (OptRef::Ref(x),OptRef::Ref(y)),
+            OptRef::Owned((x,y)) => (OptRef::Owned(x),OptRef::Owned(y))
+        };
+        let l_fst_sz = l_fst.as_ref().num_elem();
+        let l_snd_sz = l_snd.as_ref().num_elem();
+        let r_fst_sz = r_fst.as_ref().num_elem();
+        let r_snd_sz = r_snd.as_ref().num_elem();
+        
+        match A::combine(l_fst,r_fst,
+                         Transformation::view(0,l_fst_sz,inp_lhs.clone()),
+                         Transformation::view(0,r_fst_sz,inp_rhs.clone()),
+                         comb,only_l,only_r,em)? {
+            None => Ok(None),
+            Some((nfst,ninp_1)) => match B::combine(l_snd,r_snd,
+                                                    Transformation::view(l_fst_sz,l_snd_sz,inp_lhs),
+                                                    Transformation::view(r_fst_sz,r_snd_sz,inp_rhs),
+                                                    comb,only_l,only_r,em)? {
+                None => Ok(None),
+                Some((nsnd,ninp_2)) => Ok(Some((OptRef::Owned((nfst.as_obj(),nsnd.as_obj())),
+                                                Transformation::concat(&[ninp_1,ninp_2]))))
             }
         }
-    }
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,oth: &(A,B),
-                                                  lhs: &'a[Em::Expr],
-                                                  rhs: &'b[Em::Expr],
-                                                  res: &mut Vec<Em::Expr>,
-                                                  comb: &FComb,only_l: &FL,only_r: &FR,
-                                                  em: &mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
-        let (lhs1,rhs1) = self.0.combine_elem(&oth.0,lhs,rhs,res,comb,only_l,only_r,em)?;
-        self.1.combine_elem(&oth.1,lhs1,rhs1,res,comb,only_l,only_r,em)
     }
     fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,off: &mut usize,res: &mut Vec<Em::Expr>)
                                -> Result<(),Em::Error>
@@ -764,6 +838,45 @@ impl<'a,T : 'a + Clone> OptRef<'a,T> {
             OptRef::Owned(x) => x
         }
     }
+    pub fn some(self) -> OptRef<'a,Option<T>> {
+        match self {
+            OptRef::Ref(x) => OptRef::Owned(Some(x.clone())),
+            OptRef::Owned(x) => OptRef::Owned(Some(x))
+        }
+    }
+}
+
+enum OptRefVecIter<'a,'b,T : 'a + 'b> {
+    RefVecIter(slice::Iter<'a,T>),
+    OwnedVecIter(vec::Drain<'b,T>)
+}
+
+impl<'a,'b,T : 'a> Iterator for OptRefVecIter<'a,'b,T> {
+    type Item = OptRef<'a,T>;
+    fn next(&mut self) -> Option<OptRef<'a,T>> {
+        match *self {
+            OptRefVecIter::RefVecIter(ref mut it) => match it.next() {
+                Some(el) => Some(OptRef::Ref(el)),
+                None => None
+            },
+            OptRefVecIter::OwnedVecIter(ref mut it) => match it.next() {
+                Some(el) => Some(OptRef::Owned(el)),
+                None => None
+            }
+        }
+    }
+}
+
+impl<'a,T : 'a> OptRef<'a,Vec<T>> {
+    fn iter<'b>(&'b mut self) -> OptRefVecIter<'a,'b,T> {
+        match *self {
+            OptRef::Owned(ref mut v) => {
+                let it = v.drain(0..);
+                OptRefVecIter::OwnedVecIter(it)
+            },
+            OptRef::Ref(v) => OptRefVecIter::RefVecIter(v.iter()),
+        }
+    }
 }
 
 pub type Transf<Em> = Rc<Transformation<Em>>;
@@ -779,7 +892,16 @@ pub enum Transformation<Em : Embed> {
         RefCell<Option<Vec<Em::Expr>>> // cache
     ),
     Zip2(usize,
-         Box<Fn(&[Em::Expr],&[Em::Expr],&mut Vec<Em::Expr>,&mut Em) -> Result<(),Em::Error>>,
+         Box<Fn(&[Em::Expr],&[Em::Expr],
+                &mut Vec<Em::Expr>,&mut Em) -> Result<(),Em::Error>>,
+         Rc<Transformation<Em>>,
+         Rc<Transformation<Em>>,
+         RefCell<Option<Vec<Em::Expr>>>
+    ),
+    Zip3(usize,
+         Box<Fn(&[Em::Expr],&[Em::Expr],&[Em::Expr],
+                &mut Vec<Em::Expr>,&mut Em) -> Result<(),Em::Error>>,
+         Rc<Transformation<Em>>,
          Rc<Transformation<Em>>,
          Rc<Transformation<Em>>,
          RefCell<Option<Vec<Em::Expr>>>
@@ -792,6 +914,8 @@ pub enum Transformation<Em : Embed> {
     ),
     MapByElem(Box<for <'a,'b> Fn(&'a [Em::Expr],usize,Em::Expr,&'b mut Em) -> Result<Em::Expr,Em::Error>>,
               Rc<Transformation<Em>>),
+    ITE(usize,Vec<(Rc<Transformation<Em>>,Rc<Transformation<Em>>)>,
+        Rc<Transformation<Em>>)
 }
 
 enum BorrowedSlice<'a,T : 'a> {
@@ -811,9 +935,19 @@ impl<'a,T : 'a> BorrowedSlice<'a,T> {
 }
 
 impl<Em : Embed> Transformation<Em> {
+    pub fn id(sz: usize) -> Transf<Em> {
+        Rc::new(Transformation::Id(sz))
+    }
     pub fn constant(els: Vec<Em::Expr>) -> Rc<Transformation<Em>> {
         Rc::new(Transformation::Constant(els))
     }
+    pub fn map(rsz: usize,
+               f: Box<Fn(&[Em::Expr],&mut Vec<Em::Expr>,&mut Em) -> Result<(),Em::Error>>,
+               tr: Transf<Em>)
+               -> Rc<Transformation<Em>> {
+        Rc::new(Transformation::Map(rsz,f,tr,RefCell::new(None)))
+    }
+               
     pub fn view(off: usize,len: usize,t: Rc<Transformation<Em>>) -> Rc<Transformation<Em>> {
         if len==0 {
             Rc::new(Transformation::Id(0))
@@ -874,6 +1008,15 @@ impl<Em : Embed> Transformation<Em> {
                 -> Rc<Transformation<Em>> {
         Rc::new(Transformation::Zip2(sz,f,lhs,rhs,RefCell::new(None)))
     }
+    pub fn zip3(sz: usize,
+                f: Box<Fn(&[Em::Expr],&[Em::Expr],&[Em::Expr],
+                          &mut Vec<Em::Expr>,&mut Em) -> Result<(),Em::Error>>,
+                e1: Rc<Transformation<Em>>,
+                e2: Rc<Transformation<Em>>,
+                e3: Rc<Transformation<Em>>)
+                -> Rc<Transformation<Em>> {
+        Rc::new(Transformation::Zip3(sz,f,e1,e2,e3,RefCell::new(None)))
+    }
     pub fn size(&self) -> usize {
         match *self {
             Transformation::Id(sz) => sz,
@@ -882,8 +1025,10 @@ impl<Em : Embed> Transformation<Em> {
             Transformation::Constant(ref vec) => vec.len(),
             Transformation::Map(sz,_,_,_) => sz,
             Transformation::Zip2(sz,_,_,_,_) => sz,
+            Transformation::Zip3(sz,_,_,_,_,_) => sz,
             Transformation::Write(sz,_,_,_,_) => sz,
-            Transformation::MapByElem(_,ref tr) => tr.size()
+            Transformation::MapByElem(_,ref tr) => tr.size(),
+            Transformation::ITE(sz,_,_) => sz
         }
     }
     pub fn clear_cache(&self) -> () {
@@ -903,11 +1048,24 @@ impl<Em : Embed> Transformation<Em> {
                 tr2.clear_cache();
                 *cache.borrow_mut() = None;
             },
+            Transformation::Zip3(_,_,ref tr1,ref tr2,ref tr3,ref cache) => {
+                tr1.clear_cache();
+                tr2.clear_cache();
+                tr3.clear_cache();
+                *cache.borrow_mut() = None;
+            },
             Transformation::Write(_,_,_,ref obj,ref trg) => {
                 obj.clear_cache();
                 trg.clear_cache();
             },
-            Transformation::MapByElem(_,ref tr) => tr.clear_cache()
+            Transformation::MapByElem(_,ref tr) => tr.clear_cache(),
+            Transformation::ITE(_,ref arr,ref def) => {
+                for &(ref cond,ref el) in arr.iter() {
+                    cond.clear_cache();
+                    el.clear_cache();
+                }
+                def.clear_cache()
+            }
         }
     }
     fn as_slice<'a>(&'a self,arr: &'a [Em::Expr],off: usize,len: usize)
@@ -957,6 +1115,19 @@ impl<Em : Embed> Transformation<Em> {
                     }
                 }
             },
+            Transformation::Zip3(_,_,_,_,_,ref cache) => {
+                let cache_ref : cell::Ref<Option<Vec<Em::Expr>>> = cache.borrow();
+                match *cache_ref {
+                    None => None,
+                    Some(_) => {
+                        let vec_ref : cell::Ref<Vec<Em::Expr>> = cell::Ref::map(cache_ref,|x| match x {
+                            &Some(ref x) => x,
+                            &None => unreachable!()
+                        });
+                        Some(BorrowedSlice::CachedSlice(vec_ref,off,off+len))
+                    }
+                }
+            },
             Transformation::Write(_,wr_off,repl_sz,ref obj,ref trg) => if off+len <= wr_off {
                 trg.as_slice(arr,off,len)
             } else if off >= wr_off && off+len <= wr_off+obj.size() {
@@ -982,7 +1153,8 @@ impl<Em : Embed> Transformation<Em> {
             }
         }
     }
-    pub fn get(&self,arr: &[Em::Expr],idx: usize,em: &mut Em) -> Result<Em::Expr,Em::Error> {
+    pub fn get(&self,arr: &[Em::Expr],idx: usize,em: &mut Em)
+               -> Result<Em::Expr,Em::Error> {
         match *self {
             Transformation::Id(_) => Ok(arr[idx].clone()),
             Transformation::View(off,_,ref tr)
@@ -1026,6 +1198,21 @@ impl<Em : Embed> Transformation<Em> {
                 *cache_ref = Some(narr);
                 return Ok(res)
             },
+            Transformation::Zip3(sz,ref f,ref tr1,ref tr2,ref tr3,ref cache) => {
+                let mut cache_ref : cell::RefMut<Option<Vec<Em::Expr>>> = (*cache).borrow_mut();
+                match *cache_ref {
+                    Some(ref rcache) => return Ok(rcache[idx].clone()),
+                    None => {}
+                }
+                let sl1 = tr1.to_slice(arr,0,arr.len(),em)?;
+                let sl2 = tr2.to_slice(arr,0,arr.len(),em)?;
+                let sl3 = tr3.to_slice(arr,0,arr.len(),em)?;
+                let mut narr = Vec::with_capacity(sz);
+                f(sl1.get(),sl2.get(),sl3.get(),&mut narr,em)?;
+                let res = narr[idx].clone();
+                *cache_ref = Some(narr);
+                return Ok(res)
+            },
             Transformation::Write(_,wr_off,repl_sz,ref obj,ref trg) => if idx < wr_off {
                 trg.get(arr,idx,em)
             } else if idx >= wr_off && idx < wr_off+obj.size() {
@@ -1034,12 +1221,22 @@ impl<Em : Embed> Transformation<Em> {
                 trg.get(arr,idx-obj.size()+repl_sz,em)
             },
             Transformation::MapByElem(ref f,ref tr)
-                => f(arr,idx,tr.get(arr,idx,em)?,em)
+                => f(arr,idx,tr.get(arr,idx,em)?,em),
+            Transformation::ITE(_,ref conds,ref def) => {
+                let mut expr = def.get(arr,idx,em)?;
+                for &(ref cond,ref el) in conds.iter() {
+                    let rcond = cond.get(arr,0,em)?;
+                    let rel = el.get(arr,idx,em)?;
+                    expr = em.ite(rcond,rel,expr)?;
+                }
+                Ok(expr)
+            }
         }
     }
 }
 
-pub fn get_vec_elem<'a,T,Em>(pos: usize,vec: OptRef<'a,Vec<T>>,inp: Transf<Em>) -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>
+pub fn get_vec_elem<'a,T,Em>(pos: usize,vec: OptRef<'a,Vec<T>>,inp: Transf<Em>)
+                             -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>
     where T : Composite + Clone, Em : Embed {
     let mut off = 0;
     for el in vec.as_ref().iter().take(pos) {
@@ -1053,11 +1250,79 @@ pub fn get_vec_elem<'a,T,Em>(pos: usize,vec: OptRef<'a,Vec<T>>,inp: Transf<Em>) 
     Ok((rvec,Transformation::view(off,len as usize,inp)))
 }
 
+pub fn get_vec_elem_dyn<'a,'b,T,Par,Dom
+                        >(pos: OptRef<'a,Singleton>,
+                          vec: OptRef<'a,Vec<T>>,
+                          inp_pos: Transf<Comp<'b,Par>>,
+                          inp_vec: Transf<Comp<'b,Par>>,
+                          exprs: &[CompExpr<Par>],
+                          dom: &Dom,
+                          em: &mut Comp<'b,Par>)
+                          -> Result<Option<(OptRef<'a,T>,Transf<Comp<'b,Par>>)>,()>
+    where T : Composite + Clone,
+          Par : Composite + Clone + Debug,
+          Dom : Domain<Par> {
+    let idx = inp_pos.get(exprs,0,em)?;
+    let c = dom.is_const(&idx,em,&|x| *x)?;
+    match vec.as_ref().len() {
+        0 => panic!("Indexing empty vector"),
+        1 => return Ok(Some(get_vec_elem(0,vec,inp_vec)?)),
+        _ => {}
+    }
+    match c {
+        Some(Value::Bool(x)) => if x {
+            Ok(Some(get_vec_elem(1,vec,inp_vec)?))
+        } else {
+            Ok(Some(get_vec_elem(0,vec,inp_vec)?))
+        },
+        Some(Value::Int(x)) => match x.to_usize() {
+            Some(rx) => Ok(Some(get_vec_elem(rx,vec,inp_vec)?)),
+            None => panic!("Index overflow")
+        },
+        Some(Value::BitVec(_,x)) => match x.to_usize() {
+            Some(rx) => Ok(Some(get_vec_elem(rx,vec,inp_vec)?)),
+            None => panic!("Index overflow")
+        },
+        Some(Value::Real(_)) => panic!("Cannot index vector with Real"),
+        None => {
+            let srt = em.type_of(&idx)?;
+            //let rvec = OptRef::Ref(vec.as_ref());
+            let (def_el,def_inp) = get_vec_elem(0,OptRef::Ref(vec.as_ref()),inp_vec.clone())?;
+            let mut el = def_el;
+            let mut inp = def_inp;
+            match em.unbed_sort(&srt)? {
+                SortKind::BitVec(sz) => {
+                    for i in 1..vec.as_ref().len() {
+                        let (n_el,n_inp) = get_vec_elem(i,OptRef::Ref(vec.as_ref()),inp_vec.clone())?;
+                        let cond_fun = move |vec:&[CompExpr<Par>],res:&mut Vec<CompExpr<Par>>,em:&mut Comp<Par>| {
+                            let val = em.const_bitvec(sz,BigInt::from(i))?;
+                            let expr = em.eq(vec[0].clone(),val)?;
+                            res.push(expr);
+                            Ok(())
+                        };
+                        let cond = Transformation::map(1,Box::new(cond_fun),
+                                                       inp_pos.clone());
+                        let (r_el,r_inp) = match ite(n_el,el,cond,n_inp,inp,em)? {
+                            Some(r) => r,
+                            None => return Ok(None)
+                        };
+                        el = r_el;
+                        inp = r_inp;
+                    }
+                },
+                _ => unimplemented!()
+            }
+            Ok(Some((OptRef::Owned(el.as_obj()),inp)))
+        }
+    }
+}
+
 pub fn set_vec_elem<'a,T,Em>(pos: usize,
                              vec: OptRef<'a,Vec<T>>,
                              el: OptRef<'a,T>,
                              inp_vec: Transf<Em>,
-                             inp_el: Transf<Em>) -> Result<(OptRef<'a,Vec<T>>,Transf<Em>),Em::Error>
+                             inp_el: Transf<Em>)
+                             -> Result<(OptRef<'a,Vec<T>>,Transf<Em>),Em::Error>
     where T : Composite + Clone, Em : Embed {
 
     let vlen = vec.as_ref().num_elem();
@@ -1118,67 +1383,68 @@ impl<T : Eq + Hash + Clone> Composite for Data<T> {
                              -> Result<Em::Sort,Em::Error> {
         panic!("Cannot get sort of Data")
     }
-    fn combine(&self,oth: &Data<T>) -> Option<Data<T>> {
-        if self.0==oth.0 {
-            Some(Data(self.0.clone()))
+    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
+                                  _: Transf<Em>,_: Transf<Em>,
+                                  _: &FComb,_: &FL,_: &FR,
+                                  _: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
+
+        if lhs.as_ref().0 == rhs.as_ref().0 {
+            Ok(Some((lhs,Transformation::id(0))))
         } else {
-            None
+            Ok(None)
         }
-    }
-    fn combine_elem<'a,'b,Em : Embed,FComb,FL,FR>(&self,_:&Self,
-                                                  lhs:&'a[Em::Expr],rhs:&'b[Em::Expr],
-                                                  _:&mut Vec<Em::Expr>,
-                                                  _:&FComb,_:&FL,_:&FR,_:&mut Em)
-                                                  -> Result<(&'a[Em::Expr],&'b[Em::Expr]),Em::Error>
-        where FComb : Fn(&Em::Expr,&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FL : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
-              FR : Fn(&Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
-
-        Ok((lhs,rhs))
+        
     }
 }
 
-pub trait Container<T : Composite,Em : Embed> : Composite {
+pub trait Container<T : Composite> : Composite {
     type Index : Composite;
-    fn empty<'a>(OptRef<'a,T>,Transf<Em>,&mut Em) -> Result<(OptRef<'a,Self>,Transf<Em>),Em::Error>;
-    fn index<'a>(OptRef<'a,Self::Index>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
-                 -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>;
+    fn empty<'a,Em : Embed>(OptRef<'a,T>,Transf<Em>,&mut Em)
+                            -> Result<(OptRef<'a,Self>,Transf<Em>),Em::Error>;
+    fn index<'a,Em : Embed>(OptRef<'a,Self::Index>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
+                            -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>;
 }
 
-pub trait Stack<T : Composite,Em : Embed> : Container<T,Em> {
-    fn stack_push<'a>(OptRef<'a,T>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
-                      -> Result<(OptRef<'a,Self::Index>,OptRef<'a,Self>,Transf<Em>,Transf<Em>),Em::Error>;
+pub trait Stack<T : Composite> : Container<T> {
+    fn stack_push<'a,Em : Embed>(OptRef<'a,T>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
+                                 -> Result<(OptRef<'a,Self::Index>,OptRef<'a,Self>,Transf<Em>,Transf<Em>),Em::Error>;
 }
 
-pub trait Pool<T : Composite,Em : Embed> : Container<T,Em> {
-    fn alloc<'a,F>(&F,OptRef<'a,T>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
-                   -> Result<(OptRef<'a,Self::Index>,OptRef<'a,Self>,Transf<Em>,Transf<Em>),Em::Error>
+pub trait Pool<T : Composite> : Container<T> {
+    fn alloc<'a,Em : Embed,F>(&F,OptRef<'a,T>,OptRef<'a,Self>,Transf<Em>,Transf<Em>)
+                              -> Result<(OptRef<'a,Self::Index>,OptRef<'a,Self>,Transf<Em>,Transf<Em>),Em::Error>
         where F : Fn(&T,Transf<Em>) -> bool;
 }
 
-impl<T : Composite + Clone,Em : Embed> Container<T,Em> for Vec<T> {
+impl<T : Composite + Clone> Container<T> for Vec<T> {
     type Index = Data<usize>;
-    fn empty<'a>(_:OptRef<'a,T>,_:Transf<Em>,_:&mut Em) -> Result<(OptRef<'a,Vec<T>>,Transf<Em>),Em::Error> {
+    fn empty<'a,Em : Embed>(_:OptRef<'a,T>,_:Transf<Em>,_:&mut Em)
+                            -> Result<(OptRef<'a,Vec<T>>,Transf<Em>),Em::Error> {
         Ok((OptRef::Owned(Vec::new()),Transformation::constant(Vec::new())))
     }
-    fn index<'a>(idx: OptRef<'a,Data<usize>>,vec: OptRef<'a,Vec<T>>,_:Transf<Em>,inp_vec: Transf<Em>)
-                 -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error> {
+    fn index<'a,Em : Embed>(idx: OptRef<'a,Data<usize>>,vec: OptRef<'a,Vec<T>>,_:Transf<Em>,inp_vec: Transf<Em>)
+                            -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error> {
         get_vec_elem(idx.as_ref().0,vec,inp_vec)
     }
 }
 
-impl<T : Composite + Clone,Em : Embed> Stack<T,Em> for Vec<T> {
-    fn stack_push<'a>(el: OptRef<'a,T>,vec: OptRef<'a,Vec<T>>,inp_el: Transf<Em>,inp_vec: Transf<Em>)
-                      -> Result<(OptRef<'a,Data<usize>>,OptRef<'a,Vec<T>>,Transf<Em>,Transf<Em>),Em::Error> {
+impl<T : Composite + Clone> Stack<T> for Vec<T> {
+    fn stack_push<'a,Em : Embed>(el: OptRef<'a,T>,vec: OptRef<'a,Vec<T>>,inp_el: Transf<Em>,inp_vec: Transf<Em>)
+                                 -> Result<(OptRef<'a,Data<usize>>,OptRef<'a,Vec<T>>,Transf<Em>,Transf<Em>),Em::Error> {
         let len = vec.as_ref().len();
         let (nvec,ninp_vec) = push_vec_elem(vec,el,inp_vec,inp_el)?;
         Ok((OptRef::Owned(Data(len)),nvec,Transformation::constant(vec![]),ninp_vec))
     }
 }
 
-impl<T : Composite + Clone,Em : Embed> Pool<T,Em> for Vec<T> {
-    fn alloc<'a,F>(is_free:&F,el: OptRef<'a,T>,vec: OptRef<'a,Vec<T>>,inp_el: Transf<Em>,inp_vec: Transf<Em>)
-                   -> Result<(OptRef<'a,Data<usize>>,OptRef<'a,Vec<T>>,Transf<Em>,Transf<Em>),Em::Error>
+impl<T : Composite + Clone> Pool<T> for Vec<T> {
+    fn alloc<'a,Em : Embed,F>(is_free:&F,el: OptRef<'a,T>,vec: OptRef<'a,Vec<T>>,inp_el: Transf<Em>,inp_vec: Transf<Em>)
+                              -> Result<(OptRef<'a,Data<usize>>,OptRef<'a,Vec<T>>,Transf<Em>,Transf<Em>),Em::Error>
         where F : Fn(&T,Transf<Em>) -> bool {
 
         let len = vec.as_ref().len();
@@ -1197,3 +1463,39 @@ impl<T : Composite + Clone,Em : Embed> Pool<T,Em> for Vec<T> {
     }
 }
 
+pub struct BitVecVectorStack<T> {
+    top: usize,
+    elements: Vec<T>
+}
+
+pub fn bv_vec_stack_empty<'a,T,Em>(sz: usize,em: &mut Em)
+                                   -> Result<(OptRef<'a,BitVecVectorStack<T>>,Transf<Em>),Em::Error>
+    where T : Composite, Em : Embed {
+    let res = OptRef::Owned(BitVecVectorStack { top: sz, elements: vec![] });
+    let outp = Transformation::constant(vec![em.const_bitvec(sz,BigInt::from(0))?]);
+    Ok((res,outp))
+}
+
+pub fn ite<'a,T,Em>(if_t: OptRef<'a,T>,if_f: OptRef<'a,T>,
+                    inp_cond: Transf<Em>,
+                    inp_if_t: Transf<Em>,
+                    inp_if_f: Transf<Em>,
+                    em: &mut Em)
+                    -> Result<Option<(OptRef<'a,T>,Transf<Em>)>,Em::Error>
+    where T : Composite, Em : Embed {
+
+    T::combine(if_t,if_f,inp_if_t,inp_if_f,
+               &|inp_l,inp_r,em| {
+                   Ok(Transformation::zip3(inp_l.size(),
+                                           Box::new(|c:&[Em::Expr],le:&[Em::Expr],re:&[Em::Expr],res: &mut Vec<Em::Expr>,em:&mut Em| {
+                                               for (et,ef) in le.iter().zip(re.iter()) {
+                                                   res.push(em.ite(c[0].clone(),et.clone(),ef.clone())?);
+                                               }
+                                               Ok(())
+                                           }),
+                                           inp_cond.clone(),inp_l,inp_r))
+               },
+               &|tr,_| Ok(tr),
+               &|tr,_| Ok(tr),
+               em)
+}

@@ -1,5 +1,6 @@
 extern crate num_bigint;
 extern crate num_rational;
+extern crate num_traits;
 
 pub mod embed;
 pub mod parser;

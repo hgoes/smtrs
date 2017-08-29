@@ -1,12 +1,17 @@
 use expr::{Expr,Function};
 use types::{Sort,Value};
+use embed::Embed;
 use composite::*;
+use std::fmt::Debug;
 
 pub trait Domain<T : Composite> {
     fn full(&T) -> Self;
     fn is_full(&self) -> bool;
     fn union(&mut self,&Self) -> ();
     fn intersection(&mut self,&Self) -> bool;
+    fn refine<Em : Embed,F : Fn(&Em::Var) -> usize>(&mut self,&Em::Expr,&mut Em,&F) -> Result<bool,Em::Error>;
+    fn is_const<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,&Em::Expr,&mut Em,&F)
+                                                      -> Result<Option<Value>,Em::Error>;
 }
 
 pub trait Attribute : Sized + Clone {
@@ -14,19 +19,36 @@ pub trait Attribute : Sized + Clone {
     fn is_full(&self) -> bool;
     fn union(&self,&Self) -> Self;
     fn intersection(&self,&Self) -> Option<Self>;
-    fn derive(Expr<Sort,Self,Self,()>) -> Self;
-    fn refine<T : Composite>(&CompExpr<T>,&mut Vec<Self>) -> bool;
+    fn derive<Em : Embed,Fun : Debug>(Expr<Em::Sort,Self,Self,Fun>,&mut Em) -> Self;
+    fn refine<Em : Embed,F : Fn(&Em::Var) -> usize>(&Em::Expr,&mut Vec<Self>,&mut Em,&F) -> Result<bool,Em::Error>;
+    fn can_derive_const() -> bool;
+    fn is_const(&self) -> Option<Value>;
 }
 
 pub struct AttributeDomain<Attr : Attribute> {
     attrs: Vec<Attr>
 }
 
-/*impl<Attr : Attribute> AttributeDomain {
-    fn expr_attribute<'a,T : Composite<'a>>(&self,e: &CompExpr<'a,T>) -> Attr {
-        
+impl<Attr : Attribute> AttributeDomain<Attr> {
+    fn expr_attribute<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,e: &Em::Expr,em:&mut Em,f:&F)
+                                                            -> Result<Attr,Em::Error> {
+        match em.unbed(e)? {
+            Expr::Var(ref v) => Ok(self.attrs[f(v)].clone()),
+            Expr::Const(v) => {
+                let e : Expr<Em::Sort,Attr,Attr,()> = Expr::Const(v);
+                Ok(Attr::derive(e,em))
+            },
+            Expr::App(fun,args) => {
+                let mut nargs = Vec::with_capacity(args.len());
+                for arg in args {
+                    nargs.push(self.expr_attribute(&arg,em,f)?);
+                }
+                Ok(Attr::derive(Expr::App(fun,nargs),em))
+            },
+            _ => Ok(Attr::full())
+        }
     }
-}*/
+}
 
 impl<Attr : Attribute,T : Composite> Domain<T> for AttributeDomain<Attr> {
     fn full(obj: &T) -> AttributeDomain<Attr> {
@@ -59,6 +81,20 @@ impl<Attr : Attribute,T : Composite> Domain<T> for AttributeDomain<Attr> {
         }
         true
     }
+    fn refine<Em : Embed,F : Fn(&Em::Var) -> usize>(&mut self,e: &Em::Expr,em: &mut Em,f: &F)
+                                                    -> Result<bool,Em::Error> {
+        Attr::refine(e,&mut self.attrs,em,f)
+    }
+    fn is_const<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,e: &Em::Expr,em: &mut Em,f: &F)
+                                                      -> Result<Option<Value>,Em::Error> {
+        if Attr::can_derive_const() {
+            let attr = self.expr_attribute(e,em,f)?;
+            Ok(attr.is_const())
+        } else {
+            Ok(None)
+        }
+    }
+
 }
 
 #[derive(Clone,Debug)]
@@ -109,37 +145,44 @@ impl Attribute for Const {
             }
         }
     }
-    fn refine<T : Composite>(e: &CompExpr<T>,mp: &mut Vec<Const>) -> bool {
-        match *e.0 {
-            Expr::Const(Value::Bool(v)) => v,
-            Expr::Var(ref v) => match mp[*v as usize] {
-                Const::IsConst(Value::Bool(false))
-                    => false,
-                _ => { mp[*v as usize] = Const::IsConst(Value::Bool(true));
-                       true }
+    fn refine<Em : Embed,F : Fn(&Em::Var) -> usize>(e: &Em::Expr,mp: &mut Vec<Const>,em: &mut Em,f: &F)
+                                                    -> Result<bool,Em::Error> {
+        match em.unbed(e)? {
+            Expr::Const(Value::Bool(v)) => Ok(v),
+            Expr::Var(ref v) => {
+                let rv : usize = f(v);
+                match mp[rv] {
+                    Const::IsConst(Value::Bool(false))
+                        => Ok(false),
+                    _ => { mp[rv] = Const::IsConst(Value::Bool(true));
+                           Ok(true) }
+                }
             },
             Expr::App(ref fun,ref args) => match *fun {
-                Function::Not => match *args[0].0 {
-                    Expr::Var(ref v) => match mp[*v as usize] {
-                        Const::IsConst(Value::Bool(false))
-                            => false,
-                        _ => { mp[*v as usize] = Const::IsConst(Value::Bool(false));
-                               true }
+                Function::Not => match em.unbed(&args[0])? {
+                    Expr::Var(ref v) => {
+                        let rv : usize = f(v);
+                        match mp[rv] {
+                            Const::IsConst(Value::Bool(false))
+                                => Ok(false),
+                            _ => { mp[rv] = Const::IsConst(Value::Bool(false));
+                                   Ok(true) }
+                        }
                     },
-                    _ => true
+                    _ => Ok(true)
                 },
                 Function::And(_) => {
                     for arg in args.iter() {
-                        if !(Self::refine(arg,mp)) { return false }
+                        if !(Self::refine(arg,mp,em,f)?) { return Ok(false) }
                     }
-                    true
+                    Ok(true)
                 },
-                _ => true
+                _ => Ok(true)
             },
-            _ => true
+            _ => Ok(true)
         }
     }
-    fn derive(e: Expr<Sort,Const,Const,()>) -> Const {
+    fn derive<Em : Embed,Fun : Debug>(e: Expr<Em::Sort,Const,Const,Fun>,em: &mut Em) -> Const {
         match e {
             Expr::Var(val)   => val,
             Expr::Const(val) => Const::IsConst(val),
@@ -165,6 +208,29 @@ impl Attribute for Const {
             _ => panic!("Derive: {:?}",e)
         }
     }
+    fn can_derive_const() -> bool { true }
+    fn is_const(&self) -> Option<Value> {
+        match *self {
+            Const::IsConst(ref v) => Some(v.clone()),
+            Const::NotConst => None
+        }
+    }
+}
+
+impl<T : Composite> Domain<T> for () {
+    fn full(_:&T) -> () { () }
+    fn is_full(&self) -> bool { true }
+    fn union(&mut self,_:&()) -> () { }
+    fn intersection(&mut self,_:&()) -> bool { true }
+    fn refine<Em : Embed,F : Fn(&Em::Var) -> usize>(&mut self,_:&Em::Expr,_:&mut Em,_:&F)
+                                                    -> Result<bool,Em::Error> {
+        Ok(true)
+    }
+    fn is_const<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,_:&Em::Expr,_:&mut Em,_:&F)
+                                                      -> Result<Option<Value>,Em::Error> {
+        Ok(None)
+    }
+
 }
 
 impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
@@ -189,6 +255,20 @@ impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
             return false
         }
         true
+    }
+    fn refine<Em : Embed,F : Fn(&Em::Var) -> usize>(&mut self,e:&Em::Expr,em:&mut Em,f:&F)
+                                                    -> Result<bool,Em::Error> {
+        if !self.0.refine(e,em,f)? {
+            return Ok(false)
+        }
+        self.1.refine(e,em,f)
+    }
+    fn is_const<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,e:&Em::Expr,em:&mut Em,f:&F)
+                                                      -> Result<Option<Value>,Em::Error> {
+        if let Some(v) = self.0.is_const(e,em,f)? {
+            return Ok(Some(v))
+        }
+        self.1.is_const(e,em,f)
     }
 }
 
@@ -220,5 +300,25 @@ impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>,D3 : Domain<T>> Domain<T> for (
             return false
         }
         true
+    }
+    fn refine<Em : Embed,F : Fn(&Em::Var) -> usize>(&mut self,e:&Em::Expr,em:&mut Em,f:&F)
+                                                    -> Result<bool,Em::Error> {
+        if !self.0.refine(e,em,f)? {
+            return Ok(false)
+        }
+        if !self.1.refine(e,em,f)? {
+            return Ok(false)
+        }
+        self.2.refine(e,em,f)
+    }
+    fn is_const<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,e:&Em::Expr,em:&mut Em,f:&F)
+                                                      -> Result<Option<Value>,Em::Error> {
+        if let Some(v) = self.0.is_const(e,em,f)? {
+            return Ok(Some(v))
+        }
+        if let Some(v) = self.1.is_const(e,em,f)? {
+            return Ok(Some(v))
+        }
+        self.2.is_const(e,em,f)
     }
 }
