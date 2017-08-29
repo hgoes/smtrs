@@ -133,4 +133,21 @@ impl Sort {
             }
         }
     }
+    pub fn from_embed<Em : Embed>(srt: &Em::Sort,em: &mut Em) -> Result<Sort,Em::Error> {
+        match em.unbed_sort(srt)? {
+            SortKind::Bool => Ok(Sort(SortKind::Bool)),
+            SortKind::Int => Ok(Sort(SortKind::Int)),
+            SortKind::Real => Ok(Sort(SortKind::Real)),
+            SortKind::BitVec(sz) => Ok(Sort(SortKind::BitVec(sz))),
+            SortKind::Array(idx,el) => {
+                let mut nidx = Vec::with_capacity(idx.len());
+                for i in idx.iter() {
+                    let ni = Sort::from_embed(i,em)?;
+                    nidx.push(Box::new(ni));
+                }
+                let nel = Sort::from_embed(&el,em)?;
+                Ok(Sort(SortKind::Array(nidx,Box::new(nel))))
+            }
+        }
+    }
 }
