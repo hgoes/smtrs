@@ -1668,6 +1668,67 @@ pub fn bv_vec_stack_push<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>
     }
 }
 
+pub fn bv_vec_stack_pop<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                         inp_stack: Transf<Comp<'b,Par>>,
+                                         exprs: &[CompExpr<Par>],
+                                         dom: &Dom,
+                                         em: &mut Comp<'b,Par>)
+                                         -> Result<Option<(OptRef<'a,BitVecVectorStack<T>>,
+                                                           Transf<Comp<'b,Par>>)>,()>
+    where T : Composite + Clone,
+          Par : Composite + Clone + Debug,
+          Dom : Domain<Par> {
+
+    let sz = stack.as_ref().elements.len();
+    let vec_sz = stack.as_ref().elements.num_elem();
+    let top = inp_stack.get(exprs,0,em)?;
+    let bitwidth = stack.as_ref().top;
+    let inp_vec = Transformation::view(1,vec_sz,inp_stack.clone());
+    let c = dom.is_const(&top,em,&|x| *x)?;
+    match c {
+        Some(Value::BitVec(bitwidth2,x)) => {
+            debug_assert_eq!(bitwidth,bitwidth2);
+            match x.to_usize() {
+                Some(rx) => if rx==0 || rx==1 {
+                    let zero = em.const_bitvec(bitwidth,BigInt::from(0))?;
+                    Ok(Some((OptRef::Owned(BitVecVectorStack { top: bitwidth,
+                                                               elements: vec![] }),
+                             Transformation::constant(vec![zero]))))
+                } else {
+                    let nst = match stack {
+                        OptRef::Ref(ref st)
+                            => OptRef::Owned(BitVecVectorStack { top: bitwidth,
+                                                                 elements: st.elements.iter().take(rx)
+                                                                 .map(Clone::clone).collect()
+                            }),
+                        OptRef::Owned(mut v) => {
+                            v.elements.truncate(rx-1);
+                            OptRef::Owned(BitVecVectorStack { top: bitwidth,
+                                                              elements: v.elements })
+                        }
+                    };
+                    let inp_nvec = Transformation::view(1,nst.as_ref().elements.num_elem(),inp_stack);
+                    let inp_ntop = Transformation::constant(vec![em.const_bitvec(bitwidth,BigInt::from(rx-1))?]);
+                    Ok(Some((nst,Transformation::concat(&[inp_ntop,inp_nvec]))))
+                },
+                None => panic!("Index overflow")
+            }
+        },
+        Some(_) => panic!("Invalid index type"),
+        None => {
+            let ntop_fun = move |_:&[CompExpr<Par>],_:usize,e: CompExpr<Par>,em: &mut Comp<Par>| {
+                let zero = em.const_bitvec(bitwidth,BigInt::from(0))?;
+                let one = em.const_bitvec(bitwidth,BigInt::from(1))?;
+                let cond = em.eq(e.clone(),zero.clone())?;
+                let ne = em.bvsub(e.clone(),one)?;
+                em.ite(cond,e,ne)
+            };
+            let inp_ntop = Transformation::map_by_elem(Box::new(ntop_fun),Transformation::view(0,1,inp_stack));
+            Ok(Some((stack,Transformation::concat(&[inp_ntop,inp_vec]))))
+        }
+    }
+}
+
 pub fn ite<'a,T,Em>(if_t: OptRef<'a,T>,if_f: OptRef<'a,T>,
                     inp_cond: Transf<Em>,
                     inp_if_t: Transf<Em>,
