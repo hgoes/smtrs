@@ -1537,9 +1537,67 @@ impl<T : Composite + Clone> Pool<T> for Vec<T> {
     }
 }
 
+#[derive(PartialEq,Eq,Hash)]
 pub struct BitVecVectorStack<T> {
     top: usize,
     elements: Vec<T>
+}
+
+impl<T : Composite + Clone> Composite for BitVecVectorStack<T> {
+    fn num_elem(&self) -> usize {
+        self.elements.num_elem()+1
+    }
+    fn elem_sort<Em : Embed>(&self,pos: usize,em: &mut Em)
+                             -> Result<Em::Sort,Em::Error> {
+        if pos==0 {
+            em.tp_bitvec(self.top)
+        } else {
+            self.elements.elem_sort(pos-1,em)
+        }
+    }
+    fn combine<'a,Em,FComb,FL,FR>(x: OptRef<'a,Self>,y: OptRef<'a,Self>,
+                                  inp_x: Transf<Em>,inp_y: Transf<Em>,
+                                  comb: &FComb,only_l: &FL,only_r: &FR,em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
+
+        if x.as_ref().top != y.as_ref().top {
+            return Ok(None)
+        }
+        let bitwidth = x.as_ref().top;
+        let top_inp = comb(Transformation::view(0,1,inp_x.clone()),
+                           Transformation::view(0,1,inp_y.clone()),em)?;
+        let vec_x = match x {
+            OptRef::Ref(ref rx) => OptRef::Ref(&rx.elements),
+            OptRef::Owned(rx) => OptRef::Owned(rx.elements)
+        };
+        let vec_y = match y {
+            OptRef::Ref(ref ry) => OptRef::Ref(&ry.elements),
+            OptRef::Owned(ry) => OptRef::Owned(ry.elements)
+        };
+        match Vec::combine(vec_x,vec_y,
+                           Transformation::view(1,inp_x.size()-1,inp_x),
+                           Transformation::view(1,inp_y.size()-1,inp_y),
+                           comb,only_l,only_r,em)? {
+            None => Ok(None),
+            Some((nvec,nvec_inp))
+                => Ok(Some((OptRef::Owned(BitVecVectorStack
+                                          { top: bitwidth,
+                                            elements: nvec.as_obj() }),
+                            Transformation::concat(&[top_inp,nvec_inp]))))
+        }
+    }
+    fn invariant<Em : Embed,F>(&self,em: &mut Em,f: &F,
+                               off: &mut usize,res: &mut Vec<Em::Expr>)
+                               -> Result<(),Em::Error>
+        where F : Fn(usize,&mut Em) -> Result<Em::Expr,Em::Error> {
+
+        *off+=1;
+        self.elements.invariant(em,f,off,res)
+    }
 }
 
 pub fn bv_vec_stack_empty<'a,T,Em>(bitwidth: usize,em: &mut Em)
