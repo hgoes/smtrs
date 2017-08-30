@@ -1550,6 +1550,52 @@ pub fn bv_vec_stack_empty<'a,T,Em>(bitwidth: usize,em: &mut Em)
     Ok((res,outp))
 }
 
+pub fn bv_vec_stack_top<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                         inp_stack: Transf<Comp<'b,Par>>,
+                                         exprs: &[CompExpr<Par>],
+                                         dom: &Dom,
+                                         em: &mut Comp<'b,Par>)
+                                         -> Result<Option<(OptRef<'a,T>,Transf<Comp<'b,Par>>)>,()>
+    where T : Composite + Clone,
+          Par : Composite + Clone + Debug,
+          Dom : Domain<Par> {
+
+    let sz = stack.as_ref().elements.len();
+    let top = inp_stack.get(exprs,0,em)?;
+    let c = dom.is_const(&top,em,&|x| *x)?;
+    let bitwidth = stack.as_ref().top;
+    let vec = match stack {
+        OptRef::Ref(ref st) => OptRef::Ref(&st.elements),
+        OptRef::Owned(st) => OptRef::Owned(st.elements)
+    };
+    let inp_vec = Transformation::view(1,inp_stack.size()-1,inp_stack.clone());
+    match c {
+        Some(Value::BitVec(bitwidth2,x)) => {
+            debug_assert_eq!(bitwidth,bitwidth2);
+            match x.to_usize() {
+                Some(rx) => if rx==0 || rx > sz {
+                    panic!("Invalid top value")
+                } else {
+                    Ok(Some(get_vec_elem(rx-1,vec,inp_vec)?))
+                },
+                None => panic!("Index overflow")
+            }
+        },
+        Some(_) => panic!("Invalid index type"),
+        None => {
+            let srt = em.tp_bitvec(bitwidth)?;
+            let idx = Singleton(srt);
+            let idx_fun = move |_:&[CompExpr<Par>],_:usize,e: CompExpr<Par>,em: &mut Comp<Par>| {
+                let one = em.const_bitvec(bitwidth,BigInt::from(1))?;
+                em.bvsub(e,one)
+            };
+            let inp_idx = Transformation::map_by_elem(Box::new(idx_fun),
+                                                      Transformation::view(0,1,inp_stack));
+            get_vec_elem_dyn(OptRef::Owned(idx),vec,inp_idx,inp_vec,exprs,dom,em)
+        }
+    }
+}
+
 pub fn bv_vec_stack_push<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
                                           el: OptRef<'a,T>,
                                           inp_stack: Transf<Comp<'b,Par>>,

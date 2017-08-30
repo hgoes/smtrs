@@ -129,6 +129,23 @@ pub trait Embed : Sized {
         self.embed(Expr::App(Function::BV(bw,BVOp::Arith(ArithOp::Add)),
                              vec![lhs,rhs]))
     }
+    fn bvsub(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        let srt_lhs = self.type_of(&lhs)?;
+        let bw = match self.is_bitvec(&srt_lhs)? {
+            Some(r) => r,
+            None => panic!("Argument to bvsub not a bitvector")
+        };
+        debug_assert!(match self.type_of(&rhs) {
+            Ok(tp_r) => match self.is_bitvec(&tp_r) {
+                Ok(Some(bw_r)) => bw==bw_r,
+                _ => false
+            },
+            Err(_) => false
+        });
+        self.embed(Expr::App(Function::BV(bw,BVOp::Arith(ArithOp::Sub)),
+                             vec![lhs,rhs]))
+    }
     fn select(&mut self,arr: Self::Expr,idx: Vec<Self::Expr>)
               -> Result<Self::Expr,Self::Error> {
         let arr_tp = self.type_of(&arr)?;
