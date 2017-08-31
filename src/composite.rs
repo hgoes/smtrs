@@ -1810,3 +1810,33 @@ pub fn ite<'a,T,Em>(if_t: OptRef<'a,T>,if_f: OptRef<'a,T>,
                &|tr,_| Ok(tr),
                em)
 }
+
+pub fn vec_pool_alloc<'a,T,F,Em>(vec: OptRef<'a,Vec<T>>,
+                                 el: OptRef<'a,T>,
+                                 vec_inp: Transf<Em>,
+                                 el_inp: Transf<Em>,
+                                 is_free: &F)
+                                 -> Result<(usize,OptRef<'a,Vec<T>>,Transf<Em>),Em::Error>
+    where T : Composite + Clone,
+          F : Fn(&T,Transf<Em>) -> bool,
+          Em : Embed {
+    let mut nvec = vec.as_obj();
+    let mut off = 0;
+    let mut pos = 0;
+    while pos<nvec.len() {
+        let sz = nvec[pos].num_elem();
+        let vw = Transformation::view(off,sz,vec_inp.clone());
+        if is_free(&nvec[pos],vw) {
+            nvec[pos] = el.as_obj();
+            let ntrans = Transformation::concat(&[Transformation::view(0,off,vec_inp.clone()),
+                                                  el_inp,
+                                                  Transformation::view(off+sz,vec_inp.size()-off-sz,vec_inp.clone())]);
+            return Ok((pos,OptRef::Owned(nvec),ntrans))
+        }
+        off += sz;
+        pos += 1;
+    }
+    nvec.push(el.as_obj());
+    Ok((pos,OptRef::Owned(nvec),
+        Transformation::concat(&[vec_inp,el_inp])))
+}
