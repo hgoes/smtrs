@@ -259,7 +259,7 @@ impl<T : Composite + Clone> Composite for Vec<T> {
     }
 }
 
-#[derive(PartialEq,Eq,Hash)]
+#[derive(PartialEq,Eq,Hash,Clone)]
 pub struct Choice<T>(Vec<T>);
 
 impl<'a,T : 'a> OptRef<'a,Choice<T>> {
