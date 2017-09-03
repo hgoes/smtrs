@@ -1609,6 +1609,25 @@ pub fn bv_vec_stack_empty<'a,T,Em>(bitwidth: usize,em: &mut Em)
     Ok((res,outp))
 }
 
+pub fn bv_vec_stack_get<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                         inp_stack: Transf<Comp<'b,Par>>,
+                                         inp_idx: Transf<Comp<'b,Par>>,
+                                         exprs: &[CompExpr<Par>],
+                                         dom: &Dom,
+                                         em: &mut Comp<'b,Par>)
+                                         -> Result<Option<(OptRef<'a,T>,Transf<Comp<'b,Par>>)>,()>
+    where T : Composite + Clone,
+          Par : Composite + Clone + Debug,
+          Dom : Domain<Par> {
+    let vec = match stack {
+        OptRef::Ref(ref rst) => OptRef::Ref(&rst.elements),
+        OptRef::Owned(rst) => OptRef::Owned(rst.elements)
+    };
+    let sz = inp_stack.size();
+    let inp_vec = Transformation::view(1,sz-1,inp_stack);
+    get_vec_elem_dyn(vec,inp_idx,inp_vec,exprs,dom,em)
+}
+
 pub fn bv_vec_stack_top<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
                                          inp_stack: Transf<Comp<'b,Par>>,
                                          exprs: &[CompExpr<Par>],
