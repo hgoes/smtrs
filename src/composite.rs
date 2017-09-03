@@ -1259,8 +1259,7 @@ pub fn get_vec_elem<'a,T,Em>(pos: usize,vec: OptRef<'a,Vec<T>>,inp: Transf<Em>)
 }
 
 pub fn get_vec_elem_dyn<'a,'b,T,Par,Dom
-                        >(_: OptRef<'a,Singleton>,
-                          vec: OptRef<'a,Vec<T>>,
+                        >(vec: OptRef<'a,Vec<T>>,
                           inp_pos: Transf<Comp<'b,Par>>,
                           inp_vec: Transf<Comp<'b,Par>>,
                           exprs: &[CompExpr<Par>],
@@ -1643,15 +1642,13 @@ pub fn bv_vec_stack_top<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
         },
         Some(_) => panic!("Invalid index type"),
         None => {
-            let srt = em.tp_bitvec(bitwidth)?;
-            let idx = Singleton(srt);
             let idx_fun = move |_:&[CompExpr<Par>],_:usize,e: CompExpr<Par>,em: &mut Comp<Par>| {
                 let one = em.const_bitvec(bitwidth,BigInt::from(1))?;
                 em.bvsub(e,one)
             };
             let inp_idx = Transformation::map_by_elem(Box::new(idx_fun),
                                                       Transformation::view(0,1,inp_stack));
-            get_vec_elem_dyn(OptRef::Owned(idx),vec,inp_idx,inp_vec,exprs,dom,em)
+            get_vec_elem_dyn(vec,inp_idx,inp_vec,exprs,dom,em)
         }
     }
 }
