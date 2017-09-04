@@ -135,7 +135,7 @@ impl Composite for SingletonBool {
     }
 }
 
-#[derive(PartialEq,Eq,Hash)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone)]
 pub struct SingletonBitVec(usize);
 
 impl Composite for SingletonBitVec {
