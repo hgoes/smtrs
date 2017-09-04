@@ -136,7 +136,7 @@ impl Composite for SingletonBool {
 }
 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone)]
-pub struct SingletonBitVec(usize);
+pub struct SingletonBitVec(pub usize);
 
 impl Composite for SingletonBitVec {
     fn num_elem(&self) -> usize { 1 }
