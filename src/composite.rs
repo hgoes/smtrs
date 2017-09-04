@@ -874,6 +874,9 @@ impl<'a,T : 'a> OptRef<'a,T> {
             OptRef::Owned(ref x) => x
         }
     }
+    pub fn to_ref(&'a self) -> OptRef<'a,T> {
+        OptRef::Ref(self.as_ref())
+    }
 }
 
 impl<'a,T : 'a + Clone> OptRef<'a,T> {
