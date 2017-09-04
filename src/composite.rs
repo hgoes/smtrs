@@ -286,11 +286,24 @@ impl<'a,T : 'a + Composite,Em : Embed> Iterator for Choices<'a,T,Em> {
     }
 }
 
-impl<'a,T : 'a+Composite> Choice<T> {
+impl<'a,T : 'a+Composite+Ord> Choice<T> {
     pub fn choices<Em : Embed>(&'a self,tr: Transf<Em>) -> Choices<'a,T,Em> {
         Choices { transf: tr,
                   off: 0,
                   iter: self.0.iter() }
+    }
+    pub fn add(&mut self,el: T) -> () {
+        for pos in 0..self.0.len() {
+            match el.cmp(&self.0[pos]) {
+                Ordering::Equal => return (),
+                Ordering::Greater => {},
+                Ordering::Less => {
+                    self.0.insert(pos,el);
+                    return ()
+                }
+            }
+        }
+        self.0.push(el)
     }
 }
 
