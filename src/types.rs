@@ -6,7 +6,7 @@ use self::num_rational::Ratio;
 use embed::Embed;
 use std::fmt::{Display,Formatter,Error};
 
-#[derive(Clone,Debug,PartialEq,Eq,Hash)]
+#[derive(Clone,Debug,PartialEq,Eq,PartialOrd,Ord,Hash)]
 pub enum SortKind<T> {
     Bool,
     Int,
@@ -23,7 +23,7 @@ pub enum Value {
     BitVec(usize,BigInt)
 }
 
-#[derive(Clone,Debug,PartialEq,Eq,Hash)]
+#[derive(Clone,Debug,PartialEq,Eq,PartialOrd,Ord,Hash)]
 pub struct Sort(SortKind<Box<Sort>>);
 
 impl Sort {

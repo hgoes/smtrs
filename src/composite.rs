@@ -83,7 +83,7 @@ impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
     }
 }
 
-#[derive(PartialEq,Eq,Hash,Clone)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone)]
 pub struct Singleton(types::Sort);
 
 impl Composite for Singleton {
