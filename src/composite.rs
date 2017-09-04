@@ -264,6 +264,36 @@ impl<T : Composite + Clone> Composite for Vec<T> {
 #[derive(PartialEq,Eq,Hash,Clone)]
 pub struct Choice<T>(Vec<T>);
 
+pub struct Choices<'a,T : 'a,Em : Embed> {
+    transf: Transf<Em>,
+    off: usize,
+    iter: slice::Iter<'a,T>
+}
+
+impl<'a,T : 'a + Composite,Em : Embed> Iterator for Choices<'a,T,Em> {
+    type Item = (&'a T,Transf<Em>,Transf<Em>);
+    fn next(&mut self) -> Option<(&'a T,Transf<Em>,Transf<Em>)> {
+        match self.iter.next() {
+            None => None,
+            Some(el) => {
+                let sz = el.num_elem();
+                let cond = Transformation::view(self.off,1,self.transf.clone());
+                let inp = Transformation::view(self.off+1,sz,self.transf.clone());
+                self.off+=sz+1;
+                Some((el,cond,inp))
+            }
+        }
+    }
+}
+
+impl<'a,T : 'a+Composite> Choice<T> {
+    pub fn choices<Em : Embed>(&'a self,tr: Transf<Em>) -> Choices<'a,T,Em> {
+        Choices { transf: tr,
+                  off: 0,
+                  iter: self.0.iter() }
+    }
+}
+
 impl<'a,T : 'a> OptRef<'a,Choice<T>> {
     fn elements(self) -> OptRef<'a,Vec<T>> {
         match self {
