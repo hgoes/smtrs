@@ -97,6 +97,14 @@ pub trait Embed : Sized {
            -> Result<Self::Expr,Self::Error> {
         self.embed(Expr::App(Function::Not,vec![e]))
     }
+    fn and(&mut self,args: Vec<Self::Expr>)
+           -> Result<Self::Expr,Self::Error> {
+        self.embed(Expr::App(Function::And(args.len()),args))
+    }
+    fn or(&mut self,args: Vec<Self::Expr>)
+          -> Result<Self::Expr,Self::Error> {
+        self.embed(Expr::App(Function::Or(args.len()),args))
+    }
     fn ite(&mut self,cond: Self::Expr,if_t: Self::Expr,if_f: Self::Expr)
            -> Result<Self::Expr,Self::Error> {
         let srt = self.type_of(&if_t)?;
