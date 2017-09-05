@@ -873,11 +873,11 @@ pub fn snd<'a,A,B,Em>(tuple: OptRef<'a,(A,B)>,inp: Transf<Em>)
 
 pub fn tuple<'a,A,B,Em>(el_a: OptRef<'a,A>,el_b: OptRef<'a,B>,
                         inp_a: Transf<Em>,inp_b: Transf<Em>)
-                        -> Result<(OptRef<'a,(A,B)>,Transf<Em>),Em::Error>
+                        -> (OptRef<'a,(A,B)>,Transf<Em>)
     where A : Composite + Clone,B : Composite + Clone,Em : Embed {
     let res = OptRef::Owned((el_a.as_obj(),el_b.as_obj()));
     let outp = Transformation::concat(&[inp_a,inp_b]);
-    Ok((res,outp))
+    (res,outp)
 }
 
 pub enum OptRef<'a,T : 'a> {
