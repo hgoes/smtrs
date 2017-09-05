@@ -1742,14 +1742,14 @@ pub fn bv_vec_stack_get_top<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<
     bv_vec_stack_get(stack,inp_stack,top,exprs,dom,em)
 }
 
-pub fn bv_vec_stack_set_top<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
-                                             inp_stack: Transf<Comp<'b,Par>>,
-                                             el: OptRef<'a,T>,
-                                             inp_el: Transf<Comp<'b,Par>>,
-                                             exprs: &[CompExpr<Par>],
-                                             dom: &Dom,
-                                             em: &mut Comp<'b,Par>)
-                                             -> Result<Option<(OptRef<'a,BitVecVectorStack<T>>,Transf<Comp<'b,Par>>)>,()>
+pub fn bv_vec_stack_set_top<'a,'b,'c,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                                inp_stack: Transf<Comp<'b,Par>>,
+                                                el: OptRef<'a,T>,
+                                                inp_el: Transf<Comp<'b,Par>>,
+                                                exprs: &[CompExpr<Par>],
+                                                dom: &Dom,
+                                                em: &mut Comp<'b,Par>)
+                                                -> Result<Option<(OptRef<'c,BitVecVectorStack<T>>,Transf<Comp<'b,Par>>)>,()>
     where T : Composite + Clone,
           Par : Composite + Clone + Debug,
           Dom : Domain<Par> {
@@ -1757,14 +1757,14 @@ pub fn bv_vec_stack_set_top<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<
     bv_vec_stack_set(stack,inp_stack,top,el,inp_el,exprs,dom,em)
 }
 
-pub fn bv_vec_stack_push<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
-                                          el: OptRef<'a,T>,
-                                          inp_stack: Transf<Comp<'b,Par>>,
-                                          inp_el: Transf<Comp<'b,Par>>,
-                                          exprs: &[CompExpr<Par>],
-                                          dom: &Dom,
-                                          em: &mut Comp<'b,Par>)
-                                          -> Result<Option<(OptRef<'a,BitVecVectorStack<T>>,Transf<Comp<'b,Par>>)>,()>
+pub fn bv_vec_stack_push<'a,'b,'c,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                             el: OptRef<'a,T>,
+                                             inp_stack: Transf<Comp<'b,Par>>,
+                                             inp_el: Transf<Comp<'b,Par>>,
+                                             exprs: &[CompExpr<Par>],
+                                             dom: &Dom,
+                                             em: &mut Comp<'b,Par>)
+                                             -> Result<Option<(OptRef<'c,BitVecVectorStack<T>>,Transf<Comp<'b,Par>>)>,()>
     where T : Composite + Clone,
           Par : Composite + Clone + Debug,
           Dom : Domain<Par> {
@@ -1912,12 +1912,12 @@ pub fn ite<'a,T,Em>(if_t: OptRef<'a,T>,if_f: OptRef<'a,T>,
                em)
 }
 
-pub fn vec_pool_alloc<'a,T,F,Em>(vec: OptRef<'a,Vec<T>>,
-                                 el: OptRef<'a,T>,
-                                 vec_inp: Transf<Em>,
-                                 el_inp: Transf<Em>,
-                                 is_free: &F)
-                                 -> Result<(usize,OptRef<'a,Vec<T>>,Transf<Em>),Em::Error>
+pub fn vec_pool_alloc<'a,'b,T,F,Em>(vec: OptRef<'a,Vec<T>>,
+                                    el: OptRef<'a,T>,
+                                    vec_inp: Transf<Em>,
+                                    el_inp: Transf<Em>,
+                                    is_free: &F)
+                                    -> Result<(usize,OptRef<'b,Vec<T>>,Transf<Em>),Em::Error>
     where T : Composite + Clone,
           F : Fn(&T,Transf<Em>) -> bool,
           Em : Embed {
