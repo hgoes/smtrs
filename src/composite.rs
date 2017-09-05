@@ -830,6 +830,24 @@ impl<A : Composite + Clone,B : Composite + Clone> Composite for (A,B) {
 
 }
 
+pub fn decompose_tuple<'a,A,B,Em>(tuple: OptRef<'a,(A,B)>,
+                                  inp: Transf<Em>)
+                                  -> (OptRef<'a,A>,
+                                      Transf<Em>,
+                                      OptRef<'a,B>,
+                                      Transf<Em>)
+    where A : Composite,B : Composite,Em : Embed {
+    let (fst,snd) = match tuple {
+        OptRef::Owned((x,y)) => (OptRef::Owned(x),OptRef::Owned(y)),
+        OptRef::Ref(&(ref x,ref y)) => (OptRef::Ref(x),OptRef::Ref(y))
+    };
+    let sz_fst = fst.as_ref().num_elem();
+    let sz_snd = snd.as_ref().num_elem();
+    let fst_inp = Transformation::view(0,sz_fst,inp.clone());
+    let snd_inp = Transformation::view(sz_fst,sz_snd,inp);
+    (fst,fst_inp,snd,snd_inp)
+}
+
 pub fn fst<'a,A,B,Em>(tuple: OptRef<'a,(A,B)>,inp: Transf<Em>)
                       -> Result<(OptRef<'a,A>,Transf<Em>),Em::Error>
     where A : Composite,B : Composite,Em : Embed {
