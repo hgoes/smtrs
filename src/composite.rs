@@ -2091,12 +2091,12 @@ pub fn assoc_get<'a,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
     }
 }
 
-pub fn assoc_insert<'a,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
-                               inp_assoc: Transf<Em>,
-                               key: &K,
-                               value: OptRef<'a,V>,
-                               inp_value: Transf<Em>)
-                               -> Result<(OptRef<'a,Assoc<K,V>>,Transf<Em>),Em::Error>
+pub fn assoc_insert<'a,'b,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
+                                  inp_assoc: Transf<Em>,
+                                  key: &K,
+                                  value: OptRef<'a,V>,
+                                  inp_value: Transf<Em>)
+                                  -> Result<(OptRef<'b,Assoc<K,V>>,Transf<Em>),Em::Error>
     where K : Ord + Hash + Clone, V : Composite + Clone, Em : Embed {
     let mut rassoc = assoc.as_obj();
     let nsz = value.as_ref().num_elem();
