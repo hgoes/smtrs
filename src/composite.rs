@@ -871,9 +871,9 @@ pub fn snd<'a,A,B,Em>(tuple: OptRef<'a,(A,B)>,inp: Transf<Em>)
     Ok((el,outp))
 }
 
-pub fn tuple<'a,A,B,Em>(el_a: OptRef<'a,A>,el_b: OptRef<'a,B>,
-                        inp_a: Transf<Em>,inp_b: Transf<Em>)
-                        -> (OptRef<'a,(A,B)>,Transf<Em>)
+pub fn tuple<'a,'b,A,B,Em>(el_a: OptRef<'a,A>,el_b: OptRef<'a,B>,
+                           inp_a: Transf<Em>,inp_b: Transf<Em>)
+                           -> (OptRef<'b,(A,B)>,Transf<Em>)
     where A : Composite + Clone,B : Composite + Clone,Em : Embed {
     let res = OptRef::Owned((el_a.as_obj(),el_b.as_obj()));
     let outp = Transformation::concat(&[inp_a,inp_b]);
