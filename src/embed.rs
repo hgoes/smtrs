@@ -93,6 +93,23 @@ pub trait Embed : Sized {
         }));
         self.embed(Expr::App(Function::Eq(srt,args.len()),args))
     }
+    fn add_int(&mut self,mut args: Vec<Self::Expr>)
+               -> Result<Self::Expr,Self::Error> {
+        match args.len() {
+            0 => self.const_int(BigInt::from(0)),
+            1 => Ok(args.remove(0)),
+            l => self.embed(Expr::App(Function::ArithInt(ArithOp::Add,l),
+                                      args))
+        }
+    }
+    fn sub_int(&mut self,args: Vec<Self::Expr>)
+               -> Result<Self::Expr,Self::Error> {
+        match args.len() {
+            0 => self.const_int(BigInt::from(0)),
+            l => self.embed(Expr::App(Function::ArithInt(ArithOp::Sub,l),
+                                      args))
+        }
+    }
     fn not(&mut self,e: Self::Expr)
            -> Result<Self::Expr,Self::Error> {
         self.embed(Expr::App(Function::Not,vec![e]))
