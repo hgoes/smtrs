@@ -1089,6 +1089,15 @@ impl<Em : Embed> Transformation<Em> {
                        -> Rc<Transformation<Em>> {
         Rc::new(Transformation::MapByElem(f,tr))
     }
+    pub fn ite(cond: Transf<Em>,
+               if_true: Transf<Em>,
+               if_false: Transf<Em>)
+               -> Transf<Em> {
+        Rc::new(Transformation::ITE(if_true.size(),
+                                    vec![(cond,
+                                          if_true)],
+                                    if_false))
+    }
     pub fn size(&self) -> usize {
         match *self {
             Transformation::Id(sz) => sz,
@@ -1838,7 +1847,6 @@ pub fn bv_vec_stack_pop<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
           Par : Composite + Clone + Debug,
           Dom : Domain<Par> {
 
-    let sz = stack.as_ref().elements.len();
     let vec_sz = stack.as_ref().elements.num_elem();
     let top = inp_stack.get(exprs,0,em)?;
     let bitwidth = stack.as_ref().top;
@@ -2146,4 +2154,54 @@ pub fn assoc_insert<'a,'b,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
         (&[Transformation::view(0,off,inp_assoc.clone()),
            inp_value,
            Transformation::view(off+osz,whole_sz-off-osz,inp_assoc)])))
+}
+
+pub fn choice_insert<'a,T,Em>(choice: OptRef<'a,Choice<T>>,
+                              inp_choice: Transf<Em>,
+                              inp_cond: Transf<Em>,
+                              el: OptRef<'a,T>,
+                              inp_el: Transf<Em>)
+                              -> Result<(OptRef<'a,Choice<T>>,
+                                         Transf<Em>),Em::Error>
+    where T : Composite+Clone+Ord,Em : Embed {
+    let el_sz = inp_el.size();
+    let ch_sz = inp_choice.size();
+    let mut pos = 0;
+    let mut off = 0;
+    let mut replace = false;
+    for cel in choice.as_ref().0.iter() {
+        let sz = cel.num_elem();
+        match el.as_ref().cmp(&cel) {
+            Ordering::Equal => {
+                replace = true;
+                break
+            },
+            Ordering::Less => break,
+            Ordering::Greater => {
+                pos+=1;
+                off+=sz;
+            }
+        }
+    }
+    if replace {
+        let or_fun = |lhs:&[Em::Expr],rhs:&[Em::Expr],res:&mut Vec<Em::Expr>,em:&mut Em| {
+            res.push(em.or(vec![lhs[0].clone(),rhs[0].clone()])?);
+            Ok(())
+        };
+        let ncond = Transformation::zip2(1,Box::new(or_fun),inp_cond.clone(),
+                                         Transformation::view(off,1,inp_choice.clone()));
+        let ninp = Transformation::ite(inp_cond,inp_el,
+                                       Transformation::view(off+1,el_sz,inp_choice.clone()));
+        let rinp = Transformation::concat(&[Transformation::view(0,off,inp_choice.clone()),
+                                            ncond,ninp,
+                                            Transformation::view(off+1+el_sz,ch_sz-off-1-el_sz,inp_choice)]);
+        Ok((choice,rinp))
+    } else {
+        let mut nchoice = choice.as_obj();
+        nchoice.0.insert(pos,el.as_obj());
+        let ninp = Transformation::concat(&[Transformation::view(0,off,inp_choice.clone()),
+                                            inp_cond,inp_el,
+                                            Transformation::view(off,ch_sz-off,inp_choice)]);
+        Ok((OptRef::Owned(nchoice),ninp))
+    }
 }
