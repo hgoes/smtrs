@@ -2156,6 +2156,11 @@ pub fn assoc_insert<'a,'b,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
            Transformation::view(off+osz,whole_sz-off-osz,inp_assoc)])))
 }
 
+pub fn choice_empty<'a,T,Em : Embed>() -> (OptRef<'a,Choice<T>>,Transf<Em>) {
+    (OptRef::Owned(Choice(vec![])),
+     Transformation::id(0))
+}
+
 pub fn choice_insert<'a,T,Em>(choice: OptRef<'a,Choice<T>>,
                               inp_choice: Transf<Em>,
                               inp_cond: Transf<Em>,
