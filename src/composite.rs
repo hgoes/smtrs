@@ -980,6 +980,10 @@ pub enum Transformation<Em : Embed> {
     ),
     MapByElem(Box<for <'a,'b> Fn(&'a [Em::Expr],usize,Em::Expr,&'b mut Em) -> Result<Em::Expr,Em::Error>>,
               Rc<Transformation<Em>>),
+    ZipsByElem(Box<for <'a,'b> Fn(&'a [Em::Expr],&'b mut Em) -> Result<Em::Expr,Em::Error>>,
+               Vec<Rc<Transformation<Em>>>,
+               RefCell<Vec<Em::Expr>> // Buffer
+    ),
     ITE(usize,Vec<(Rc<Transformation<Em>>,Rc<Transformation<Em>>)>,
         Rc<Transformation<Em>>)
 }
@@ -1089,6 +1093,12 @@ impl<Em : Embed> Transformation<Em> {
                        -> Rc<Transformation<Em>> {
         Rc::new(Transformation::MapByElem(f,tr))
     }
+    pub fn zips_by_elem(f: Box<for <'a,'b> Fn(&'a [Em::Expr],&'b mut Em) -> Result<Em::Expr,Em::Error>>,
+                        trs: Vec<Rc<Transformation<Em>>>)
+                        -> Rc<Transformation<Em>> {
+        let buf = Vec::with_capacity(trs.len());
+        Rc::new(Transformation::ZipsByElem(f,trs,RefCell::new(buf)))
+    }
     pub fn ite(cond: Transf<Em>,
                if_true: Transf<Em>,
                if_false: Transf<Em>)
@@ -1097,6 +1107,14 @@ impl<Em : Embed> Transformation<Em> {
                                     vec![(cond,
                                           if_true)],
                                     if_false))
+    }
+    pub fn and(trs: Vec<Rc<Transformation<Em>>>)
+               -> Rc<Transformation<Em>> {
+        Transformation::zips_by_elem(Box::new(|els,em| { em.and(els.to_vec()) }),trs)
+    }
+    pub fn or(trs: Vec<Rc<Transformation<Em>>>)
+              -> Rc<Transformation<Em>> {
+        Transformation::zips_by_elem(Box::new(|els,em| { em.or(els.to_vec()) }),trs)
     }
     pub fn size(&self) -> usize {
         match *self {
@@ -1109,6 +1127,7 @@ impl<Em : Embed> Transformation<Em> {
             Transformation::Zip3(sz,_,_,_,_,_) => sz,
             Transformation::Write(sz,_,_,_,_) => sz,
             Transformation::MapByElem(_,ref tr) => tr.size(),
+            Transformation::ZipsByElem(_,ref trs,_) => trs[0].size(),
             Transformation::ITE(sz,_,_) => sz
         }
     }
@@ -1140,6 +1159,9 @@ impl<Em : Embed> Transformation<Em> {
                 trg.clear_cache();
             },
             Transformation::MapByElem(_,ref tr) => tr.clear_cache(),
+            Transformation::ZipsByElem(_,ref trs,_) => for tr in trs.iter() {
+                tr.clear_cache()
+            },
             Transformation::ITE(_,ref arr,ref def) => {
                 for &(ref cond,ref el) in arr.iter() {
                     cond.clear_cache();
@@ -1223,16 +1245,14 @@ impl<Em : Embed> Transformation<Em> {
     }
     fn to_slice<'a>(&'a self,arr: &'a [Em::Expr],off: usize,len: usize,em: &mut Em)
                     -> Result<BorrowedSlice<'a,Em::Expr>,Em::Error> {
-        match self.as_slice(arr,off,len) {
-            Some(res) => Ok(res),
-            None => {
-                let mut rvec = Vec::with_capacity(len);
-                for i in 0..len {
-                    rvec.push(self.get(arr,off+i,em)?);
-                }
-                Ok(BorrowedSlice::OwnedSlice(rvec))
-            }
+        if let Some(res) = self.as_slice(arr,off,len) {
+            return Ok(res)
         }
+        let mut rvec = Vec::with_capacity(len);
+        for i in 0..len {
+            rvec.push(self.get(arr,off+i,em)?);
+        }
+        return Ok(BorrowedSlice::OwnedSlice(rvec))
     }
     pub fn get(&self,arr: &[Em::Expr],idx: usize,em: &mut Em)
                -> Result<Em::Expr,Em::Error> {
@@ -1303,6 +1323,14 @@ impl<Em : Embed> Transformation<Em> {
             },
             Transformation::MapByElem(ref f,ref tr)
                 => f(arr,idx,tr.get(arr,idx,em)?,em),
+            Transformation::ZipsByElem(ref f,ref trs,ref buf_cell) => {
+                let mut buf = (*buf_cell).borrow_mut();
+                buf.clear();
+                for tr in trs.iter() {
+                    buf.push(tr.get(arr,idx,em)?);
+                }
+                f(&buf[..],em)
+            },
             Transformation::ITE(_,ref conds,ref def) => {
                 let mut expr = def.get(arr,idx,em)?;
                 for &(ref cond,ref el) in conds.iter() {
