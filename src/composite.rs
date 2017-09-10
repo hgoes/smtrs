@@ -1344,6 +1344,63 @@ impl<Em : Embed> Transformation<Em> {
     }
 }
 
+/// Used to access elements of an array in an element-by-element fashion.
+pub struct VecAccess<It : Iterator<Item=usize>,T,Em : Embed> {
+    values: It,
+    next: usize,
+    last_off: usize,
+    vec: Vec<T>,
+    vec_inp: Transf<Em>,
+    nvec_inp: Vec<Transf<Em>>
+}
+
+impl<It : Iterator<Item=usize>,T : Composite,Em : Embed> VecAccess<It,T,Em> {
+    /// Create a new accessor from a vector, a transformation and an iterator over the indices.
+    pub fn new(v: Vec<T>,tr: Transf<Em>,it: It) -> Self {
+        VecAccess { values: it,
+                    next: 0,
+                    last_off: 0,
+                    vec: v,
+                    vec_inp: tr,
+                    nvec_inp: Vec::new() }
+    }
+    /// Get the next element of the vector.
+    pub fn next<'a>(&'a mut self) -> Option<(&'a mut T,&'a mut Transf<Em>)> {
+        if let Some(idx) = self.values.next() {
+            if self.next<idx {
+                let mut skip = 0;
+                for i in self.next..idx {
+                    skip+=self.vec[i].num_elem();
+                }
+                self.nvec_inp.push(Transformation::view(self.last_off,skip,self.vec_inp.clone()));
+                self.last_off+=skip;
+            }
+            self.next = idx+1;
+            let sz = self.vec[idx].num_elem();
+            self.nvec_inp.push(Transformation::view(self.last_off,sz,self.vec_inp.clone()));
+            self.last_off+=sz;
+            if let Some(last_ref) = self.nvec_inp.last_mut() {
+                Some((&mut self.vec[idx],last_ref))
+            } else {
+                unreachable!()
+            }
+        } else {
+            None
+        }
+    }
+    /// Destroy the iterator and return the resulting vector and transformation.
+    pub fn finish(mut self) -> (Vec<T>,Transf<Em>) {
+        if self.next < self.vec.len() {
+            let mut skip = 0;
+            for i in self.next..self.vec.len() {
+                skip+=self.vec[i].num_elem();
+            }
+            self.nvec_inp.push(Transformation::view(self.last_off,skip,self.vec_inp));
+        }
+        (self.vec,Transformation::concat(&self.nvec_inp[..]))
+    }
+}
+
 pub fn get_vec_elem<'a,T,Em>(pos: usize,vec: OptRef<'a,Vec<T>>,inp: Transf<Em>)
                              -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>
     where T : Composite + Clone, Em : Embed {
