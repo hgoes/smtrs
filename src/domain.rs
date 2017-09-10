@@ -3,18 +3,42 @@ use types::{Value};
 use embed::Embed;
 use composite::*;
 use std::fmt::Debug;
+use std::iter::{Empty,Once,once};
+use std::cmp::Ordering;
+
+pub trait HasMoreIterator : Iterator {
+    fn has_more(&self) -> bool;
+}
+
+impl<T> HasMoreIterator for Empty<T> {
+    fn has_more(&self) -> bool { false }
+}
+
+impl<T> HasMoreIterator for Once<T> {
+    fn has_more(&self) -> bool {
+        self.len() > 0
+    }
+}
 
 pub trait Domain<T : Composite> {
+    type ValueIterator : HasMoreIterator<Item=Value>;
     fn full(&T) -> Self;
     fn is_full(&self) -> bool;
     fn union(&mut self,&Self) -> ();
     fn intersection(&mut self,&Self) -> bool;
     fn refine<Em : Embed,F : Fn(&Em::Var) -> usize>(&mut self,&Em::Expr,&mut Em,&F) -> Result<bool,Em::Error>;
     fn is_const<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,&Em::Expr,&mut Em,&F)
-                                                      -> Result<Option<Value>,Em::Error>;
+                                                      -> Result<Option<Value>,Em::Error> {
+        Ok(None)
+    }
+    fn values<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,&Em::Expr,&mut Em,&F)
+                                                    -> Result<Option<Self::ValueIterator>,Em::Error> {
+        Ok(None)
+    }
 }
 
 pub trait Attribute : Sized + Clone {
+    type ValueIterator : HasMoreIterator<Item=Value>;
     fn full() -> Self;
     fn is_full(&self) -> bool;
     fn union(&self,&Self) -> Self;
@@ -23,6 +47,8 @@ pub trait Attribute : Sized + Clone {
     fn refine<Em : Embed,F : Fn(&Em::Var) -> usize>(&Em::Expr,&mut Vec<Self>,&mut Em,&F) -> Result<bool,Em::Error>;
     fn can_derive_const() -> bool;
     fn is_const(&self) -> Option<Value>;
+    fn can_derive_values() -> bool;
+    fn values(&self) -> Option<Self::ValueIterator>;
 }
 
 pub struct AttributeDomain<Attr : Attribute> {
@@ -51,6 +77,7 @@ impl<Attr : Attribute> AttributeDomain<Attr> {
 }
 
 impl<Attr : Attribute,T : Composite> Domain<T> for AttributeDomain<Attr> {
+    type ValueIterator = Attr::ValueIterator;
     fn full(obj: &T) -> AttributeDomain<Attr> {
         let sz = obj.num_elem();
         let mut vec = Vec::with_capacity(sz as usize);
@@ -94,7 +121,15 @@ impl<Attr : Attribute,T : Composite> Domain<T> for AttributeDomain<Attr> {
             Ok(None)
         }
     }
-
+    fn values<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,e: &Em::Expr,em: &mut Em,f: &F)
+                                                    -> Result<Option<Self::ValueIterator>,Em::Error> {
+        if Attr::can_derive_values() {
+            let attr = self.expr_attribute(e,em,f)?;
+            Ok(attr.values())
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[derive(Clone,Debug)]
@@ -113,6 +148,7 @@ impl Const {
 }
 
 impl Attribute for Const {
+    type ValueIterator = Once<Value>;
     fn full() -> Const {
         Const::NotConst
     }
@@ -215,9 +251,17 @@ impl Attribute for Const {
             Const::NotConst => None
         }
     }
+    fn can_derive_values() -> bool { true }
+    fn values(&self) -> Option<Self::ValueIterator> {
+        match *self {
+            Const::IsConst(ref v) => Some(once(v.clone())),
+            Const::NotConst => None
+        }
+    }
 }
 
 impl<T : Composite> Domain<T> for () {
+    type ValueIterator = Empty<Value>;
     fn full(_:&T) -> () { () }
     fn is_full(&self) -> bool { true }
     fn union(&mut self,_:&()) -> () { }
@@ -226,14 +270,118 @@ impl<T : Composite> Domain<T> for () {
                                                     -> Result<bool,Em::Error> {
         Ok(true)
     }
-    fn is_const<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,_:&Em::Expr,_:&mut Em,_:&F)
-                                                      -> Result<Option<Value>,Em::Error> {
-        Ok(None)
-    }
-
 }
 
-impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
+pub enum OptMerge2<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> {
+    Only1(It1),
+    Only2(It2),
+    Both(Union2<V,It1,It2>)
+}
+
+pub struct Intersection2<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> {
+    it1: It1,
+    it2: It2
+}
+
+pub struct Union2<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> {
+    it1: It1,
+    it2: It2,
+    buf: Option<(bool,V)>,
+}
+
+impl<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> Iterator for OptMerge2<V,It1,It2> {
+    type Item = V;
+    fn next(&mut self) -> Option<V> {
+        match *self {
+            OptMerge2::Only1(ref mut it) => it.next(),
+            OptMerge2::Only2(ref mut it) => it.next(),
+            OptMerge2::Both(ref mut it) => it.next()
+        }
+    }
+}
+
+impl<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> Union2<V,It1,It2> {
+    pub fn new(it1: It1,it2: It2) -> Self {
+        Union2 { it1: it1,
+                 it2: it2,
+                 buf: None }
+    }
+}
+
+impl<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> Intersection2<V,It1,It2> {
+    pub fn new(it1: It1,it2: It2) -> Self {
+        Intersection2 { it1: it1,
+                        it2: it2 }
+    }
+}
+
+impl<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> Iterator for Intersection2<V,It1,It2> {
+    type Item = V;
+    fn next(&mut self) -> Option<V> {
+        let mut v1 = match self.it1.next() {
+            None => return None,
+            Some(v) => v
+        };
+        let mut v2 = match self.it2.next() {
+            None => return None,
+            Some(v) => v
+        };
+        loop {
+            match v1.cmp(&v2) {
+                Ordering::Equal => return Some(v1),
+                Ordering::Less => match self.it1.next() {
+                    None => return None,
+                    Some(nv1) => v1 = nv1
+                },
+                Ordering::Greater => match self.it2.next() {
+                    None => return None,
+                    Some(nv2) => v2 = nv2
+                }
+            }
+        }
+    }
+    
+}
+
+impl<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> Iterator for Union2<V,It1,It2> {
+    type Item = V;
+    fn next(&mut self) -> Option<V> {
+        let (v1,v2) = match self.buf.take() {
+            None => match self.it1.next() {
+                None => return self.it2.next(),
+                Some(rv1) => match self.it2.next() {
+                    None => return Some(rv1),
+                    Some(rv2) => (rv1,rv2)
+                }
+            },
+            Some((true,rv1)) => match self.it2.next() {
+                None => return Some(rv1),
+                Some(rv2) => (rv1,rv2)
+            },
+            Some((false,rv2)) => match self.it1.next() {
+                None => return Some(rv2),
+                Some(rv1) => (rv1,rv2)
+            }
+        };
+        
+        match v1.cmp(&v2) {
+            Ordering::Equal => {
+                Some(v1)
+            },
+            Ordering::Less => {
+                self.buf = Some((false,v2));
+                Some(v1)
+            },
+            Ordering::Greater => {
+                self.buf = Some((true,v1));
+                Some(v2)
+            }
+        }
+    }
+}
+
+/*impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
+    type ValueIterator = OptMerge2<Value,D1::ValueIterator,D2::ValueIterator>;
     fn full(obj: &T) -> (D1,D2) {
         let d1 = D1::full(obj);
         let d2 = D2::full(obj);
@@ -270,8 +418,21 @@ impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
         }
         self.1.is_const(e,em,f)
     }
-}
-
+    fn values<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,e: &Em::Expr,em: &mut Em,f: &F)
+                                                    -> Result<Option<Self::ValueIterator>,Em::Error> {
+        match self.0.values(e,em,f)? {
+            None => match self.1.values(e,em,f)? {
+                None => Ok(None),
+                Some(it2) => Ok(Some(OptMerge2::Only2(it2)))
+            },
+            Some(it1) => match self.1.values(e,em,f)? {
+                None => Ok(Some(OptMerge2::Only1(it1))),
+                Some(it2) => Ok(Some(OptMerge2::Both(Union2::new(it1,it2))))
+            }
+        }
+    }
+}*/
+/*
 impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>,D3 : Domain<T>> Domain<T> for (D1,D2,D3) {
     fn full(obj: &T) -> (D1,D2,D3) {
         let d1 = D1::full(obj);
@@ -322,3 +483,4 @@ impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>,D3 : Domain<T>> Domain<T> for (
         self.2.is_const(e,em,f)
     }
 }
+*/

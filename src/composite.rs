@@ -2,7 +2,7 @@ use expr;
 use types;
 use types::{SortKind,Value};
 use embed::Embed;
-use domain::Domain;
+use domain::{Domain,HasMoreIterator};
 use unique::{Uniquer,UniqueRef};
 use std::cmp::{Ordering,max};
 use std::collections::BTreeMap;
@@ -17,6 +17,7 @@ use std::vec;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::collections::Bound::*;
+use std::ops::Range;
 
 pub trait Composite : Sized + Eq + Hash {
 
@@ -1344,60 +1345,170 @@ impl<Em : Embed> Transformation<Em> {
     }
 }
 
+pub struct CondVecAccess<T,Tp,It : Iterator<Item=Value>,Em : Embed> {
+    cmp_expr: Transf<Em>,
+    accessor: VecAccess<T,Em>,
+    indices: IndexIterator<Tp,It>,
+    no_elems: bool
+}
+
+impl<T : Composite,Tp,It : HasMoreIterator<Item=Value>,Em : Embed> CondVecAccess<T,Tp,It,Em> {
+    pub fn new(cmp: Transf<Em>,vec: Vec<T>,inp_vec: Transf<Em>,ind: IndexIterator<Tp,It>)
+               -> Self {
+        CondVecAccess { cmp_expr: cmp,
+                        accessor: VecAccess::new(vec,inp_vec),
+                        indices: ind,
+                        no_elems: true }
+    }
+    pub fn next(&mut self) -> Result<Option<(Option<Transf<Em>>,&mut T,&mut Transf<Em>)>,Em::Error> {
+        match self.indices.next() {
+            None => Ok(None),
+            Some((idx,val)) => {
+                let (el,inp_el) = self.accessor.next(idx);
+                let cond = if self.no_elems && !self.indices.has_more() {
+                    self.no_elems = false;
+                    None
+                } else {
+                    self.no_elems = false;
+                    let inp_fun = move |_:&[Em::Expr],_:usize,e:Em::Expr,em:&mut Em| {
+                        let cv = em.embed(expr::Expr::Const(val.clone()))?;
+                        em.eq(e,cv)
+                    };
+                    Some(Transformation::map_by_elem(Box::new(inp_fun),self.cmp_expr.clone()))
+                };
+                Ok(Some((cond,el,inp_el)))
+            }
+        }
+    }
+    pub fn finish(self) -> (Vec<T>,Transf<Em>) {
+        self.accessor.finish()
+    }
+}
+
 /// Used to access elements of an array in an element-by-element fashion.
-pub struct VecAccess<It : Iterator<Item=usize>,T,Em : Embed> {
-    values: It,
-    next: usize,
+pub struct VecAccess<T,Em : Embed> {
+    next_idx: usize,
     last_off: usize,
     vec: Vec<T>,
     vec_inp: Transf<Em>,
     nvec_inp: Vec<Transf<Em>>
 }
 
-impl<It : Iterator<Item=usize>,T : Composite,Em : Embed> VecAccess<It,T,Em> {
+impl<T : Composite,Em : Embed> VecAccess<T,Em> {
     /// Create a new accessor from a vector, a transformation and an iterator over the indices.
-    pub fn new(v: Vec<T>,tr: Transf<Em>,it: It) -> Self {
-        VecAccess { values: it,
-                    next: 0,
+    pub fn new(v: Vec<T>,tr: Transf<Em>) -> Self {
+        VecAccess { next_idx: 0,
                     last_off: 0,
                     vec: v,
                     vec_inp: tr,
                     nvec_inp: Vec::new() }
     }
     /// Get the next element of the vector.
-    pub fn next<'a>(&'a mut self) -> Option<(&'a mut T,&'a mut Transf<Em>)> {
-        if let Some(idx) = self.values.next() {
-            if self.next<idx {
-                let mut skip = 0;
-                for i in self.next..idx {
-                    skip+=self.vec[i].num_elem();
-                }
-                self.nvec_inp.push(Transformation::view(self.last_off,skip,self.vec_inp.clone()));
-                self.last_off+=skip;
+    pub fn next(&mut self,idx: usize) -> (&mut T,&mut Transf<Em>) {
+        assert!(idx >= self.next_idx);
+        if self.next_idx<idx {
+            let mut skip = 0;
+            for i in self.next_idx..idx {
+                skip+=self.vec[i].num_elem();
             }
-            self.next = idx+1;
-            let sz = self.vec[idx].num_elem();
-            self.nvec_inp.push(Transformation::view(self.last_off,sz,self.vec_inp.clone()));
-            self.last_off+=sz;
-            if let Some(last_ref) = self.nvec_inp.last_mut() {
-                Some((&mut self.vec[idx],last_ref))
-            } else {
-                unreachable!()
-            }
+            self.nvec_inp.push(Transformation::view(self.last_off,skip,self.vec_inp.clone()));
+            self.last_off+=skip;
+        }
+        self.next_idx = idx+1;
+        let sz = self.vec[idx].num_elem();
+        self.nvec_inp.push(Transformation::view(self.last_off,sz,self.vec_inp.clone()));
+        self.last_off+=sz;
+        if let Some(last_ref) = self.nvec_inp.last_mut() {
+            (&mut self.vec[idx],last_ref)
         } else {
-            None
+            unreachable!()
         }
     }
     /// Destroy the iterator and return the resulting vector and transformation.
     pub fn finish(mut self) -> (Vec<T>,Transf<Em>) {
-        if self.next < self.vec.len() {
+        if self.next_idx < self.vec.len() {
             let mut skip = 0;
-            for i in self.next..self.vec.len() {
+            for i in self.next_idx..self.vec.len() {
                 skip+=self.vec[i].num_elem();
             }
             self.nvec_inp.push(Transformation::view(self.last_off,skip,self.vec_inp));
         }
         (self.vec,Transformation::concat(&self.nvec_inp[..]))
+    }
+}
+
+pub fn value_as_index(val: &Value) -> usize {
+    match *val {
+        Value::Bool(x) => if x { 1 } else { 0 },
+        Value::Int(ref x) => match x.to_usize() {
+            Some(rx) => rx,
+            None => panic!("Index overflow")
+        },
+        Value::BitVec(_,ref x) => match x.to_usize() {
+            Some(rx) => rx,
+            None => panic!("Index overflow")
+        },
+        _ => panic!("Value {:?} cannot be used as index",*val)
+    }
+}
+
+pub fn index_as_value<T>(tp: &SortKind<T>,idx: usize) -> Value {
+    match *tp {
+        SortKind::Bool => Value::Bool(idx!=0),
+        SortKind::Int => Value::Int(BigInt::from(idx)),
+        SortKind::BitVec(bw) => Value::BitVec(bw,BigInt::from(idx)),
+        _ => panic!("Cannot make value from index")
+    }
+}
+
+pub enum IndexIterator<Tp,It : Iterator<Item=Value>> {
+    Limited(It),
+    Unlimited(SortKind<Tp>,Range<usize>)
+}
+
+impl<Tp,It : Iterator<Item=Value>> Iterator for IndexIterator<Tp,It> {
+    type Item = (usize,Value);
+    fn next(&mut self) -> Option<Self::Item> {
+        match *self {
+            IndexIterator::Limited(ref mut it) => match it.next() {
+                None => None,
+                Some(val) => Some((value_as_index(&val),val))
+            },
+            IndexIterator::Unlimited(ref tp,ref mut rng) => match rng.next() {
+                None => None,
+                Some(idx) => Some((idx,index_as_value(tp,idx)))
+            }
+        }
+    }
+    fn size_hint(&self) -> (usize,Option<usize>) {
+        match *self {
+            IndexIterator::Limited(ref it) => it.size_hint(),
+            IndexIterator::Unlimited(_,ref it) => it.size_hint()
+        }
+    }
+}
+
+impl<Tp,It : HasMoreIterator<Item=Value>> HasMoreIterator for IndexIterator<Tp,It> {
+    fn has_more(&self) -> bool {
+        match *self {
+            IndexIterator::Limited(ref it) => it.has_more(),
+            IndexIterator::Unlimited(_,ref it) => it.len()>0
+        }
+    }
+}
+
+pub fn expr_as_vec_index<'a,Par,Dom,Em,F>(dom: &Dom,l: usize,e: &Em::Expr,em: &mut Em,f: &F)
+                                          -> Result<IndexIterator<Em::Sort,Dom::ValueIterator>,Em::Error>
+    where Par : Composite,Dom : Domain<Par>,Em : Embed,F : Fn(&Em::Var) -> usize {
+    match dom.values(e,em,f)? {
+        None => {
+            let srt = em.type_of(e)?;
+            let srtk = em.unbed_sort(&srt)?;
+            Ok(IndexIterator::Unlimited(srtk,0..l))
+        },
+        Some(it) => {
+            Ok(IndexIterator::Limited(it))
+        }
     }
 }
 
@@ -1427,6 +1538,7 @@ pub fn get_vec_elem_dyn<'a,'b,T,Par,Dom
     where T : Composite + Clone,
           Par : Composite + Clone + Debug,
           Dom : Domain<Par> {
+
     let idx = inp_pos.get(exprs,0,em)?;
     let c = dom.is_const(&idx,em,&|x| *x)?;
     match vec.as_ref().len() {
@@ -1480,6 +1592,28 @@ pub fn get_vec_elem_dyn<'a,'b,T,Par,Dom
             Ok(Some((OptRef::Owned(el.as_obj()),inp)))
         }
     }
+}
+
+pub fn access_vec_dyn<'a,'b,'c,T,Par,Dom,F
+                      >(vec: OptRef<'a,Vec<T>>,
+                        inp_vec: Transf<Comp<'b,Par>>,
+                        inp_idx: Transf<Comp<'b,Par>>,
+                        exprs: &[CompExpr<Par>],
+                        dom: &Dom,
+                        em: &mut Comp<'b,Par>)
+                        -> Result<CondVecAccess<T,types::Sort,Dom::ValueIterator,Comp<'b,Par>>,()>
+    where T : Composite+Clone,Par : Composite+Clone+Debug,Dom : Domain<Par> {
+    let idx = inp_idx.get(exprs,0,em)?;
+    let opt_vals = dom.values(&idx,em,&|x| *x)?;
+    let it = match opt_vals {
+        Some(rvals) => IndexIterator::Limited(rvals),
+        None => {
+            let idx_srt = em.type_of(&idx)?;
+            let idx_rsrt = em.unbed_sort(&idx_srt)?;
+            IndexIterator::Unlimited(idx_rsrt,0..vec.as_ref().len())
+        }
+    };
+    Ok(CondVecAccess::new(inp_idx,vec.as_obj(),inp_vec,it))
 }
 
 pub fn set_vec_elem<'a,'b,T,Em

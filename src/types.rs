@@ -15,7 +15,7 @@ pub enum SortKind<T> {
     Array(Vec<T>,T)
 }
 
-#[derive(Clone,Debug,PartialEq,Eq,Hash)]
+#[derive(Clone,Debug,PartialEq,Eq,PartialOrd,Ord,Hash)]
 pub enum Value {
     Bool(bool),
     Int(BigInt),
