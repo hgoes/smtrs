@@ -1594,7 +1594,7 @@ pub fn get_vec_elem_dyn<'a,'b,T,Par,Dom
     }
 }
 
-pub fn access_vec_dyn<'a,'b,'c,T,Par,Dom,F
+pub fn access_vec_dyn<'a,'b,'c,T,Par,Dom
                       >(vec: OptRef<'a,Vec<T>>,
                         inp_vec: Transf<Comp<'b,Par>>,
                         inp_idx: Transf<Comp<'b,Par>>,
@@ -1900,6 +1900,26 @@ pub fn bv_vec_stack_empty<'a,T,Em>(bitwidth: usize,em: &mut Em)
     Ok((res,outp))
 }
 
+pub fn bv_vec_stack_access<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                            inp_stack: Transf<Comp<'b,Par>>,
+                                            inp_idx: Transf<Comp<'b,Par>>,
+                                            exprs: &[CompExpr<Par>],
+                                            dom: &Dom,
+                                            em: &mut Comp<'b,Par>)
+                                            -> Result<CondVecAccess<T,types::Sort,Dom::ValueIterator,Comp<'b,Par>>,()>
+    where T : Composite + Clone,
+          Par : Composite + Clone + Debug,
+          Dom : Domain<Par> {
+
+    let vec = match stack {
+        OptRef::Ref(ref rst) => OptRef::Ref(&rst.elements),
+        OptRef::Owned(rst) => OptRef::Owned(rst.elements)
+    };
+    let sz = inp_stack.size();
+    let inp_vec = Transformation::view(1,sz-1,inp_stack);
+    access_vec_dyn(vec,inp_vec,inp_idx,exprs,dom,em)
+}
+
 pub fn bv_vec_stack_get<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
                                          inp_stack: Transf<Comp<'b,Par>>,
                                          inp_idx: Transf<Comp<'b,Par>>,
@@ -1955,6 +1975,20 @@ pub fn bv_vec_stack_top<'a,Em>(inp_stack: Transf<Em>)
     where Em : Embed {
 
     Transformation::view(0,1,inp_stack)
+}
+
+pub fn bv_vec_stack_access_top<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                                inp_stack: Transf<Comp<'b,Par>>,
+                                                exprs: &[CompExpr<Par>],
+                                                dom: &Dom,
+                                                em: &mut Comp<'b,Par>)
+                                                -> Result<CondVecAccess<T,types::Sort,Dom::ValueIterator,Comp<'b,Par>>,()>
+    where T : Composite + Clone,
+          Par : Composite + Clone + Debug,
+          Dom : Domain<Par> {
+
+    let top = bv_vec_stack_top(inp_stack.clone());
+    bv_vec_stack_access(stack,inp_stack,top,exprs,dom,em)
 }
 
 pub fn bv_vec_stack_get_top<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
