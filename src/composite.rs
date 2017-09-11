@@ -2466,3 +2466,59 @@ pub fn choice_insert<'a,T,Em>(choice: OptRef<'a,Choice<T>>,
         Ok((OptRef::Owned(nchoice),ninp))
     }
 }
+
+pub struct ChoiceAccess<T,Em : Embed> {
+    next_idx: usize,
+    last_off: usize,
+    choice: Vec<T>,
+    choice_inp: Transf<Em>,
+    nchoice_inp: Vec<Transf<Em>>
+}
+
+impl<T : Composite,Em : Embed> ChoiceAccess<T,Em> {
+    pub fn new(ch: Choice<T>,tr: Transf<Em>) -> Self {
+        ChoiceAccess { next_idx: 0,
+                       last_off: 0,
+                       choice: ch.0,
+                       choice_inp: tr,
+                       nchoice_inp: Vec::new() }
+    }
+    pub fn next(&mut self) -> Option<(&mut Transf<Em>,&mut T,&mut Transf<Em>)> {
+        if self.next_idx < self.choice.len() {
+            let nxt = self.next_idx;
+            Some(self.next_to(nxt))
+        } else {
+            None
+        }
+    }
+    pub fn next_to(&mut self,idx: usize) -> (&mut Transf<Em>,&mut T,&mut Transf<Em>) {
+        assert!(idx >= self.next_idx);
+        if self.next_idx<idx {
+            let mut skip = 0;
+            for i in self.next_idx..idx {
+                skip+=self.choice[i].num_elem()+1;
+            }
+            self.nchoice_inp.push(Transformation::view(self.last_off,skip,self.choice_inp.clone()));
+            self.last_off+=skip;
+        }
+        self.next_idx = idx+1;
+        let sz = self.choice[idx].num_elem();
+        let l = self.nchoice_inp.len();
+        self.nchoice_inp.push(Transformation::view(self.last_off,1,self.choice_inp.clone()));
+        self.nchoice_inp.push(Transformation::view(self.last_off+1,sz,self.choice_inp.clone()));
+        self.last_off+=sz+1;
+        let (a,b) = self.nchoice_inp.split_at_mut(l+1);
+        (&mut a[l],&mut self.choice[idx],&mut b[0])
+    }
+    /// Destroy the iterator and return the resulting vector and transformation.
+    pub fn finish(mut self) -> (Choice<T>,Transf<Em>) {
+        if self.next_idx < self.choice.len() {
+            let mut skip = 0;
+            for i in self.next_idx..self.choice.len() {
+                skip+=self.choice[i].num_elem()+1;
+            }
+            self.nchoice_inp.push(Transformation::view(self.last_off,skip,self.choice_inp));
+        }
+        (Choice(self.choice),Transformation::concat(&self.nchoice_inp[..]))
+    }
+}
