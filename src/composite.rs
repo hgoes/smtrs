@@ -85,7 +85,7 @@ impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
 }
 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone)]
-pub struct Singleton(types::Sort);
+pub struct Singleton(pub types::Sort);
 
 impl Composite for Singleton {
     fn num_elem(&self) -> usize { 1 }
