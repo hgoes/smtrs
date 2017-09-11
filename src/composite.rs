@@ -306,6 +306,24 @@ impl<'a,T : 'a+Composite+Ord> Choice<T> {
         }
         self.0.push(el)
     }
+    pub fn map<Em : Embed,F>(self,inp: Transf<Em>,f: &F)
+                             -> (Self,Transf<Em>)
+        where F : Fn(Transf<Em>,T,Transf<Em>) -> (Transf<Em>,T,Transf<Em>) {
+        let mut nvec = Vec::with_capacity(self.0.len());
+        let mut ninp = Vec::with_capacity(self.0.len()*2);
+        let mut off = 0;
+        for el in self.0.into_iter() {
+            let sz = el.num_elem();
+            let inp_cond = Transformation::view(off,1,inp.clone());
+            let inp_el = Transformation::view(off+1,sz,inp.clone());
+            let (inp_ncond,nel,inp_nel) = f(inp_cond,el,inp_el);
+            ninp.push(inp_ncond);
+            ninp.push(inp_nel);
+            nvec.push(nel);
+            off+=sz+1;
+        }
+        (Choice(nvec),Transformation::concat(&ninp[..]))
+    }
 }
 
 impl<'a,T : 'a> OptRef<'a,Choice<T>> {
