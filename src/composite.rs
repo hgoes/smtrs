@@ -923,6 +923,9 @@ impl<'a,T : 'a + Clone> OptRef<'a,T> {
             OptRef::Owned(x) => x
         }
     }
+    pub fn to_owned<'b>(self) -> OptRef<'b,T> {
+        OptRef::Owned(self.as_obj())
+    }
     pub fn some(self) -> OptRef<'a,Option<T>> {
         match self {
             OptRef::Ref(x) => OptRef::Owned(Some(x.clone())),
