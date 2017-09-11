@@ -1012,6 +1012,9 @@ impl<Em : Embed> Transformation<Em> {
     pub fn constant(els: Vec<Em::Expr>) -> Rc<Transformation<Em>> {
         Rc::new(Transformation::Constant(els))
     }
+    pub fn const_bool(val: bool,em: &mut Em) -> Result<Rc<Transformation<Em>>,Em::Error> {
+        Ok(Rc::new(Transformation::Constant(vec![em.const_bool(val)?])))
+    }
     pub fn map(rsz: usize,
                f: Box<Fn(&[Em::Expr],&mut Vec<Em::Expr>,&mut Em) -> Result<(),Em::Error>>,
                tr: Transf<Em>)
