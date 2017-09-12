@@ -1133,6 +1133,10 @@ impl<Em : Embed> Transformation<Em> {
                                           if_true)],
                                     if_false))
     }
+    pub fn not(tr: Transf<Em>)
+               -> Transf<Em> {
+        Rc::new(Transformation::MapByElem(Box::new(|_,_,e,em| { em.not(e) }),tr))
+    }
     pub fn and(trs: Vec<Rc<Transformation<Em>>>)
                -> Rc<Transformation<Em>> {
         Transformation::zips_by_elem(Box::new(|els,em| { em.and(els.to_vec()) }),trs)
@@ -2486,6 +2490,73 @@ pub fn choice_insert<'a,T,Em>(choice: OptRef<'a,Choice<T>>,
                                             Transformation::view(off,ch_sz-off,inp_choice)]);
         Ok((OptRef::Owned(nchoice),ninp))
     }
+}
+
+pub fn choice_set_chosen<'a,T,Em>(choice: OptRef<'a,Choice<T>>,
+                                  inp_choice: Transf<Em>,
+                                  inp_cond: Transf<Em>,
+                                  el: OptRef<'a,T>,
+                                  inp_el: Transf<Em>)
+                                  -> Result<(OptRef<'a,Choice<T>>,
+                                             Transf<Em>),Em::Error>
+    where T : Composite+Clone+Ord,Em : Embed {
+    let inp_ncond = Transformation::not(inp_cond.clone());
+    let el_sz = inp_el.size();
+    let ch_sz = inp_choice.size();
+    let mut off = 0;
+    let mut insert_pos = None;
+    let mut replace = false;
+    let mut ninp = Vec::with_capacity(choice.as_ref().num_elem()*2);
+    for (pos,cel) in choice.as_ref().0.iter().enumerate() {
+        let sz = cel.num_elem();
+        let old_cond = Transformation::view(off,1,inp_choice.clone());
+        let inp_cel = Transformation::view(off+1,sz,inp_choice.clone());
+        if insert_pos.is_some() {
+            let new_cond = Transformation::and(vec![inp_ncond.clone(),old_cond]);
+            ninp.push(new_cond);
+            ninp.push(inp_cel);
+        } else {
+            match el.as_ref().cmp(&cel) {
+                Ordering::Equal => {
+                    insert_pos = Some(pos);
+                    replace = true;
+                    let new_cond = Transformation::or(vec![inp_cond.clone(),old_cond]);
+                    let new_el = Transformation::ite(inp_cond.clone(),inp_el.clone(),inp_cel);
+                    ninp.push(new_cond);
+                    ninp.push(new_el);
+                },
+                Ordering::Less => {
+                    insert_pos = Some(pos);
+                    replace = false;
+                    ninp.push(inp_cond.clone());
+                    ninp.push(inp_el.clone());
+                    let new_cond = Transformation::and(vec![inp_ncond.clone(),old_cond]);
+                    ninp.push(new_cond);
+                    ninp.push(inp_cel);
+                },
+                Ordering::Greater => {
+                    let new_cond = Transformation::and(vec![inp_ncond.clone(),old_cond]);
+                    ninp.push(new_cond);
+                    ninp.push(inp_cel);
+                }
+            }
+        }
+    }
+    let nchoice = match insert_pos {
+        None => {
+            let mut vec = choice.as_obj().0;
+            vec.push(el.as_obj());
+            OptRef::Owned(Choice(vec))
+        },
+        Some(pos) => if replace {
+            choice
+        } else {
+            let mut vec = choice.as_obj().0;
+            vec.insert(pos,el.as_obj());
+            OptRef::Owned(Choice(vec))
+        }
+    };
+    Ok((nchoice,Transformation::concat(&ninp[..])))
 }
 
 pub struct ChoiceAccess<T,Em : Embed> {
