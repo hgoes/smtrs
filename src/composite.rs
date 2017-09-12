@@ -1,7 +1,7 @@
 use expr;
 use types;
 use types::{SortKind,Value};
-use embed::Embed;
+use embed::{Embed,DeriveConst,DeriveValues};
 use domain::{Domain,HasMoreIterator};
 use unique::{Uniquer,UniqueRef};
 use std::cmp::{Ordering,max};
@@ -49,6 +49,11 @@ pub struct Comp<'a,C : Composite + 'a> {
     exprs: Uniquer<expr::Expr<types::Sort,usize,CompExpr<C>,()>>
 }
 
+pub struct CompDom<'a,C : Composite + 'a,Dom : Domain<C>> {
+    comp: Comp<'a,C>,
+    domain: Dom
+}
+
 impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
     type Sort = types::Sort;
     type Var = usize;
@@ -81,6 +86,54 @@ impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
     }
     fn type_of_arg(&mut self,_:&(),_:usize) -> Result<types::Sort,()> {
         panic!("Composite expressions don't have functions")
+    }
+}
+
+impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> Embed for CompDom<'a,C,Dom> {
+    type Sort = <Comp<'a,C> as Embed>::Sort;
+    type Var = <Comp<'a,C> as Embed>::Var;
+    type Expr = <Comp<'a,C> as Embed>::Expr;
+    type Fun = <Comp<'a,C> as Embed>::Fun;
+    type Error = <Comp<'a,C> as Embed>::Error;
+    fn embed_sort(&mut self,tp: SortKind<Self::Sort>)
+                  -> Result<Self::Sort,Self::Error> {
+        self.comp.embed_sort(tp)
+    }
+    fn unbed_sort(&mut self,tp: &types::Sort) -> Result<SortKind<types::Sort>,Self::Error> {
+        self.comp.unbed_sort(tp)
+    }
+    fn embed(&mut self,e: expr::Expr<Self::Sort,Self::Var,Self::Expr,Self::Fun>)
+             -> Result<CompExpr<C>,Self::Error> {
+        self.comp.embed(e)
+    }
+    fn unbed(&mut self,e: &Self::Expr)
+             -> Result<expr::Expr<Self::Sort,Self::Var,Self::Expr,Self::Fun>,Self::Error> {
+        self.comp.unbed(e)
+    }
+    fn type_of_var(&mut self,var: &Self::Var) -> Result<Self::Sort,Self::Error> {
+        self.comp.type_of_var(var)
+    }
+    fn type_of_fun(&mut self,fun:&Self::Fun) -> Result<Self::Sort,Self::Error> {
+        self.comp.type_of_fun(fun)
+    }
+    fn arity(&mut self,fun:&Self::Fun) -> Result<usize,Self::Error> {
+        self.comp.arity(fun)
+    }
+    fn type_of_arg(&mut self,fun:&Self::Fun,p:usize) -> Result<Self::Sort,Self::Error> {
+        self.comp.type_of_arg(fun,p)
+    }
+}
+
+impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> DeriveConst for CompDom<'a,C,Dom> {
+    fn derive_const(&mut self,e: &Self::Expr) -> Result<Option<Value>,Self::Error> {
+        self.domain.is_const(e,&mut self.comp,&|v:&usize| *v)
+    }
+}
+
+impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> DeriveValues for CompDom<'a,C,Dom> {
+    type ValueIterator = Dom::ValueIterator;
+    fn derive_values(&mut self,e: &Self::Expr) -> Result<Option<Self::ValueIterator>,Self::Error> {
+        self.domain.values(e,&mut self.comp,&|v:&usize| *v)
     }
 }
 
@@ -1525,14 +1578,14 @@ impl<Tp,It : HasMoreIterator<Item=Value>> HasMoreIterator for IndexIterator<Tp,I
     }
 }
 
-pub fn expr_as_vec_index<'a,Par,Dom,Em,F>(dom: &Dom,l: usize,e: &Em::Expr,em: &mut Em,f: &F)
-                                          -> Result<IndexIterator<Em::Sort,Dom::ValueIterator>,Em::Error>
-    where Par : Composite,Dom : Domain<Par>,Em : Embed,F : Fn(&Em::Var) -> usize {
-    match dom.values(e,em,f)? {
+pub fn expr_as_vec_index<'a,Em,F>(limit: usize,e: &Em::Expr,em: &mut Em)
+                                  -> Result<IndexIterator<Em::Sort,Em::ValueIterator>,Em::Error>
+    where Em : DeriveValues,F : Fn(&Em::Var) -> usize {
+    match em.derive_values(e)? {
         None => {
             let srt = em.type_of(e)?;
             let srtk = em.unbed_sort(&srt)?;
-            Ok(IndexIterator::Unlimited(srtk,0..l))
+            Ok(IndexIterator::Unlimited(srtk,0..limit))
         },
         Some(it) => {
             Ok(IndexIterator::Limited(it))
@@ -1555,20 +1608,17 @@ pub fn get_vec_elem<'a,T,Em>(pos: usize,vec: OptRef<'a,Vec<T>>,inp: Transf<Em>)
     Ok((rvec,Transformation::view(off,len as usize,inp)))
 }
 
-pub fn get_vec_elem_dyn<'a,'b,T,Par,Dom
+pub fn get_vec_elem_dyn<'a,T,Em
                         >(vec: OptRef<'a,Vec<T>>,
-                          inp_pos: Transf<Comp<'b,Par>>,
-                          inp_vec: Transf<Comp<'b,Par>>,
-                          exprs: &[CompExpr<Par>],
-                          dom: &Dom,
-                          em: &mut Comp<'b,Par>)
-                          -> Result<Option<(OptRef<'a,T>,Transf<Comp<'b,Par>>)>,()>
-    where T : Composite + Clone,
-          Par : Composite + Clone + Debug,
-          Dom : Domain<Par> {
+                          inp_pos: Transf<Em>,
+                          inp_vec: Transf<Em>,
+                          exprs: &[Em::Expr],
+                          em: &mut Em)
+                          -> Result<Option<(OptRef<'a,T>,Transf<Em>)>,Em::Error>
+    where T : Composite + Clone,Em : DeriveConst {
 
     let idx = inp_pos.get(exprs,0,em)?;
-    let c = dom.is_const(&idx,em,&|x| *x)?;
+    let c = em.derive_const(&idx)?;
     match vec.as_ref().len() {
         0 => panic!("Indexing empty vector"),
         1 => return Ok(Some(get_vec_elem(0,vec,inp_vec)?)),
@@ -1599,7 +1649,7 @@ pub fn get_vec_elem_dyn<'a,'b,T,Par,Dom
                 SortKind::BitVec(sz) => {
                     for i in 1..vec.as_ref().len() {
                         let (n_el,n_inp) = get_vec_elem(i,OptRef::Ref(vec.as_ref()),inp_vec.clone())?;
-                        let cond_fun = move |vec:&[CompExpr<Par>],res:&mut Vec<CompExpr<Par>>,em:&mut Comp<Par>| {
+                        let cond_fun = move |vec:&[Em::Expr],res:&mut Vec<Em::Expr>,em:&mut Em| {
                             let val = em.const_bitvec(sz,BigInt::from(i))?;
                             let expr = em.eq(vec[0].clone(),val)?;
                             res.push(expr);
@@ -1622,17 +1672,16 @@ pub fn get_vec_elem_dyn<'a,'b,T,Par,Dom
     }
 }
 
-pub fn access_vec_dyn<'a,'b,'c,T,Par,Dom
+pub fn access_vec_dyn<'a,T,Em
                       >(vec: OptRef<'a,Vec<T>>,
-                        inp_vec: Transf<Comp<'b,Par>>,
-                        inp_idx: Transf<Comp<'b,Par>>,
-                        exprs: &[CompExpr<Par>],
-                        dom: &Dom,
-                        em: &mut Comp<'b,Par>)
-                        -> Result<CondVecAccess<T,types::Sort,Dom::ValueIterator,Comp<'b,Par>>,()>
-    where T : Composite+Clone,Par : Composite+Clone+Debug,Dom : Domain<Par> {
+                        inp_vec: Transf<Em>,
+                        inp_idx: Transf<Em>,
+                        exprs: &[Em::Expr],
+                        em: &mut Em)
+                        -> Result<CondVecAccess<T,Em::Sort,Em::ValueIterator,Em>,Em::Error>
+    where T : Composite+Clone,Em : DeriveValues {
     let idx = inp_idx.get(exprs,0,em)?;
-    let opt_vals = dom.values(&idx,em,&|x| *x)?;
+    let opt_vals = em.derive_values(&idx)?;
     let it = match opt_vals {
         Some(rvals) => IndexIterator::Limited(rvals),
         None => {
@@ -1668,22 +1717,19 @@ pub fn set_vec_elem<'a,'b,T,Em
                                                       vlen-off_store-old,inp_vec)])))
 }
 
-pub fn set_vec_elem_dyn<'a,'b,'c,T,Par,Dom
+pub fn set_vec_elem_dyn<'a,'b,T,Em
                         >(vec: OptRef<'a,Vec<T>>,
                           el: OptRef<'a,T>,
-                          inp_pos: Transf<Comp<'b,Par>>,
-                          inp_vec: Transf<Comp<'b,Par>>,
-                          inp_el: Transf<Comp<'b,Par>>,
-                          exprs: &[CompExpr<Par>],
-                          dom: &Dom,
-                          em: &mut Comp<'b,Par>)
-                          -> Result<Option<(OptRef<'c,Vec<T>>,Transf<Comp<'b,Par>>)>,()>
-    where T : Composite + Clone,
-          Par : Composite + Clone + Debug,
-          Dom : Domain<Par> {
+                          inp_pos: Transf<Em>,
+                          inp_vec: Transf<Em>,
+                          inp_el: Transf<Em>,
+                          exprs: &[Em::Expr],
+                          em: &mut Em)
+                          -> Result<Option<(OptRef<'b,Vec<T>>,Transf<Em>)>,Em::Error>
+    where T : Composite + Clone,Em : DeriveConst {
 
     let idx = inp_pos.get(exprs,0,em)?;
-    let c = dom.is_const(&idx,em,&|x| *x)?;
+    let c = em.derive_const(&idx)?;
     match c {
         Some(Value::Bool(x)) => if x {
             Ok(Some(set_vec_elem(1,vec,el,inp_vec,inp_el)?))
@@ -1707,7 +1753,7 @@ pub fn set_vec_elem_dyn<'a,'b,'c,T,Par,Dom
                 SortKind::BitVec(sz) => {
                     for i in 0..vec.as_ref().len() {
                         let (cel,inp_cel) = get_vec_elem(i,OptRef::Ref(vec.as_ref()),inp_vec.clone())?;
-                        let cond_fun = move |vec:&[CompExpr<Par>],res:&mut Vec<CompExpr<Par>>,em:&mut Comp<Par>| {
+                        let cond_fun = move |vec:&[Em::Expr],res:&mut Vec<Em::Expr>,em:&mut Em| {
                             let val = em.const_bitvec(sz,BigInt::from(i))?;
                             let expr = em.eq(vec[0].clone(),val)?;
                             res.push(expr);
@@ -1928,16 +1974,13 @@ pub fn bv_vec_stack_empty<'a,T,Em>(bitwidth: usize,em: &mut Em)
     Ok((res,outp))
 }
 
-pub fn bv_vec_stack_access<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
-                                            inp_stack: Transf<Comp<'b,Par>>,
-                                            inp_idx: Transf<Comp<'b,Par>>,
-                                            exprs: &[CompExpr<Par>],
-                                            dom: &Dom,
-                                            em: &mut Comp<'b,Par>)
-                                            -> Result<CondVecAccess<T,types::Sort,Dom::ValueIterator,Comp<'b,Par>>,()>
-    where T : Composite + Clone,
-          Par : Composite + Clone + Debug,
-          Dom : Domain<Par> {
+pub fn bv_vec_stack_access<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                       inp_stack: Transf<Em>,
+                                       inp_idx: Transf<Em>,
+                                       exprs: &[Em::Expr],
+                                       em: &mut Em)
+                                       -> Result<CondVecAccess<T,Em::Sort,Em::ValueIterator,Em>,Em::Error>
+    where T : Composite + Clone,Em : DeriveValues {
 
     let vec = match stack {
         OptRef::Ref(ref rst) => OptRef::Ref(&rst.elements),
@@ -1945,40 +1988,36 @@ pub fn bv_vec_stack_access<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T
     };
     let sz = inp_stack.size();
     let inp_vec = Transformation::view(1,sz-1,inp_stack);
-    access_vec_dyn(vec,inp_vec,inp_idx,exprs,dom,em)
+    access_vec_dyn(vec,inp_vec,inp_idx,exprs,em)
 }
 
-pub fn bv_vec_stack_get<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
-                                         inp_stack: Transf<Comp<'b,Par>>,
-                                         inp_idx: Transf<Comp<'b,Par>>,
-                                         exprs: &[CompExpr<Par>],
-                                         dom: &Dom,
-                                         em: &mut Comp<'b,Par>)
-                                         -> Result<Option<(OptRef<'a,T>,Transf<Comp<'b,Par>>)>,()>
-    where T : Composite + Clone,
-          Par : Composite + Clone + Debug,
-          Dom : Domain<Par> {
+pub fn bv_vec_stack_get<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                    inp_stack: Transf<Em>,
+                                    inp_idx: Transf<Em>,
+                                    exprs: &[Em::Expr],
+                                    em: &mut Em)
+                                    -> Result<Option<(OptRef<'a,T>,Transf<Em>)>,Em::Error>
+    where T : Composite + Clone,Em : DeriveConst {
+
     let vec = match stack {
         OptRef::Ref(ref rst) => OptRef::Ref(&rst.elements),
         OptRef::Owned(rst) => OptRef::Owned(rst.elements)
     };
     let sz = inp_stack.size();
     let inp_vec = Transformation::view(1,sz-1,inp_stack);
-    get_vec_elem_dyn(vec,inp_idx,inp_vec,exprs,dom,em)
+    get_vec_elem_dyn(vec,inp_idx,inp_vec,exprs,em)
 }
 
-pub fn bv_vec_stack_set<'a,'b,'c,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
-                                            inp_stack: Transf<Comp<'b,Par>>,
-                                            inp_idx: Transf<Comp<'b,Par>>,
-                                            el: OptRef<'a,T>,
-                                            el_inp: Transf<Comp<'b,Par>>,
-                                            exprs: &[CompExpr<Par>],
-                                            dom: &Dom,
-                                            em: &mut Comp<'b,Par>)
-                                            -> Result<Option<(OptRef<'c,BitVecVectorStack<T>>,Transf<Comp<'b,Par>>)>,()>
-    where T : Composite + Clone,
-          Par : Composite + Clone + Debug,
-          Dom : Domain<Par> {
+pub fn bv_vec_stack_set<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                    inp_stack: Transf<Em>,
+                                    inp_idx: Transf<Em>,
+                                    el: OptRef<'a,T>,
+                                    el_inp: Transf<Em>,
+                                    exprs: &[Em::Expr],
+                                    em: &mut Em)
+                                    -> Result<Option<(OptRef<'b,BitVecVectorStack<T>>,Transf<Em>)>,Em::Error>
+    where T : Composite + Clone,Em : DeriveConst {
+
     let bw = stack.as_ref().top;
     let vec = match stack {
         OptRef::Ref(ref rst) => OptRef::Ref(&rst.elements),
@@ -1986,7 +2025,7 @@ pub fn bv_vec_stack_set<'a,'b,'c,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T
     };
     let sz = inp_stack.size();
     let inp_vec = Transformation::view(1,sz-1,inp_stack.clone());
-    match set_vec_elem_dyn(vec,el,inp_idx,inp_vec,el_inp,exprs,dom,em)? {
+    match set_vec_elem_dyn(vec,el,inp_idx,inp_vec,el_inp,exprs,em)? {
         None => Ok(None),
         Some((nvec,inp_nvec)) => {
             let res = OptRef::Owned(BitVecVectorStack { top: bw,
@@ -2005,59 +2044,49 @@ pub fn bv_vec_stack_top<'a,Em>(inp_stack: Transf<Em>)
     Transformation::view(0,1,inp_stack)
 }
 
-pub fn bv_vec_stack_access_top<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
-                                                inp_stack: Transf<Comp<'b,Par>>,
-                                                exprs: &[CompExpr<Par>],
-                                                dom: &Dom,
-                                                em: &mut Comp<'b,Par>)
-                                                -> Result<CondVecAccess<T,types::Sort,Dom::ValueIterator,Comp<'b,Par>>,()>
-    where T : Composite + Clone,
-          Par : Composite + Clone + Debug,
-          Dom : Domain<Par> {
+pub fn bv_vec_stack_access_top<'a,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                        inp_stack: Transf<Em>,
+                                        exprs: &[Em::Expr],
+                                        em: &mut Em)
+                                        -> Result<CondVecAccess<T,Em::Sort,Em::ValueIterator,Em>,Em::Error>
+    where T : Composite + Clone,Em : DeriveValues {
 
     let top = bv_vec_stack_top(inp_stack.clone());
-    bv_vec_stack_access(stack,inp_stack,top,exprs,dom,em)
+    bv_vec_stack_access(stack,inp_stack,top,exprs,em)
 }
 
-pub fn bv_vec_stack_get_top<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
-                                             inp_stack: Transf<Comp<'b,Par>>,
-                                             exprs: &[CompExpr<Par>],
-                                             dom: &Dom,
-                                             em: &mut Comp<'b,Par>)
-                                             -> Result<Option<(OptRef<'a,T>,Transf<Comp<'b,Par>>)>,()>
-    where T : Composite + Clone,
-          Par : Composite + Clone + Debug,
-          Dom : Domain<Par> {
+pub fn bv_vec_stack_get_top<'a,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                     inp_stack: Transf<Em>,
+                                     exprs: &[Em::Expr],
+                                     em: &mut Em)
+                                     -> Result<Option<(OptRef<'a,T>,Transf<Em>)>,Em::Error>
+    where T : Composite + Clone,Em : DeriveConst {
+
     let top = bv_vec_stack_top(inp_stack.clone());
-    bv_vec_stack_get(stack,inp_stack,top,exprs,dom,em)
+    bv_vec_stack_get(stack,inp_stack,top,exprs,em)
 }
 
-pub fn bv_vec_stack_set_top<'a,'b,'c,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
-                                                inp_stack: Transf<Comp<'b,Par>>,
-                                                el: OptRef<'a,T>,
-                                                inp_el: Transf<Comp<'b,Par>>,
-                                                exprs: &[CompExpr<Par>],
-                                                dom: &Dom,
-                                                em: &mut Comp<'b,Par>)
-                                                -> Result<Option<(OptRef<'c,BitVecVectorStack<T>>,Transf<Comp<'b,Par>>)>,()>
-    where T : Composite + Clone,
-          Par : Composite + Clone + Debug,
-          Dom : Domain<Par> {
+pub fn bv_vec_stack_set_top<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                        inp_stack: Transf<Em>,
+                                        el: OptRef<'a,T>,
+                                        inp_el: Transf<Em>,
+                                        exprs: &[Em::Expr],
+                                        em: &mut Em)
+                                        -> Result<Option<(OptRef<'b,BitVecVectorStack<T>>,Transf<Em>)>,Em::Error>
+    where T : Composite + Clone,Em : DeriveConst {
+
     let top = bv_vec_stack_top(inp_stack.clone());
-    bv_vec_stack_set(stack,inp_stack,top,el,inp_el,exprs,dom,em)
+    bv_vec_stack_set(stack,inp_stack,top,el,inp_el,exprs,em)
 }
 
-pub fn bv_vec_stack_push<'a,'b,'c,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
-                                             el: OptRef<'a,T>,
-                                             inp_stack: Transf<Comp<'b,Par>>,
-                                             inp_el: Transf<Comp<'b,Par>>,
-                                             exprs: &[CompExpr<Par>],
-                                             dom: &Dom,
-                                             em: &mut Comp<'b,Par>)
-                                             -> Result<Option<(OptRef<'c,BitVecVectorStack<T>>,Transf<Comp<'b,Par>>)>,()>
-    where T : Composite + Clone,
-          Par : Composite + Clone + Debug,
-          Dom : Domain<Par> {
+pub fn bv_vec_stack_push<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                     el: OptRef<'a,T>,
+                                     inp_stack: Transf<Em>,
+                                     inp_el: Transf<Em>,
+                                     exprs: &[Em::Expr],
+                                     em: &mut Em)
+                                     -> Result<Option<(OptRef<'b,BitVecVectorStack<T>>,Transf<Em>)>,Em::Error>
+    where T : Composite + Clone,Em : DeriveConst {
 
     let sz = stack.as_ref().elements.len();
     let vec_sz = stack.as_ref().elements.num_elem();
@@ -2068,7 +2097,7 @@ pub fn bv_vec_stack_push<'a,'b,'c,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<
         OptRef::Owned(st) => OptRef::Owned(st.elements)
     };
     let inp_vec = Transformation::view(1,vec_sz,inp_stack.clone());
-    let c = dom.is_const(&top,em,&|x| *x)?;
+    let c = em.derive_const(&top)?;
     match c {
         Some(Value::BitVec(bitwidth2,x)) => {
             debug_assert_eq!(bitwidth,bitwidth2);
@@ -2098,11 +2127,11 @@ pub fn bv_vec_stack_push<'a,'b,'c,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<
         Some(_) => panic!("Invalid index type for bitvector stack"),
         None => {
             match set_vec_elem_dyn(vec,OptRef::Ref(el.as_ref()),Transformation::view(0,1,inp_stack.clone()),
-                                   inp_vec.clone(),inp_el.clone(),exprs,dom,em)? {
+                                   inp_vec.clone(),inp_el.clone(),exprs,em)? {
                 None => Ok(None),
                 Some((nvec1,inp_nvec1)) => {
                     let (nvec2,inp_nvec2) = push_vec_elem(nvec1,OptRef::Ref(el.as_ref()),inp_nvec1.clone(),inp_el.clone())?;
-                    let ntop_fun = move |_:&[CompExpr<Par>],_:usize,e: CompExpr<Par>,em: &mut Comp<Par>| {
+                    let ntop_fun = move |_:&[Em::Expr],_:usize,e: Em::Expr,em: &mut Em| {
                         let one = em.const_bitvec(bitwidth,BigInt::from(1))?;
                         em.bvadd(e,one)
                     };
@@ -2117,22 +2146,19 @@ pub fn bv_vec_stack_push<'a,'b,'c,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<
     }
 }
 
-pub fn bv_vec_stack_pop<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
-                                         inp_stack: Transf<Comp<'b,Par>>,
-                                         exprs: &[CompExpr<Par>],
-                                         dom: &Dom,
-                                         em: &mut Comp<'b,Par>)
-                                         -> Result<Option<(OptRef<'a,BitVecVectorStack<T>>,
-                                                           Transf<Comp<'b,Par>>)>,()>
-    where T : Composite + Clone,
-          Par : Composite + Clone + Debug,
-          Dom : Domain<Par> {
+pub fn bv_vec_stack_pop<'a,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
+                                 inp_stack: Transf<Em>,
+                                 exprs: &[Em::Expr],
+                                 em: &mut Em)
+                                 -> Result<Option<(OptRef<'a,BitVecVectorStack<T>>,
+                                                   Transf<Em>)>,Em::Error>
+    where T : Composite + Clone,Em : DeriveConst {
 
     let vec_sz = stack.as_ref().elements.num_elem();
     let top = inp_stack.get(exprs,0,em)?;
     let bitwidth = stack.as_ref().top;
     let inp_vec = Transformation::view(1,vec_sz,inp_stack.clone());
-    let c = dom.is_const(&top,em,&|x| *x)?;
+    let c = em.derive_const(&top)?;
     match c {
         Some(Value::BitVec(bitwidth2,x)) => {
             debug_assert_eq!(bitwidth,bitwidth2);
@@ -2164,7 +2190,7 @@ pub fn bv_vec_stack_pop<'a,'b,T,Par,Dom>(stack: OptRef<'a,BitVecVectorStack<T>>,
         },
         Some(_) => panic!("Invalid index type"),
         None => {
-            let ntop_fun = move |_:&[CompExpr<Par>],_:usize,e: CompExpr<Par>,em: &mut Comp<Par>| {
+            let ntop_fun = move |_:&[Em::Expr],_:usize,e: Em::Expr,em: &mut Em| {
                 let zero = em.const_bitvec(bitwidth,BigInt::from(0))?;
                 let one = em.const_bitvec(bitwidth,BigInt::from(1))?;
                 let cond = em.eq(e.clone(),zero.clone())?;

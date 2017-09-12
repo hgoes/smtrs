@@ -1,5 +1,6 @@
 use types::*;
 use expr::{Expr,Function,BVOp,ArithOp};
+use domain::{HasMoreIterator};
 use num_bigint::BigInt;
 use num_rational::Ratio;
 use std::fmt::Debug;
@@ -189,4 +190,13 @@ pub trait Embed : Sized {
 
         self.embed(Expr::App(Function::Select(idx_tp,el_tp),idx))
     }
+}
+
+pub trait DeriveConst : Embed {
+    fn derive_const(&mut self,&Self::Expr) -> Result<Option<Value>,Self::Error>;
+}
+
+pub trait DeriveValues : DeriveConst {
+    type ValueIterator : HasMoreIterator<Item=Value>;
+    fn derive_values(&mut self,&Self::Expr) -> Result<Option<Self::ValueIterator>,Self::Error>;
 }
