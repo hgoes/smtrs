@@ -2501,8 +2501,6 @@ pub fn choice_set_chosen<'a,T,Em>(choice: OptRef<'a,Choice<T>>,
                                              Transf<Em>),Em::Error>
     where T : Composite+Clone+Ord,Em : Embed {
     let inp_ncond = Transformation::not(inp_cond.clone());
-    let el_sz = inp_el.size();
-    let ch_sz = inp_choice.size();
     let mut off = 0;
     let mut insert_pos = None;
     let mut replace = false;
@@ -2541,6 +2539,7 @@ pub fn choice_set_chosen<'a,T,Em>(choice: OptRef<'a,Choice<T>>,
                 }
             }
         }
+        off+=sz;
     }
     let nchoice = match insert_pos {
         None => {
