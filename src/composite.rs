@@ -1951,7 +1951,7 @@ impl<T : Composite + Clone> Pool<T> for Vec<T> {
     }
 }
 
-#[derive(PartialEq,Eq,Hash,Clone)]
+#[derive(PartialEq,Eq,Hash,Clone,Debug)]
 pub struct BitVecVectorStack<T> {
     pub top: usize,
     pub elements: Vec<T>
