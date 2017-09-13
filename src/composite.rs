@@ -54,6 +54,22 @@ pub struct CompDom<'a,C : Composite + 'a,Dom : Domain<C>> {
     domain: Dom
 }
 
+impl<'a,C : Composite + Clone + Debug> Comp<'a,C> {
+    pub fn new(obj: &'a C) -> Self {
+        Comp { referenced: obj,
+               exprs: Uniquer::new() }
+    }
+}
+
+impl<'a,C : Composite + Clone + Debug,Dom : Domain<C>> CompDom<'a,C,Dom> {
+    pub fn new(obj: &'a C,dom: Dom) -> Self {
+        CompDom {
+            comp: Comp::new(obj),
+            domain: dom
+        }
+    }
+}
+
 impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
     type Sort = types::Sort;
     type Var = usize;
