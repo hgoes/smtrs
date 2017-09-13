@@ -1440,6 +1440,9 @@ impl<Em : Embed> Transformation<Em> {
             }
         }
     }
+    pub fn get_all(&self,arr: &[Em::Expr],em: &mut Em) -> Result<Vec<Em::Expr>,Em::Error> {
+        Ok(self.to_slice(arr,0,self.size(),em)?.get().to_vec())
+    }
 }
 
 pub struct VecRead<'a,T : 'a,Em : 'a+Embed> {
