@@ -153,7 +153,7 @@ impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> DeriveValues for CompDom<'a,C
     }
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone,Debug)]
 pub struct Singleton(pub types::Sort);
 
 impl Composite for Singleton {
@@ -180,7 +180,7 @@ impl Composite for Singleton {
     }
 }
 
-#[derive(PartialEq,Eq,Hash,Clone)]
+#[derive(PartialEq,Eq,Hash,Clone,Debug)]
 pub struct SingletonBool {}
 
 pub static BOOL_SINGLETON : SingletonBool = SingletonBool {};
@@ -205,7 +205,7 @@ impl Composite for SingletonBool {
     }
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone,Debug)]
 pub struct SingletonBitVec(pub usize);
 
 impl Composite for SingletonBitVec {
