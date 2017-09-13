@@ -1426,6 +1426,38 @@ impl<Em : Embed> Transformation<Em> {
     }
 }
 
+pub struct VecRead<'a,T : 'a,Em : 'a+Embed> {
+    vec: &'a Vec<T>,
+    pos: usize,
+    inp: &'a Transf<Em>,
+    off: usize
+}
+
+impl<'a,T : 'a,Em : 'a+Embed> VecRead<'a,T,Em> {
+    pub fn new(v: &'a Vec<T>,inp_v: &'a Transf<Em>) -> Self {
+        VecRead { vec: v,
+                  pos: 0,
+                  inp: inp_v,
+                  off: 0 }
+    }
+}
+
+impl<'a,T : 'a+Composite,Em : 'a+Embed> Iterator for VecRead<'a,T,Em> {
+    type Item = (&'a T,Transf<Em>);
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos<self.vec.len() {
+            let el = &self.vec[self.pos];
+            let sz_el = el.num_elem();
+            let inp_el = Transformation::view(self.off,sz_el,self.inp.clone());
+            self.pos+=1;
+            self.off+=sz_el;
+            Some((el,inp_el))
+        } else {
+            None
+        }
+    }
+}
+
 pub struct CondVecAccess<T,Tp,It : Iterator<Item=Value>,Em : Embed> {
     cmp_expr: Transf<Em>,
     accessor: VecAccess<T,Em>,
