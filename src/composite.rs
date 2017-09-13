@@ -331,7 +331,7 @@ impl<T : Composite + Clone> Composite for Vec<T> {
     }
 }
 
-#[derive(PartialEq,Eq,Hash,Clone)]
+#[derive(PartialEq,Eq,Hash,Clone,Debug)]
 pub struct Choice<T>(Vec<T>);
 
 pub struct Choices<'a,T : 'a,Em : Embed> {
@@ -2317,7 +2317,7 @@ pub fn vec_pool_alloc<'a,'b,T,F,Em>(vec: OptRef<'a,Vec<T>>,
         Transformation::concat(&[vec_inp,el_inp])))
 }
 
-#[derive(PartialEq,Eq,Hash,Clone)]
+#[derive(PartialEq,Eq,Hash,Clone,Debug)]
 pub struct Assoc<K,V> {
     size: usize,
     tree: BTreeMap<K,(V,usize)>
