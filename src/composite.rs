@@ -2381,6 +2381,12 @@ impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
     }
 }
 
+pub fn assoc_empty<'a,K,V,Em>() -> Result<(OptRef<'a,Assoc<K,V>>,Transf<Em>),Em::Error>
+    where K : Ord,Em : Embed {
+    Ok((OptRef::Owned(Assoc { size: 0, tree: BTreeMap::new() }),
+        Transformation::id(0)))
+}
+
 pub fn assoc_get<'a,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
                             inp_assoc: Transf<Em>,
                             key: &K)
