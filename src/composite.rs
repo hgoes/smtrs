@@ -2006,6 +2006,18 @@ pub fn bv_vec_stack_empty<'a,T,Em>(bitwidth: usize,em: &mut Em)
     Ok((res,outp))
 }
 
+pub fn bv_vec_stack_singleton<'a,T,Em>(bitwidth: usize,
+                                       el: OptRef<T>,
+                                       inp_el: Transf<Em>,
+                                       em: &mut Em)
+                                       -> Result<(OptRef<'a,BitVecVectorStack<T>>,Transf<Em>),Em::Error>
+    where T : Composite+Clone, Em : Embed {
+    let res = OptRef::Owned(BitVecVectorStack { top: bitwidth, elements: vec![el.as_obj()] });
+    let inp_res = Transformation::concat(&[Transformation::constant(vec![em.const_bitvec(bitwidth,BigInt::from(1))?]),
+                                           inp_el]);
+    Ok((res,inp_res))
+}
+
 pub fn bv_vec_stack_access<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
                                        inp_stack: Transf<Em>,
                                        inp_idx: Transf<Em>,
