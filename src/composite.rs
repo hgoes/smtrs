@@ -1279,7 +1279,7 @@ impl<Em : Embed> Transformation<Em> {
                 for el in vec.iter() {
                     let sz = el.size();
                     if off < acc+sz {
-                        if off-acc+sz<=len {
+                        if off-acc+len<=sz {
                             return el.as_slice(arr,off-acc,len)
                         } else {
                             return None

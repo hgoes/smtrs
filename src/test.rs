@@ -1,7 +1,8 @@
-use smt::expr::{Expr};
-use smt::types::{Sort,SortKind};
-use smt::embed::Embed;
-use smt::parser::Parser;
+use expr::{Expr};
+use types::{Sort,SortKind};
+use embed::Embed;
+use parser::Parser;
+use composite::Transformation;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::str;
@@ -34,12 +35,11 @@ impl<V : Clone + Eq + Hash + Debug> Embed for Simple<V> {
     type Error = ();
     fn embed_sort(&mut self,s: SortKind<Sort>)
                   -> Result<Sort,()> {
-        Ok(Sort(Box::new(s)))
+        Ok(Sort::from_kind(s))
     }
     fn unbed_sort(&mut self,s: &Sort)
                   -> Result<SortKind<Sort>,()> {
-        let Sort(ref ns) = *s;
-        Ok((**ns).clone())
+        Ok(s.kind())
     }
     fn embed(&mut self,e: Expr<Sort,V,Box<SimpleExpr<V>>,()>)
              -> Result<Box<SimpleExpr<V>>,()> {
@@ -89,4 +89,19 @@ impl Parser for Simple<u64> {
     fn parse_fun(&mut self,_: &[u8]) -> Result<(),()> {
         Err(())
     }
+}
+
+/// Transformation tests
+#[test]
+fn test_transformation() {
+    let mut em : Simple<usize> = Simple::new();
+    let tr1 = Transformation::concat(&[Transformation::const_bool(true,&mut em).unwrap(),
+                                       Transformation::const_bool(false,&mut em).unwrap()]);
+    let ctrue = em.const_bool(true).unwrap();
+    let cfalse = em.const_bool(false).unwrap();
+
+    let ivec = [cfalse.clone(),ctrue.clone()];
+
+    let res = tr1.get_all(&ivec,&mut em).unwrap();
+    assert_eq!(res,vec![ctrue,cfalse]);
 }
