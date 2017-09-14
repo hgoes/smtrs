@@ -63,6 +63,9 @@ pub trait Embed : Sized {
                 -> Result<Self::Sort,Self::Error> {
         self.embed_sort(SortKind::Array(idx,el))
     }
+    fn var(&mut self,var: Self::Var) -> Result<Self::Expr,Self::Error> {
+        self.embed(Expr::Var(var))
+    }
     fn const_bool(&mut self,val: bool)
                   -> Result<Self::Expr,Self::Error> {
         self.embed(Expr::Const(Value::Bool(val)))
