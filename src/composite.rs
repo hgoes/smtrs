@@ -145,8 +145,9 @@ pub struct Singleton(pub types::Sort);
 
 impl Composite for Singleton {
     fn num_elem(&self) -> usize { 1 }
-    fn elem_sort<Em : Embed>(&self,_:usize,em: &mut Em)
+    fn elem_sort<Em : Embed>(&self,pos:usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
+        debug_assert_eq!(pos,0);
         self.0.embed(em)
     }
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
@@ -174,8 +175,9 @@ pub static BOOL_SINGLETON : SingletonBool = SingletonBool {};
 
 impl Composite for SingletonBool {
     fn num_elem(&self) -> usize { 1 }
-    fn elem_sort<Em : Embed>(&self,_:usize,em: &mut Em)
+    fn elem_sort<Em : Embed>(&self,pos:usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
+        debug_assert_eq!(pos,0);
         em.tp_bool()
     }
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,_: OptRef<'a,Self>,
@@ -197,8 +199,9 @@ pub struct SingletonBitVec(pub usize);
 
 impl Composite for SingletonBitVec {
     fn num_elem(&self) -> usize { 1 }
-    fn elem_sort<Em : Embed>(&self,_:usize,em: &mut Em)
+    fn elem_sort<Em : Embed>(&self,pos:usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
+        debug_assert_eq!(pos,0);
         em.tp_bitvec(self.0)
     }
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
@@ -2351,6 +2354,7 @@ impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
     }
     fn elem_sort<Em : Embed>(&self,pos: usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
+        debug_assert!(pos<self.num_elem());
         for &(ref el,off) in self.tree.values() {
             let sz = el.num_elem();
             if pos<off+sz {
