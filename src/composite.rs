@@ -20,6 +20,7 @@ use std::collections::Bound::*;
 use std::ops::Range;
 use std::iter::Peekable;
 use std::usize;
+use std::fmt;
 
 pub trait Composite : Sized + Eq + Hash {
 
@@ -2715,5 +2716,68 @@ impl<T : Composite,Em : Embed> ChoiceAccess<T,Em> {
             self.nchoice_inp.push(Transformation::view(self.last_off,skip,self.choice_inp));
         }
         (Choice(self.choice),Transformation::concat(&self.nchoice_inp[..]))
+    }
+}
+
+impl<Em : Embed> Debug for Transformation<Em> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Transformation::Id(w) => fmt.debug_tuple("Id").field(&w).finish(),
+            &Transformation::View(off,len,ref tr)
+                => fmt.debug_tuple("View")
+                .field(&off)
+                .field(&len)
+                .field(tr)
+                .finish(),
+            &Transformation::Concat(sz,ref trs)
+                => fmt.debug_tuple("Concat")
+                .field(&sz).field(trs).finish(),
+            &Transformation::Constant(ref cs)
+                => fmt.debug_tuple("Constant")
+                .field(cs).finish(),
+            &Transformation::Map(sz,_,ref tr,ref cache)
+                => fmt.debug_tuple("Map")
+                .field(&sz)
+                .field(tr)
+                .field(cache)
+                .finish(),
+            &Transformation::Zip2(sz,_,ref tr1,ref tr2,ref cache)
+                => fmt.debug_tuple("Zip2")
+                .field(&sz)
+                .field(tr1)
+                .field(tr2)
+                .field(cache)
+                .finish(),
+            &Transformation::Zip3(sz,_,ref tr1,ref tr2,ref tr3,ref cache)
+                => fmt.debug_tuple("Zip3")
+                .field(&sz)
+                .field(tr1)
+                .field(tr2)
+                .field(tr3)
+                .field(cache)
+                .finish(),
+            &Transformation::Write(sz,wr_off,repl_sz,ref obj,ref trg)
+                => fmt.debug_tuple("Write")
+                .field(&sz)
+                .field(&wr_off)
+                .field(&repl_sz)
+                .field(obj)
+                .field(trg)
+                .finish(),
+            &Transformation::MapByElem(_,ref tr)
+                => fmt.debug_tuple("MapByElem")
+                .field(tr).finish(),
+            &Transformation::ZipsByElem(_,ref trs,ref cache)
+                => fmt.debug_tuple("ZipsByElem")
+                .field(trs)
+                .field(cache)
+                .finish(),
+            &Transformation::ITE(sz,ref ites,ref def)
+                => fmt.debug_tuple("ITE")
+                .field(&sz)
+                .field(ites)
+                .field(def)
+                .finish()
+        }
     }
 }
