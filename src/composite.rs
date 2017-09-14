@@ -142,14 +142,14 @@ impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> Embed for CompDom<'a,C,Dom> {
 
 impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> DeriveConst for CompDom<'a,C,Dom> {
     fn derive_const(&mut self,e: &Self::Expr) -> Result<Option<Value>,Self::Error> {
-        self.domain.is_const(e,&mut self.comp,&|v:&usize| *v)
+        self.domain.is_const(e,&mut self.comp,&|v:&usize| Some(*v))
     }
 }
 
 impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> DeriveValues for CompDom<'a,C,Dom> {
     type ValueIterator = Dom::ValueIterator;
     fn derive_values(&mut self,e: &Self::Expr) -> Result<Option<Self::ValueIterator>,Self::Error> {
-        self.domain.values(e,&mut self.comp,&|v:&usize| *v)
+        self.domain.values(e,&mut self.comp,&|v:&usize| Some(*v))
     }
 }
 
