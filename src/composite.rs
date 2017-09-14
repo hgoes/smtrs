@@ -62,7 +62,7 @@ pub struct CompDom<'a,C : Composite + 'a,Dom : 'a+Domain<C>> {
 
 impl fmt::Display for CompVar {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.0,f)
+        write!(f,"v{}",self.0)
     }
 }
 
