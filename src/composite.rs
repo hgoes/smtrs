@@ -1265,8 +1265,14 @@ impl<Em : Embed> Transformation<Em> {
     fn as_slice<'a>(&'a self,arr: &'a [Em::Expr],off: usize,len: usize)
                     -> Option<BorrowedSlice<'a,Em::Expr>> {
         match *self {
-            Transformation::Id(_) => Some(BorrowedSlice::BorrowedSlice(&arr[off..off+len])),
-            Transformation::View(noff,_,ref tr) => tr.as_slice(arr,off+noff,len),
+            Transformation::Id(sz) => {
+                debug_assert!(off+len<=sz);
+                Some(BorrowedSlice::BorrowedSlice(&arr[off..off+len]))
+            },
+            Transformation::View(noff,sz,ref tr) => {
+                debug_assert!(len<=sz);
+                tr.as_slice(arr,off+noff,len)
+            },
             Transformation::Concat(_,ref vec) => {
                 let mut acc = 0;
                 for el in vec.iter() {
@@ -1283,7 +1289,8 @@ impl<Em : Embed> Transformation<Em> {
                 panic!("Invalid index: {}",off)
             },
             Transformation::Constant(ref vec) => Some(BorrowedSlice::BorrowedSlice(&vec[off..off+len])),
-            Transformation::Map(_,_,_,ref cache) => {
+            Transformation::Map(sz,_,_,ref cache) => {
+                debug_assert!(len<=sz);
                 let cache_ref : cell::Ref<Option<Vec<Em::Expr>>> = cache.borrow();
                 match *cache_ref {
                     None => None,
