@@ -106,9 +106,9 @@ impl Display for Value {
             Value::Int(ref v) => v.fmt(f),
             Value::Real(ref rv) => write!(f,"(/ {} {})",rv.numer(),rv.denom()),
             Value::BitVec(sz,ref v) => if sz%4==0 {
-                write!(f,"#x{0:1$X}",v,sz/4)
+                write!(f,"#x{0:01$X}",v,sz/4)
             } else {
-                write!(f,"#b{0:1$b}",v,sz)
+                write!(f,"#b{0:01$b}",v,sz)
             }
         }
     }
