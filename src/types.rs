@@ -151,3 +151,9 @@ impl Sort {
         }
     }
 }
+
+impl Display for Sort {
+    fn fmt(&self, f: &mut Formatter) -> Result<(),Error> {
+        self.0.fmt(f)
+    }
+}

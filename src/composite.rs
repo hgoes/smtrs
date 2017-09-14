@@ -2812,3 +2812,9 @@ impl<Em : Embed> Debug for Transformation<Em> {
         }
     }
 }
+
+impl<C : Composite+Debug> fmt::Display for CompExpr<C> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (*self.0.get()).fmt(f)
+    }
+}
