@@ -2044,8 +2044,11 @@ pub fn bv_vec_stack_access<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
         OptRef::Owned(rst) => OptRef::Owned(rst.elements)
     };
     let sz = inp_stack.size();
+    let inp_top = Transformation::view(0,1,inp_stack.clone());
     let inp_vec = Transformation::view(1,sz-1,inp_stack);
-    access_vec_dyn(vec,inp_vec,inp_idx,exprs,em)
+    let mut acc = access_vec_dyn(vec,inp_vec,inp_idx,exprs,em)?;
+    acc.accessor.nvec_inp.push(inp_top);
+    Ok(acc)
 }
 
 pub fn bv_vec_stack_get<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
