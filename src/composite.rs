@@ -46,35 +46,13 @@ pub trait Composite : Sized + Eq + Hash {
 pub struct CompExpr<C : Composite>(pub UniqueRef<expr::Expr<types::Sort,usize,CompExpr<C>,()>>);
 
 pub struct Comp<'a,C : Composite + 'a> {
-    referenced: &'a C,
-    exprs: Uniquer<expr::Expr<types::Sort,usize,CompExpr<C>,()>>
+    pub referenced: &'a C,
+    pub exprs: &'a mut Uniquer<expr::Expr<types::Sort,usize,CompExpr<C>,()>>
 }
 
-pub struct CompDom<'a,C : Composite + 'a,Dom : Domain<C>> {
-    comp: Comp<'a,C>,
-    domain: Dom
-}
-
-impl<'a,C : Composite + Clone + Debug> Comp<'a,C> {
-    pub fn new(obj: &'a C) -> Self {
-        Comp { referenced: obj,
-               exprs: Uniquer::new() }
-    }
-    pub fn set_referenced(&mut self,nobj: &'a C) -> () {
-        self.referenced = nobj;
-    }
-}
-
-impl<'a,C : Composite + Clone + Debug,Dom : Domain<C>> CompDom<'a,C,Dom> {
-    pub fn new(obj: &'a C,dom: Dom) -> Self {
-        CompDom {
-            comp: Comp::new(obj),
-            domain: dom
-        }
-    }
-    pub fn set_referenced(&mut self,nobj: &'a C) -> () {
-        self.comp.set_referenced(nobj)
-    }
+pub struct CompDom<'a,C : Composite + 'a,Dom : 'a+Domain<C>> {
+    pub comp: Comp<'a,C>,
+    pub domain: &'a Dom
 }
 
 impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
