@@ -2,7 +2,7 @@ use expr;
 use types;
 use types::{SortKind,Value};
 use embed::{Embed,DeriveConst,DeriveValues};
-use domain::{Domain,HasMoreIterator};
+use domain::{Domain};
 use unique::{Uniquer,UniqueRef};
 use std::cmp::{Ordering,max};
 use std::collections::BTreeMap;
@@ -18,6 +18,7 @@ use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::collections::Bound::*;
 use std::ops::Range;
+use std::iter::Peekable;
 
 pub trait Composite : Sized + Eq + Hash {
 
@@ -1483,16 +1484,16 @@ impl<'a,T : 'a+Composite,Em : 'a+Embed> Iterator for VecRead<'a,T,Em> {
 pub struct CondVecAccess<T,Tp,It : Iterator<Item=Value>,Em : Embed> {
     cmp_expr: Transf<Em>,
     accessor: VecAccess<T,Em>,
-    indices: IndexIterator<Tp,It>,
+    indices: Peekable<IndexIterator<Tp,It>>,
     no_elems: bool
 }
 
-impl<T : Composite,Tp,It : HasMoreIterator<Item=Value>,Em : Embed> CondVecAccess<T,Tp,It,Em> {
+impl<T : Composite,Tp,It : Iterator<Item=Value>,Em : Embed> CondVecAccess<T,Tp,It,Em> {
     pub fn new(cmp: Transf<Em>,vec: Vec<T>,inp_vec: Transf<Em>,ind: IndexIterator<Tp,It>)
                -> Self {
         CondVecAccess { cmp_expr: cmp,
                         accessor: VecAccess::new(vec,inp_vec),
-                        indices: ind,
+                        indices: ind.peekable(),
                         no_elems: true }
     }
     pub fn next(&mut self) -> Result<Option<(Option<Transf<Em>>,&mut T,&mut Transf<Em>)>,Em::Error> {
@@ -1500,7 +1501,7 @@ impl<T : Composite,Tp,It : HasMoreIterator<Item=Value>,Em : Embed> CondVecAccess
             None => Ok(None),
             Some((idx,val)) => {
                 let (el,inp_el) = self.accessor.next(idx);
-                let cond = if self.no_elems && !self.indices.has_more() {
+                let cond = if self.no_elems && self.indices.peek().is_some() {
                     self.no_elems = false;
                     None
                 } else {
@@ -1619,15 +1620,6 @@ impl<Tp,It : Iterator<Item=Value>> Iterator for IndexIterator<Tp,It> {
         match *self {
             IndexIterator::Limited(ref it) => it.size_hint(),
             IndexIterator::Unlimited(_,ref it) => it.size_hint()
-        }
-    }
-}
-
-impl<Tp,It : HasMoreIterator<Item=Value>> HasMoreIterator for IndexIterator<Tp,It> {
-    fn has_more(&self) -> bool {
-        match *self {
-            IndexIterator::Limited(ref it) => it.has_more(),
-            IndexIterator::Unlimited(_,ref it) => it.len()>0
         }
     }
 }

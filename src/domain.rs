@@ -6,22 +6,8 @@ use std::fmt::Debug;
 use std::iter::{Empty,Once,once};
 use std::cmp::Ordering;
 
-pub trait HasMoreIterator : Iterator {
-    fn has_more(&self) -> bool;
-}
-
-impl<T> HasMoreIterator for Empty<T> {
-    fn has_more(&self) -> bool { false }
-}
-
-impl<T> HasMoreIterator for Once<T> {
-    fn has_more(&self) -> bool {
-        self.len() > 0
-    }
-}
-
 pub trait Domain<T : Composite> {
-    type ValueIterator : HasMoreIterator<Item=Value>;
+    type ValueIterator : Iterator<Item=Value>;
     fn full(&T) -> Self;
     fn is_full(&self) -> bool;
     fn union(&mut self,&Self) -> ();
@@ -41,7 +27,7 @@ pub trait Domain<T : Composite> {
 }
 
 pub trait Attribute : Sized + Clone {
-    type ValueIterator : HasMoreIterator<Item=Value>;
+    type ValueIterator : Iterator<Item=Value>;
     fn full() -> Self;
     fn is_full(&self) -> bool;
     fn union(&self,&Self) -> Self;

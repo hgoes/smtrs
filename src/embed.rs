@@ -1,6 +1,5 @@
 use types::*;
 use expr::{Expr,Function,BVOp,ArithOp};
-use domain::{HasMoreIterator};
 use num_bigint::BigInt;
 use num_rational::Ratio;
 use std::fmt::Debug;
@@ -200,6 +199,6 @@ pub trait DeriveConst : Embed {
 }
 
 pub trait DeriveValues : DeriveConst {
-    type ValueIterator : HasMoreIterator<Item=Value>;
+    type ValueIterator : Iterator<Item=Value>;
     fn derive_values(&mut self,&Self::Expr) -> Result<Option<Self::ValueIterator>,Self::Error>;
 }
