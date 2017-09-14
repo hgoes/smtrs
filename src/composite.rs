@@ -2659,10 +2659,12 @@ pub fn choice_set_chosen<'a,T,Em>(choice: OptRef<'a,Choice<T>>,
                 }
             }
         }
-        off+=sz;
+        off+=sz+1;
     }
     let nchoice = match insert_pos {
         None => {
+            ninp.push(inp_cond);
+            ninp.push(inp_el);
             let mut vec = choice.as_obj().0;
             vec.push(el.as_obj());
             OptRef::Owned(Choice(vec))
