@@ -262,10 +262,10 @@ impl<T : Composite> Domain<T> for () {
     fn intersection(&mut self,_:&()) -> bool { true }
 }
 
-pub enum OptMerge2<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> {
+pub enum OptIntersection2<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> {
     Only1(It1),
     Only2(It2),
-    Both(Union2<V,It1,It2>)
+    Both(Intersection2<V,It1,It2>)
 }
 
 pub struct Intersection2<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> {
@@ -279,13 +279,13 @@ pub struct Union2<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> {
     buf: Option<(bool,V)>,
 }
 
-impl<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> Iterator for OptMerge2<V,It1,It2> {
+impl<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> Iterator for OptIntersection2<V,It1,It2> {
     type Item = V;
     fn next(&mut self) -> Option<V> {
         match *self {
-            OptMerge2::Only1(ref mut it) => it.next(),
-            OptMerge2::Only2(ref mut it) => it.next(),
-            OptMerge2::Both(ref mut it) => it.next()
+            OptIntersection2::Only1(ref mut it) => it.next(),
+            OptIntersection2::Only2(ref mut it) => it.next(),
+            OptIntersection2::Both(ref mut it) => it.next()
         }
     }
 }
@@ -370,8 +370,8 @@ impl<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> Iterator for Union2<
     }
 }
 
-/*impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
-    type ValueIterator = OptMerge2<Value,D1::ValueIterator,D2::ValueIterator>;
+impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
+    type ValueIterator = OptIntersection2<Value,D1::ValueIterator,D2::ValueIterator>;
     fn full(obj: &T) -> (D1,D2) {
         let d1 = D1::full(obj);
         let d2 = D2::full(obj);
@@ -394,34 +394,34 @@ impl<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> Iterator for Union2<
         }
         true
     }
-    fn refine<Em : Embed,F : Fn(&Em::Var) -> usize>(&mut self,e:&Em::Expr,em:&mut Em,f:&F)
-                                                    -> Result<bool,Em::Error> {
+    fn refine<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&mut self,e:&Em::Expr,em:&mut Em,f:&F)
+                                                            -> Result<bool,Em::Error> {
         if !self.0.refine(e,em,f)? {
             return Ok(false)
         }
         self.1.refine(e,em,f)
     }
-    fn is_const<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,e:&Em::Expr,em:&mut Em,f:&F)
-                                                      -> Result<Option<Value>,Em::Error> {
+    fn is_const<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&self,e:&Em::Expr,em:&mut Em,f:&F)
+                                                              -> Result<Option<Value>,Em::Error> {
         if let Some(v) = self.0.is_const(e,em,f)? {
             return Ok(Some(v))
         }
         self.1.is_const(e,em,f)
     }
-    fn values<Em : Embed,F : Fn(&Em::Var) -> usize>(&self,e: &Em::Expr,em: &mut Em,f: &F)
-                                                    -> Result<Option<Self::ValueIterator>,Em::Error> {
+    fn values<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&self,e: &Em::Expr,em: &mut Em,f: &F)
+                                                            -> Result<Option<Self::ValueIterator>,Em::Error> {
         match self.0.values(e,em,f)? {
             None => match self.1.values(e,em,f)? {
                 None => Ok(None),
-                Some(it2) => Ok(Some(OptMerge2::Only2(it2)))
+                Some(it2) => Ok(Some(OptIntersection2::Only2(it2)))
             },
             Some(it1) => match self.1.values(e,em,f)? {
-                None => Ok(Some(OptMerge2::Only1(it1))),
-                Some(it2) => Ok(Some(OptMerge2::Both(Union2::new(it1,it2))))
+                None => Ok(Some(OptIntersection2::Only1(it1))),
+                Some(it2) => Ok(Some(OptIntersection2::Both(Intersection2::new(it1,it2))))
             }
         }
     }
-}*/
+}
 /*
 impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>,D3 : Domain<T>> Domain<T> for (D1,D2,D3) {
     fn full(obj: &T) -> (D1,D2,D3) {
