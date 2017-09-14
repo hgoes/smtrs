@@ -2310,6 +2310,14 @@ impl<K : Ord+Hash+Clone,V : Composite+Clone> Assoc<K,V> {
         Assoc { size: 0,
                 tree: BTreeMap::new() }
     }
+    fn check_consistency(&self) {
+        let mut off = 0;
+        for &(ref v,coff) in self.tree.values() {
+            assert_eq!(coff,off);
+            off+=v.num_elem();
+        }
+        assert_eq!(self.size,off);
+    }
 }
 
 impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
@@ -2510,6 +2518,9 @@ pub fn assoc_insert<'a,'b,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
             (noff,0)
         }
     };
+    if cfg!(debug_assertions) {
+        rassoc.check_consistency();
+    }
     let whole_sz = inp_assoc.size();
     Ok((OptRef::Owned(rassoc),
         Transformation::concat
