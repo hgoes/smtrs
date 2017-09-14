@@ -45,7 +45,7 @@ pub trait Composite : Sized + Eq + Hash {
 }
 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone,Debug)]
-pub struct CompVar(usize);
+pub struct CompVar(pub usize);
 
 #[derive(PartialEq,Eq,Hash,Clone,Debug)]
 pub struct CompExpr<C : Composite>(pub UniqueRef<expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>>);
