@@ -4,7 +4,7 @@ use types::{SortKind,Value};
 use embed::{Embed,DeriveConst,DeriveValues};
 use domain::{Domain};
 use unique::{Uniquer,UniqueRef};
-use std::cmp::{Ordering,max};
+use std::cmp::{Ordering,max,min};
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::rc::Rc;
@@ -19,6 +19,7 @@ use num_traits::cast::ToPrimitive;
 use std::collections::Bound::*;
 use std::ops::Range;
 use std::iter::Peekable;
+use std::usize;
 
 pub trait Composite : Sized + Eq + Hash {
 
@@ -1581,6 +1582,18 @@ pub fn index_as_value<T>(tp: &SortKind<T>,idx: usize) -> Value {
     }
 }
 
+pub fn max_index<T>(tp: &SortKind<T>) -> usize {
+    match *tp {
+        SortKind::Bool => 1,
+        SortKind::Int => usize::MAX,
+        SortKind::BitVec(bw) => match (1 as usize).checked_shl(bw as u32) {
+            None => usize::MAX,
+            Some(r) => r-1
+        },
+        _ => panic!("Unsuitable index type")
+    }
+}
+
 pub enum IndexIterator<Tp,It : Iterator<Item=Value>> {
     Limited(It),
     Unlimited(SortKind<Tp>,Range<usize>)
@@ -1779,31 +1792,29 @@ pub fn set_vec_elem_dyn<'a,'b,T,Em
             let srt = em.type_of(&idx)?;
             let mut nvec = OptRef::Owned(vec.as_ref().clone());
             let mut inp_nvec = inp_vec.clone();
-            match em.unbed_sort(&srt)? {
-                SortKind::BitVec(sz) => {
-                    for i in 0..vec.as_ref().len() {
-                        let (cel,inp_cel) = get_vec_elem(i,OptRef::Ref(vec.as_ref()),inp_vec.clone())?;
-                        let cond_fun = move |vec:&[Em::Expr],res:&mut Vec<Em::Expr>,em:&mut Em| {
-                            let val = em.const_bitvec(sz,BigInt::from(i))?;
-                            let expr = em.eq(vec[0].clone(),val)?;
-                            res.push(expr);
-                            Ok(())
-                        };
-                        let cond = Transformation::map(1,Box::new(cond_fun),
-                                                       inp_pos.clone());
-                        let (nel,inp_nel) = match ite(OptRef::Ref(el.as_ref()),
-                                                      cel,cond,
-                                                      inp_el.clone(),
-                                                      inp_cel,em)? {
-                            Some(r) => r,
-                            None => return Ok(None)
-                        };
-                        let (cvec,inp_cvec) = set_vec_elem(i,nvec,nel,inp_nvec,inp_nel)?;
-                        nvec = cvec;
-                        inp_nvec = inp_cvec;
-                    }
-                },
-                _ => unimplemented!()
+            let tp = em.unbed_sort(&srt)?;
+            let max_idx = min(max_index(&tp),vec.as_ref().len());
+            for i in 0..max_idx {
+                let (cel,inp_cel) = get_vec_elem(i,OptRef::Ref(vec.as_ref()),inp_vec.clone())?;
+                let cval = index_as_value(&tp,i);
+                let cond_fun = move |vec:&[Em::Expr],res:&mut Vec<Em::Expr>,em:&mut Em| {
+                    let val = em.embed(expr::Expr::Const(cval.clone()))?;
+                    let expr = em.eq(vec[0].clone(),val)?;
+                    res.push(expr);
+                    Ok(())
+                };
+                let cond = Transformation::map(1,Box::new(cond_fun),
+                                               inp_pos.clone());
+                let (nel,inp_nel) = match ite(OptRef::Ref(el.as_ref()),
+                                              cel,cond,
+                                              inp_el.clone(),
+                                              inp_cel,em)? {
+                    Some(r) => r,
+                    None => return Ok(None)
+                };
+                let (cvec,inp_cvec) = set_vec_elem(i,nvec,nel,inp_nvec,inp_nel)?;
+                nvec = cvec;
+                inp_nvec = inp_cvec;
             }
             Ok(Some((OptRef::Owned(nvec.as_obj()),inp_nvec)))
         }
