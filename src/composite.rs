@@ -357,6 +357,9 @@ impl<'a,T : 'a + Composite,Em : Embed> Iterator for Choices<'a,T,Em> {
 }
 
 impl<'a,T : 'a+Composite+Ord> Choice<T> {
+    pub fn new() -> Self {
+        Choice(Vec::new())
+    }
     pub fn choices<Em : Embed>(&'a self,tr: Transf<Em>) -> Choices<'a,T,Em> {
         Choices { transf: tr,
                   off: 0,
@@ -2324,6 +2327,13 @@ pub fn vec_pool_alloc<'a,'b,T,F,Em>(vec: OptRef<'a,Vec<T>>,
 pub struct Assoc<K,V> {
     size: usize,
     tree: BTreeMap<K,(V,usize)>
+}
+
+impl<K : Ord+Hash+Clone,V : Composite+Clone> Assoc<K,V> {
+    pub fn new() -> Self {
+        Assoc { size: 0,
+                tree: BTreeMap::new() }
+    }
 }
 
 impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
