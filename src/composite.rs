@@ -1376,7 +1376,7 @@ impl<Em : Embed> Transformation<Em> {
                     Some(ref rcache) => return Ok(rcache[idx].clone()),
                     None => {}
                 }
-                let sl = tr.to_slice(arr,0,arr.len(),em)?;
+                let sl = tr.to_slice(arr,0,tr.size(),em)?;
                 let mut narr = Vec::with_capacity(sz);
                 f(sl.get(),&mut narr,em)?;
                 let res = narr[idx].clone();
@@ -1389,8 +1389,8 @@ impl<Em : Embed> Transformation<Em> {
                     Some(ref rcache) => return Ok(rcache[idx].clone()),
                     None => {}
                 }
-                let sl1 = tr1.to_slice(arr,0,arr.len(),em)?;
-                let sl2 = tr2.to_slice(arr,0,arr.len(),em)?;
+                let sl1 = tr1.to_slice(arr,0,tr1.size(),em)?;
+                let sl2 = tr2.to_slice(arr,0,tr2.size(),em)?;
                 let mut narr = Vec::with_capacity(sz);
                 f(sl1.get(),sl2.get(),&mut narr,em)?;
                 let res = narr[idx].clone();
@@ -1403,9 +1403,9 @@ impl<Em : Embed> Transformation<Em> {
                     Some(ref rcache) => return Ok(rcache[idx].clone()),
                     None => {}
                 }
-                let sl1 = tr1.to_slice(arr,0,arr.len(),em)?;
-                let sl2 = tr2.to_slice(arr,0,arr.len(),em)?;
-                let sl3 = tr3.to_slice(arr,0,arr.len(),em)?;
+                let sl1 = tr1.to_slice(arr,0,tr1.size(),em)?;
+                let sl2 = tr2.to_slice(arr,0,tr2.size(),em)?;
+                let sl3 = tr3.to_slice(arr,0,tr3.size(),em)?;
                 let mut narr = Vec::with_capacity(sz);
                 f(sl1.get(),sl2.get(),sl3.get(),&mut narr,em)?;
                 let res = narr[idx].clone();
