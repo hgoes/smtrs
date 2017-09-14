@@ -60,6 +60,9 @@ impl<'a,C : Composite + Clone + Debug> Comp<'a,C> {
         Comp { referenced: obj,
                exprs: Uniquer::new() }
     }
+    pub fn set_referenced(&mut self,nobj: &'a C) -> () {
+        self.referenced = nobj;
+    }
 }
 
 impl<'a,C : Composite + Clone + Debug,Dom : Domain<C>> CompDom<'a,C,Dom> {
@@ -68,6 +71,9 @@ impl<'a,C : Composite + Clone + Debug,Dom : Domain<C>> CompDom<'a,C,Dom> {
             comp: Comp::new(obj),
             domain: dom
         }
+    }
+    pub fn set_referenced(&mut self,nobj: &'a C) -> () {
+        self.comp.set_referenced(nobj)
     }
 }
 
