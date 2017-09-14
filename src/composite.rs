@@ -2464,6 +2464,7 @@ pub fn assoc_get<'a,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
                             key: &K)
                             -> Result<Option<(OptRef<'a,V>,Transf<Em>)>,Em::Error>
     where K : Ord + Hash + Clone, V : Composite + Clone, Em : Embed {
+    debug_assert_eq!(assoc.as_ref().num_elem(),inp_assoc.size());
     match assoc {
         OptRef::Ref(ref rassoc) => match rassoc.tree.get(key) {
             None => Ok(None),
@@ -2491,6 +2492,7 @@ pub fn assoc_insert<'a,'b,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
                                   inp_value: Transf<Em>)
                                   -> Result<(OptRef<'b,Assoc<K,V>>,Transf<Em>),Em::Error>
     where K : Ord + Hash + Clone, V : Composite + Clone, Em : Embed {
+    debug_assert_eq!(assoc.as_ref().num_elem(),inp_assoc.size());
     let mut rassoc = assoc.as_obj();
     let nsz = value.as_ref().num_elem();
     let existing = match rassoc.tree.entry(key.clone()) {
