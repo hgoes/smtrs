@@ -119,11 +119,19 @@ pub trait Embed : Sized {
     }
     fn and(&mut self,args: Vec<Self::Expr>)
            -> Result<Self::Expr,Self::Error> {
-        self.embed(Expr::App(Function::And(args.len()),args))
+        match args.len() {
+            0 => self.embed(Expr::Const(Value::Bool(true))),
+            1 => Ok(args[1].clone()),
+            _ => self.embed(Expr::App(Function::And(args.len()),args))
+        }
     }
     fn or(&mut self,args: Vec<Self::Expr>)
           -> Result<Self::Expr,Self::Error> {
-        self.embed(Expr::App(Function::Or(args.len()),args))
+        match args.len() {
+            0 => self.embed(Expr::Const(Value::Bool(false))),
+            1 => Ok(args[0].clone()),
+            _ => self.embed(Expr::App(Function::Or(args.len()),args))
+        }
     }
     fn ite(&mut self,cond: Self::Expr,if_t: Self::Expr,if_f: Self::Expr)
            -> Result<Self::Expr,Self::Error> {
@@ -138,7 +146,11 @@ pub trait Embed : Sized {
                 }
             }
         });
-        self.embed(Expr::App(Function::ITE(srt),vec![cond,if_t,if_f]))
+        if if_t==if_f {
+            Ok(if_t)
+        } else {
+            self.embed(Expr::App(Function::ITE(srt),vec![cond,if_t,if_f]))
+        }
     }
     fn bvadd(&mut self,lhs: Self::Expr,rhs: Self::Expr)
              -> Result<Self::Expr,Self::Error> {
