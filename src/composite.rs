@@ -1103,12 +1103,15 @@ impl<Em : Embed> Transformation<Em> {
     }
                
     pub fn view(off: usize,len: usize,t: Rc<Transformation<Em>>) -> Rc<Transformation<Em>> {
+        debug_assert!(off+len<=t.size());
         if len==0 {
             Rc::new(Transformation::Id(0))
         } else if off==0 && t.size()==len {
             t
+        } else if let Transformation::View(coff,_,ref t2) = *t {
+            Rc::new(Transformation::View(coff+off,len,t2.clone()))
         } else {
-            Rc::new(Transformation::View(off,len,t))
+            Rc::new(Transformation::View(off,len,t.clone()))
         }
     }
     pub fn concat(trs: &[Rc<Transformation<Em>>]) -> Rc<Transformation<Em>> {
