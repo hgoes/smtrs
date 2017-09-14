@@ -2493,6 +2493,7 @@ pub fn assoc_insert<'a,'b,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
                                   -> Result<(OptRef<'b,Assoc<K,V>>,Transf<Em>),Em::Error>
     where K : Ord + Hash + Clone, V : Composite + Clone, Em : Embed {
     debug_assert_eq!(assoc.as_ref().num_elem(),inp_assoc.size());
+    debug_assert_eq!(value.as_ref().num_elem(),inp_value.size());
     let mut rassoc = assoc.as_obj();
     let nsz = value.as_ref().num_elem();
     let existing = match rassoc.tree.entry(key.clone()) {
