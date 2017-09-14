@@ -44,12 +44,15 @@ pub trait Composite : Sized + Eq + Hash {
     }
 }
 
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone,Debug)]
+pub struct CompVar(usize);
+
 #[derive(PartialEq,Eq,Hash,Clone,Debug)]
-pub struct CompExpr<C : Composite>(pub UniqueRef<expr::Expr<types::Sort,usize,CompExpr<C>,()>>);
+pub struct CompExpr<C : Composite>(pub UniqueRef<expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>>);
 
 pub struct Comp<'a,C : Composite + 'a> {
     pub referenced: &'a C,
-    pub exprs: &'a mut Uniquer<expr::Expr<types::Sort,usize,CompExpr<C>,()>>
+    pub exprs: &'a mut Uniquer<expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>>
 }
 
 pub struct CompDom<'a,C : Composite + 'a,Dom : 'a+Domain<C>> {
@@ -57,11 +60,17 @@ pub struct CompDom<'a,C : Composite + 'a,Dom : 'a+Domain<C>> {
     pub domain: &'a Dom
 }
 
+impl fmt::Display for CompVar {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.0,f)
+    }
+}
+
 impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
     type Sort = types::Sort;
-    type Var = usize;
+    type Var = CompVar;
     type Expr = CompExpr<C>;
-    type Fun = ();
+    type Fun = expr::NoVar;
     type Error = ();
     fn embed_sort(&mut self,tp: SortKind<types::Sort>)
                   -> Result<types::Sort,()> {
@@ -70,24 +79,24 @@ impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
     fn unbed_sort(&mut self,tp: &types::Sort) -> Result<SortKind<types::Sort>,()> {
         Ok(tp.kind())
     }
-    fn embed(&mut self,e: expr::Expr<types::Sort,usize,CompExpr<C>,()>)
+    fn embed(&mut self,e: expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>)
              -> Result<CompExpr<C>,()> {
         Ok(CompExpr(self.exprs.get(e)))
     }
     fn unbed(&mut self,e: &CompExpr<C>)
-             -> Result<expr::Expr<types::Sort,usize,CompExpr<C>,()>,()> {
+             -> Result<expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>,()> {
         Ok((*e.0).clone())
     }
-    fn type_of_var(&mut self,var: &usize) -> Result<types::Sort,()> {
-        self.referenced.elem_sort(*var,self)
+    fn type_of_var(&mut self,var: &CompVar) -> Result<types::Sort,()> {
+        self.referenced.elem_sort(var.0,self)
     }
-    fn type_of_fun(&mut self,_:&()) -> Result<types::Sort,()> {
+    fn type_of_fun(&mut self,_:&expr::NoVar) -> Result<types::Sort,()> {
         panic!("Composite expressions don't have functions")
     }
-    fn arity(&mut self,_:&()) -> Result<usize,()> {
+    fn arity(&mut self,_:&expr::NoVar) -> Result<usize,()> {
         panic!("Composite expressions don't have functions")
     }
-    fn type_of_arg(&mut self,_:&(),_:usize) -> Result<types::Sort,()> {
+    fn type_of_arg(&mut self,_:&expr::NoVar,_:usize) -> Result<types::Sort,()> {
         panic!("Composite expressions don't have functions")
     }
 }
@@ -129,14 +138,14 @@ impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> Embed for CompDom<'a,C,Dom> {
 
 impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> DeriveConst for CompDom<'a,C,Dom> {
     fn derive_const(&mut self,e: &Self::Expr) -> Result<Option<Value>,Self::Error> {
-        self.domain.is_const(e,&mut self.comp,&|v:&usize| Some(*v))
+        self.domain.is_const(e,&mut self.comp,&|v:&CompVar| Some(v.0))
     }
 }
 
 impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> DeriveValues for CompDom<'a,C,Dom> {
     type ValueIterator = Dom::ValueIterator;
     fn derive_values(&mut self,e: &Self::Expr) -> Result<Option<Self::ValueIterator>,Self::Error> {
-        self.domain.values(e,&mut self.comp,&|v:&usize| Some(*v))
+        self.domain.values(e,&mut self.comp,&|v:&CompVar| Some(v.0))
     }
 }
 
@@ -2813,8 +2822,8 @@ impl<Em : Embed> Debug for Transformation<Em> {
     }
 }
 
-impl<C : Composite+Debug> fmt::Display for CompExpr<C> {
+impl<C : Composite> fmt::Display for CompExpr<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (*self.0.get()).fmt(f)
+        fmt::Display::fmt(self.0.get(),f)
     }
 }

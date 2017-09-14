@@ -16,6 +16,9 @@ pub struct NFun<S> {
 }
 
 #[derive(Debug,PartialEq,Eq,Hash,Clone)]
+pub struct NoVar { }
+
+#[derive(Debug,PartialEq,Eq,Hash,Clone)]
 pub enum Expr<S,V,E,F> {
     Var(V),
     QVar(NVar<S>),
@@ -438,5 +441,11 @@ impl<S : Display,
                 write!(f,") {})",body)
             }
         }
+    }
+}
+
+impl Display for NoVar {
+    fn fmt(&self,_: &mut Formatter) -> Result<(),Error> {
+        unreachable!()
     }
 }
