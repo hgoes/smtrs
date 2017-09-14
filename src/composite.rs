@@ -2518,6 +2518,7 @@ pub fn assoc_insert<'a,'b,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
             (noff,0)
         }
     };
+    rassoc.size = rassoc.size - osz + nsz;
     if cfg!(debug_assertions) {
         rassoc.check_consistency();
     }
