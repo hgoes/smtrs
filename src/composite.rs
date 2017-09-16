@@ -2827,3 +2827,36 @@ impl<C : Composite> fmt::Display for CompExpr<C> {
         fmt::Display::fmt(self.0.get(),f)
     }
 }
+
+pub enum VecIter<'a,T : 'a,Em : Embed> {
+    Ref(Transf<Em>,usize,slice::Iter<'a,T>),
+    Owned(Transf<Em>,usize,vec::Drain<'a,T>)
+}
+
+impl<'a,T : Composite,Em : Embed> Iterator for VecIter<'a,T,Em> {
+    type Item = (OptRef<'a,T>,Transf<Em>);
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            &mut VecIter::Ref(ref inp,ref mut off,ref mut it) => match it.next() {
+                None => None,
+                Some(ref nxt) => {
+                    let sz = nxt.num_elem();
+                    let old = *off;
+                    *off+=sz;
+                    Some((OptRef::Ref(nxt),
+                          Transformation::view(old,sz,inp.clone())))
+                }
+            },
+            &mut VecIter::Owned(ref inp,ref mut off,ref mut it) => match it.next() {
+                None => None,
+                Some(nxt) => {
+                    let sz = nxt.num_elem();
+                    let old = *off;
+                    *off+=sz;
+                    Some((OptRef::Owned(nxt),
+                          Transformation::view(old,sz,inp.clone())))
+                }
+            }
+        }
+    }
+}
