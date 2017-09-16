@@ -2828,9 +2828,16 @@ impl<C : Composite> fmt::Display for CompExpr<C> {
     }
 }
 
+pub fn vec_iter<'a,T,Em : Embed>(vec: OptRef<'a,Vec<T>>,inp: Transf<Em>) -> VecIter<'a,T,Em> {
+    match vec {
+        OptRef::Ref(ref rvec) => VecIter::Ref(inp,0,rvec.iter()),
+        OptRef::Owned(rvec) => VecIter::Owned(inp,0,rvec.into_iter())
+    }
+}
+
 pub enum VecIter<'a,T : 'a,Em : Embed> {
     Ref(Transf<Em>,usize,slice::Iter<'a,T>),
-    Owned(Transf<Em>,usize,vec::Drain<'a,T>)
+    Owned(Transf<Em>,usize,vec::IntoIter<T>)
 }
 
 impl<'a,T : Composite,Em : Embed> Iterator for VecIter<'a,T,Em> {
