@@ -17,10 +17,11 @@ use std::vec;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::collections::Bound::*;
-use std::ops::Range;
+use std::ops::{Index,IndexMut,Range};
 use std::iter::Peekable;
 use std::usize;
 use std::fmt;
+use std::marker::PhantomData;
 
 pub trait Composite : Sized + Eq + Hash {
 
@@ -177,7 +178,7 @@ impl Composite for Singleton {
     }
 }
 
-#[derive(PartialEq,Eq,Hash,Clone,Debug)]
+#[derive(PartialEq,Eq,Hash,Clone,Copy,Debug)]
 pub struct SingletonBool {}
 
 pub static BOOL_SINGLETON : SingletonBool = SingletonBool {};
@@ -203,7 +204,7 @@ impl Composite for SingletonBool {
     }
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone,Debug)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone,Copy,Debug)]
 pub struct SingletonBitVec(pub usize);
 
 impl Composite for SingletonBitVec {
@@ -1969,7 +1970,7 @@ impl<T : Composite + Clone> Pool<T> for Vec<T> {
 
 #[derive(PartialEq,Eq,Hash,Clone,Debug)]
 pub struct BitVecVectorStack<T> {
-    pub top: usize,
+    pub top: SingletonBitVec,
     pub elements: Vec<T>
 }
 
@@ -1980,7 +1981,7 @@ impl<T : Composite + Clone> Composite for BitVecVectorStack<T> {
     fn elem_sort<Em : Embed>(&self,pos: usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         if pos==0 {
-            em.tp_bitvec(self.top)
+            em.tp_bitvec(self.top.0)
         } else {
             self.elements.elem_sort(pos-1,em)
         }
@@ -2033,7 +2034,7 @@ impl<T : Composite + Clone> Composite for BitVecVectorStack<T> {
 pub fn bv_vec_stack_empty<'a,T,Em>(bitwidth: usize,em: &mut Em)
                                    -> Result<(OptRef<'a,BitVecVectorStack<T>>,Transf<Em>),Em::Error>
     where T : Composite, Em : Embed {
-    let res = OptRef::Owned(BitVecVectorStack { top: bitwidth, elements: vec![] });
+    let res = OptRef::Owned(BitVecVectorStack { top: SingletonBitVec(bitwidth), elements: vec![] });
     let outp = Transformation::constant(vec![em.const_bitvec(bitwidth,BigInt::from(0))?]);
     Ok((res,outp))
 }
@@ -2044,7 +2045,8 @@ pub fn bv_vec_stack_singleton<'a,T,Em>(bitwidth: usize,
                                        em: &mut Em)
                                        -> Result<(OptRef<'a,BitVecVectorStack<T>>,Transf<Em>),Em::Error>
     where T : Composite+Clone, Em : Embed {
-    let res = OptRef::Owned(BitVecVectorStack { top: bitwidth, elements: vec![el.as_obj()] });
+    let res = OptRef::Owned(BitVecVectorStack { top: SingletonBitVec(bitwidth),
+                                                elements: vec![el.as_obj()] });
     let inp_res = Transformation::concat(&[Transformation::constant(vec![em.const_bitvec(bitwidth,BigInt::from(1))?]),
                                            inp_el]);
     Ok((res,inp_res))
@@ -2179,13 +2181,13 @@ pub fn bv_vec_stack_push<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
     let c = em.derive_const(&top)?;
     match c {
         Some(Value::BitVec(bitwidth2,x)) => {
-            debug_assert_eq!(bitwidth,bitwidth2);
+            debug_assert_eq!(bitwidth.0,bitwidth2);
             match x.to_usize() {
                 Some(rx) => match rx.cmp(&sz) {
                     Ordering::Greater => panic!("top of bitvector stack out of range"),
                     Ordering::Less => {
                         let (nvec,inp_nvec) = set_vec_elem(rx,vec,el,inp_vec,inp_el)?;
-                        let ntop = em.const_bitvec(bitwidth,x+1)?;
+                        let ntop = em.const_bitvec(bitwidth.0,x+1)?;
                         let inp_ntop = Transformation::constant(vec![ntop]);
                         Ok(Some((OptRef::Owned(BitVecVectorStack { top: bitwidth,
                                                                    elements: nvec.as_obj() }),
@@ -2193,7 +2195,7 @@ pub fn bv_vec_stack_push<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
                     },
                     Ordering::Equal => {
                         let (nvec,inp_nvec) = push_vec_elem(vec,el,inp_vec,inp_el)?;
-                        let ntop = em.const_bitvec(bitwidth,x+1)?;
+                        let ntop = em.const_bitvec(bitwidth.0,x+1)?;
                         let inp_ntop = Transformation::constant(vec![ntop]);
                         Ok(Some((OptRef::Owned(BitVecVectorStack { top: bitwidth,
                                                                    elements: nvec.as_obj() }),
@@ -2211,7 +2213,7 @@ pub fn bv_vec_stack_push<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
                 Some((nvec1,inp_nvec1)) => {
                     let (nvec2,inp_nvec2) = push_vec_elem(nvec1,OptRef::Ref(el.as_ref()),inp_nvec1.clone(),inp_el.clone())?;
                     let ntop_fun = move |_:&[Em::Expr],_:usize,e: Em::Expr,em: &mut Em| {
-                        let one = em.const_bitvec(bitwidth,BigInt::from(1))?;
+                        let one = em.const_bitvec(bitwidth.0,BigInt::from(1))?;
                         em.bvadd(e,one)
                     };
                     let ntop_inp = Transformation::map_by_elem(Box::new(ntop_fun),
@@ -2240,10 +2242,10 @@ pub fn bv_vec_stack_pop<'a,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
     let c = em.derive_const(&top)?;
     match c {
         Some(Value::BitVec(bitwidth2,x)) => {
-            debug_assert_eq!(bitwidth,bitwidth2);
+            debug_assert_eq!(bitwidth.0,bitwidth2);
             match x.to_usize() {
                 Some(rx) => if rx==0 || rx==1 {
-                    let zero = em.const_bitvec(bitwidth,BigInt::from(0))?;
+                    let zero = em.const_bitvec(bitwidth.0,BigInt::from(0))?;
                     Ok(Some((OptRef::Owned(BitVecVectorStack { top: bitwidth,
                                                                elements: vec![] }),
                              Transformation::constant(vec![zero]))))
@@ -2261,7 +2263,7 @@ pub fn bv_vec_stack_pop<'a,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
                         }
                     };
                     let inp_nvec = Transformation::view(1,nst.as_ref().elements.num_elem(),inp_stack);
-                    let inp_ntop = Transformation::constant(vec![em.const_bitvec(bitwidth,BigInt::from(rx-1))?]);
+                    let inp_ntop = Transformation::constant(vec![em.const_bitvec(bitwidth.0,BigInt::from(rx-1))?]);
                     Ok(Some((nst,Transformation::concat(&[inp_ntop,inp_nvec]))))
                 },
                 None => panic!("Index overflow")
@@ -2270,8 +2272,8 @@ pub fn bv_vec_stack_pop<'a,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
         Some(_) => panic!("Invalid index type"),
         None => {
             let ntop_fun = move |_:&[Em::Expr],_:usize,e: Em::Expr,em: &mut Em| {
-                let zero = em.const_bitvec(bitwidth,BigInt::from(0))?;
-                let one = em.const_bitvec(bitwidth,BigInt::from(1))?;
+                let zero = em.const_bitvec(bitwidth.0,BigInt::from(0))?;
+                let one = em.const_bitvec(bitwidth.0,BigInt::from(1))?;
                 let cond = em.eq(e.clone(),zero.clone())?;
                 let ne = em.bvsub(e.clone(),one)?;
                 em.ite(cond,e,ne)
@@ -2865,5 +2867,687 @@ impl<'a,T : Composite,Em : Embed> Iterator for VecIter<'a,T,Em> {
                 }
             }
         }
+    }
+}
+
+type Witness<S,I> = PhantomData<(*const S,*const I)>;
+
+pub trait Contains<Idx> : Index<Idx> {
+    type Position;
+    fn position(&self,Idx) -> Self::Position;
+    fn get_tr<Em : Embed>(Witness<Self,Idx>,Transf<Em>,Self::Position) -> Transf<Em>;
+}
+
+pub trait ContainsMut<Idx> : Contains<Idx>+IndexMut<Idx> {
+    fn set_tr<Em : Embed>(Witness<Self,Idx>,Transf<Em>,Self::Position,Transf<Em>) -> Transf<Em>;
+}
+
+#[derive(Debug,PartialEq,Eq,Hash)]
+pub struct CompVec<T>(Vec<T>);
+
+impl<T> Index<usize> for CompVec<T> {
+    type Output = T;
+    fn index(&self,idx: usize) -> &T {
+        self.0.index(idx)
+    }
+}
+
+impl<T> IndexMut<usize> for CompVec<T> {
+    fn index_mut(&mut self,idx: usize) -> &mut T {
+        self.0.index_mut(idx)
+    }
+}
+
+impl<T : Composite> Contains<usize> for CompVec<T> {
+    type Position = (usize,usize);
+    fn position(&self,idx: usize) -> Self::Position {
+        let mut acc = 0;
+        for i in 0..idx {
+            let sz = self.0[i].num_elem();
+            acc+=sz;
+        }
+        let len = self.0[idx].num_elem();
+        (acc,len)
+    }
+    fn get_tr<Em : Embed>(_:Witness<Self,usize>,
+                          inp_vec: Transf<Em>,
+                          (off,len): Self::Position) -> Transf<Em> {
+        Transformation::view(off,len,inp_vec)
+    }
+}
+
+impl<T : Composite> ContainsMut<usize> for CompVec<T> {
+    fn set_tr<Em : Embed>(_:Witness<Self,usize>,
+                          inp_vec: Transf<Em>,
+                          (off,len): Self::Position,
+                          inp_el: Transf<Em>) -> Transf<Em> {
+        Transformation::concat(&[Transformation::view(0,off,inp_vec.clone()),
+                                 inp_el,
+                                 Transformation::view(off+len,inp_vec.size()-off-len,inp_vec)])
+    }
+}
+
+pub struct VecIdx<SIdx> {
+    idx: usize,
+    sidx: SIdx
+}
+
+impl<SIdx,O : ?Sized,T : Index<SIdx,Output=O>> Index<VecIdx<SIdx>> for CompVec<T> {
+    type Output = O;
+    fn index(&self,i: VecIdx<SIdx>) -> &Self::Output {
+        self.0.index(i.idx).index(i.sidx)
+    }
+}
+
+impl<SIdx,O : ?Sized,T : IndexMut<SIdx,Output=O>> IndexMut<VecIdx<SIdx>> for CompVec<T> {
+    fn index_mut(&mut self,i: VecIdx<SIdx>) -> &mut Self::Output {
+        self.0.index_mut(i.idx).index_mut(i.sidx)
+    }
+}
+
+impl<SIdx,T : Composite+Contains<SIdx>> Contains<VecIdx<SIdx>> for CompVec<T> {
+    type Position = (usize,usize,T::Position);
+    fn position(&self,idx: VecIdx<SIdx>) -> Self::Position {
+        let mut acc = 0;
+        for i in 0..idx.idx {
+            let sz = self.0[i].num_elem();
+            acc+=sz;
+        }
+        let len = self.0[idx.idx].num_elem();
+        (acc,len,self.0[idx.idx].position(idx.sidx))
+    }
+    fn get_tr<Em : Embed>(_:Witness<Self,VecIdx<SIdx>>,
+                          inp_vec: Transf<Em>,
+                          (off,len,sub): Self::Position) -> Transf<Em> {
+        T::get_tr(PhantomData,Transformation::view(off,len,inp_vec),sub)
+    }
+}
+
+impl<SIdx,T : Composite+ContainsMut<SIdx>> ContainsMut<VecIdx<SIdx>> for CompVec<T> {
+    fn set_tr<Em : Embed>(_:Witness<Self,VecIdx<SIdx>>,
+                          inp_vec: Transf<Em>,
+                          (off,len,sub): Self::Position,
+                          inp_el: Transf<Em>) -> Transf<Em> {
+
+        let inp_old = Transformation::view(off,len,inp_vec.clone());
+        let ninp_el = T::set_tr(PhantomData,inp_old,sub,inp_el);
+
+        Transformation::concat(&[Transformation::view(0,off,inp_vec.clone()),
+                                 ninp_el,
+                                 Transformation::view(off+len,inp_vec.size()-off-len,inp_vec)])
+    }
+}
+
+impl<T : Composite+Clone> Composite for CompVec<T> {
+    fn num_elem(&self) -> usize {
+        self.0.num_elem()
+    }
+    fn elem_sort<Em : Embed>(&self,n: usize,em: &mut Em)
+                             -> Result<Em::Sort,Em::Error> {
+        self.0.elem_sort(n,em)
+    }
+    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
+                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
+                                  comb: &FComb,only_l: &FL,only_r: &FR,
+                                  em: &mut Em)
+                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
+        where Em : Embed,
+              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
+              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
+
+        let rlhs = match lhs {
+            OptRef::Ref(ref vec) => OptRef::Ref(&vec.0),
+            OptRef::Owned(vec) => OptRef::Owned(vec.0)
+        };
+        let rrhs = match rhs {
+            OptRef::Ref(ref vec) => OptRef::Ref(&vec.0),
+            OptRef::Owned(vec) => OptRef::Owned(vec.0)
+        };
+        match Vec::combine(rlhs,rrhs,inp_lhs,inp_rhs,comb,only_l,only_r,em)? {
+            None => Ok(None),
+            Some((res,inp_res)) => {
+                let rres = OptRef::Owned(CompVec(res.as_obj()));
+                Ok(Some((rres,inp_res)))
+            }
+        }
+    }
+}
+
+impl<'a,K : Ord,V> Index<&'a K> for Assoc<K,V> {
+    type Output = V;
+    fn index(&self,key: &'a K) -> &V {
+        &self.tree.get(&key).expect("Entry not found").0
+    }
+}
+
+impl<'a,K : Ord,V> IndexMut<&'a K> for Assoc<K,V> {
+    fn index_mut(&mut self,key: &'a K) -> &mut V {
+        &mut self.tree.get_mut(&key).expect("Entry not found").0
+    }
+}
+
+impl<'a,K : 'a+Ord,V : Composite> Contains<&'a K> for Assoc<K,V> {
+    type Position = (usize,usize);
+    fn position(&self,key: &'a K) -> Self::Position {
+        match self.tree.get(&key) {
+            None => panic!("Entry not found"),
+            Some(&(ref el,off)) => (off,el.num_elem())
+        }
+    }
+    fn get_tr<Em : Embed>(_:Witness<Self,&'a K>,inp: Transf<Em>,(off,sz): Self::Position) -> Transf<Em> {
+        Transformation::view(off,sz,inp)
+    }
+}
+
+impl<'a,K : 'a+Ord,V : Composite> ContainsMut<&'a K> for Assoc<K,V> {
+    fn set_tr<Em : Embed>(_:Witness<Self,&'a K>,inp: Transf<Em>,(off,sz): Self::Position,ninp: Transf<Em>) -> Transf<Em> {
+        Transformation::concat(&[Transformation::view(0,off,inp.clone()),
+                                 ninp,
+                                 Transformation::view(off+sz,inp.size()-off-sz,inp)])
+    }
+}
+
+pub struct AssocKey<'a,K : 'a,Idx>(&'a K,Idx);
+
+impl<'a,K : Ord,Idx,V : Index<Idx>> Index<AssocKey<'a,K,Idx>> for Assoc<K,V> {
+    type Output = V::Output;
+    fn index(&self,key: AssocKey<'a,K,Idx>) -> &V::Output {
+        &self.tree.get(key.0).expect("Entry not found").0.index(key.1)
+    }
+}
+
+impl<'a,K : Ord,Idx,V : IndexMut<Idx>> IndexMut<AssocKey<'a,K,Idx>> for Assoc<K,V> {
+    fn index_mut(&mut self,key: AssocKey<'a,K,Idx>) -> &mut V::Output {
+        self.tree.get_mut(key.0).expect("Entry not found").0.index_mut(key.1)
+    }
+}
+
+impl<'a,K : Ord,Idx : 'a,V : Composite+Contains<Idx>> Contains<AssocKey<'a,K,Idx>> for Assoc<K,V> {
+    type Position = (usize,usize,V::Position);
+    fn position(&self,key: AssocKey<'a,K,Idx>) -> Self::Position {
+        match self.tree.get(key.0) {
+            None => panic!("Entry not found"),
+            Some(&(ref el,off)) => (off,el.num_elem(),el.position(key.1))
+        }
+    }
+    fn get_tr<Em : Embed>(_:Witness<Self,AssocKey<'a,K,Idx>>,inp: Transf<Em>,(off,sz,pos): Self::Position) -> Transf<Em> {
+        V::get_tr(PhantomData,Transformation::view(off,sz,inp),pos)
+    }
+}
+
+impl<'a,K : Ord,Idx : 'a,V : Composite+ContainsMut<Idx>> ContainsMut<AssocKey<'a,K,Idx>> for Assoc<K,V> {
+    fn set_tr<Em : Embed>(_:Witness<Self,AssocKey<'a,K,Idx>>,inp: Transf<Em>,(off,sz,pos): Self::Position,ninp: Transf<Em>) -> Transf<Em> {
+        let old_inp = Transformation::view(off,sz,inp.clone());
+        let new_inp = V::set_tr(PhantomData,old_inp,pos,ninp);
+
+        Transformation::concat(&[Transformation::view(0,off,inp.clone()),
+                                 new_inp,
+                                 Transformation::view(off+sz,inp.size()-off-sz,inp)])
+    }
+}
+
+pub struct Top;
+
+impl<T> Index<Top> for BitVecVectorStack<T> {
+    type Output = SingletonBitVec;
+    fn index(&self,_: Top) -> &SingletonBitVec {
+        &self.top
+    }
+}
+
+impl<T> IndexMut<Top> for BitVecVectorStack<T> {
+    fn index_mut(&mut self,_: Top) -> &mut SingletonBitVec {
+        &mut self.top
+    }
+}
+
+impl<T> Contains<Top> for BitVecVectorStack<T> {
+    type Position = ();
+    fn position(&self,_:Top) -> Self::Position { () }
+    fn get_tr<Em : Embed>(_:Witness<Self,Top>,inp: Transf<Em>,_:Self::Position) -> Transf<Em> {
+        Transformation::view(0,1,inp)
+    }
+}
+
+impl<T> ContainsMut<Top> for BitVecVectorStack<T> {
+    fn set_tr<Em : Embed>(_:Witness<Self,Top>,inp:Transf<Em>,_:Self::Position,ninp: Transf<Em>) -> Transf<Em> {
+        Transformation::concat(&[ninp,Transformation::view(1,inp.size()-1,inp)])
+    }
+}
+
+impl<SIdx,O : ?Sized,T : Index<SIdx,Output=O>> Index<VecIdx<SIdx>> for BitVecVectorStack<T> {
+    type Output = O;
+    fn index(&self,i: VecIdx<SIdx>) -> &Self::Output {
+        self.elements.index(i.idx).index(i.sidx)
+    }
+}
+
+impl<SIdx,O : ?Sized,T : IndexMut<SIdx,Output=O>> IndexMut<VecIdx<SIdx>> for BitVecVectorStack<T> {
+    fn index_mut(&mut self,i: VecIdx<SIdx>) -> &mut Self::Output {
+        self.elements.index_mut(i.idx).index_mut(i.sidx)
+    }
+}
+
+impl<SIdx,T : Composite+Contains<SIdx>> Contains<VecIdx<SIdx>> for BitVecVectorStack<T> {
+    type Position = (usize,usize,T::Position);
+    fn position(&self,idx: VecIdx<SIdx>) -> Self::Position {
+        let mut acc = 1;
+        for i in 0..idx.idx {
+            let sz = self.elements[i].num_elem();
+            acc+=sz;
+        }
+        let len = self.elements[idx.idx].num_elem();
+        (acc,len,self.elements[idx.idx].position(idx.sidx))
+    }
+    fn get_tr<Em : Embed>(_:Witness<Self,VecIdx<SIdx>>,
+                          inp_vec: Transf<Em>,
+                          (off,len,sub): Self::Position) -> Transf<Em> {
+        T::get_tr(PhantomData,Transformation::view(off,len,inp_vec),sub)
+    }
+}
+
+impl<SIdx,T : Composite+ContainsMut<SIdx>> ContainsMut<VecIdx<SIdx>> for BitVecVectorStack<T> {
+    fn set_tr<Em : Embed>(_:Witness<Self,VecIdx<SIdx>>,
+                          inp_vec: Transf<Em>,
+                          (off,len,sub): Self::Position,
+                          inp_el: Transf<Em>) -> Transf<Em> {
+
+        let inp_old = Transformation::view(off,len,inp_vec.clone());
+        let ninp_el = T::set_tr(PhantomData,inp_old,sub,inp_el);
+
+        Transformation::concat(&[Transformation::view(0,off,inp_vec.clone()),
+                                 ninp_el,
+                                 Transformation::view(off+len,inp_vec.size()-off-len,inp_vec)])
+    }
+}
+
+pub trait CondIterator<Em : Embed> : Sized {
+    type Item;
+    fn next(&mut self,&mut Vec<Transf<Em>>,usize) -> Option<Self::Item>;
+    fn cond_iter(self) -> CondIter<Em,Self> {
+        CondIter { conds: Vec::new(),
+                   iter: self }
+    }
+    fn seq<It,F>(self,f: F) -> Seq<Self,It,F> {
+        Seq { iter1: self,
+              iter2: None,
+              f: f }
+    }
+    fn map<F>(self,f: F) -> Map<Self,F> {
+        Map { iter: self,
+              f: f }
+    }
+    fn get<'a,Obj>(self,obj: &'a Obj,inp_obj: Transf<Em>) -> Getter<'a,Em,Self,Obj> {
+        Getter { iter: self,
+                 obj: obj,
+                 inp_obj: inp_obj }
+    }
+    fn get_idx<'a,Obj>(self,obj: &'a Obj,inp_obj: Transf<Em>) -> GetterIdx<'a,Em,Self,Obj> {
+        GetterIdx { iter: self,
+                    obj: obj,
+                    inp_obj: inp_obj }
+    }
+}
+
+pub struct CondIter<Em : Embed,It : CondIterator<Em>> {
+    conds: Vec<Transf<Em>>,
+    iter: It,
+}
+
+impl<Em : Embed,It : CondIterator<Em>> CondIter<Em,It> {
+    pub fn next(&mut self) -> Option<(&[Transf<Em>],It::Item)> {
+        match self.iter.next(&mut self.conds,0) {
+            None => None,
+            Some(r) => Some((&self.conds[..],r))
+        }
+    }
+}
+
+impl<Em : Embed,Idx : Clone,El : Composite+Clone,It : CondIterator<Em,Item=(Idx,El,Transf<Em>)>> CondIter<Em,It> {
+    pub fn apply<Pos : Clone,Obj : ContainsMut<Idx,Output=El,Position=Pos>>(mut self,obj: &mut Obj,inp_obj: Transf<Em>,em: &mut Em)
+                                                                            -> Result<Transf<Em>,Em::Error> {
+        let mut tr = inp_obj;
+        while let Some((cond,(idx,el,inp_el))) = self.next() {
+            let pos = obj.position(idx.clone());
+            let (nel,inp_nel) = if cond.len()==0 {
+                (el,inp_el)
+            } else {
+                let rcond = Transformation::and(cond.to_vec());
+                let ref old = obj[idx.clone()];
+                let inp_old = Obj::get_tr(PhantomData,tr.clone(),pos.clone());
+                let (res,inp_res) = ite(OptRef::Owned(el),
+                                        OptRef::Ref(&old),
+                                        rcond,inp_el,inp_old,em)?.expect("Failed to apply");
+                (res.as_obj(),inp_res)
+            };
+            obj[idx] = nel;
+            tr = Obj::set_tr(PhantomData,tr,pos,inp_nel);
+        }
+        Ok(tr)
+    }
+}
+
+impl<Em : Embed,El : Composite+Clone,It : CondIterator<Em,Item=(El,Transf<Em>)>> CondIter<Em,It> {
+    pub fn collect(mut self,def: El,inp_def: Transf<Em>,em: &mut Em) -> Result<(El,Transf<Em>),Em::Error> {
+        let mut cur = def;
+        let mut inp_cur = inp_def;
+        while let Some((cond,(el,inp_el))) = self.next() {
+            let rcond = Transformation::and(cond.to_vec());
+            let (res,inp_res) = ite(OptRef::Owned(el),
+                                    OptRef::Owned(cur),
+                                    rcond,inp_el,inp_cur,em)?.expect("Failed to collect");
+            cur = res.as_obj();
+            inp_cur = inp_res;
+        }
+        Ok((cur,inp_cur))
+    }
+    pub fn collect1(mut self,em: &mut Em) -> Result<(El,Transf<Em>),Em::Error> {
+        match self.next() {
+            None => panic!("Failed to collect: Empty iterator"),
+            Some((_,(el,inp_el))) => self.collect(el,inp_el,em)
+        }
+    }
+}
+impl<Em : Embed,El : Ord+Composite+Clone,It : CondIterator<Em,Item=(El,Transf<Em>)>> CondIter<Em,It> {
+    pub fn to_choice(mut self) -> (Choice<El>,Transf<Em>) {
+        let mut els : Vec<El> = Vec::new();
+        let mut inps : Vec<Transf<Em>> = Vec::new();
+        while let Some((cond,(el,inp_el))) = self.next() {
+            let rcond = Transformation::and(cond.to_vec());
+            let mut inserted = false;
+            for i in 0..els.len() {
+                match els[i].cmp(&el) {
+                    Ordering::Equal => {
+                        let inp_nel = Transformation::ite(rcond.clone(),
+                                                          inp_el.clone(),
+                                                          inps[i*2+1].clone());
+                        let ncond = Transformation::or(vec![rcond.clone(),inps[i*2].clone()]);
+                        inps[i*2] = ncond;
+                        inps[i*2+1] = inp_nel;
+                        inserted = true;
+                        break
+                    },
+                    Ordering::Less => {
+                        els.insert(i,el.clone());
+                        inps.insert(i*2,rcond.clone());
+                        inps.insert(i*2+1,inp_el.clone());
+                        inserted = true;
+                        break
+                    },
+                    Ordering::Greater => {}
+                }
+            }
+            if !inserted {
+                els.push(el);
+                inps.push(rcond);
+                inps.push(inp_el);
+            }
+        }
+        (Choice(els),Transformation::concat(&inps[..]))
+    }
+}
+
+pub struct Seq<It1,It2,F> {
+    iter1: It1,
+    iter2: Option<(It2,usize)>,
+    f: F
+}
+
+impl<Em,It1,It2,F> CondIterator<Em> for Seq<It1,It2,F>
+    where Em : Embed,
+          It1 : CondIterator<Em>,
+          It2 : CondIterator<Em>,
+          F : FnMut(It1::Item) -> It2 {
+
+    type Item = It2::Item;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize) -> Option<Self::Item> {
+        let el2 = match self.iter2 {
+            Some((ref mut it2,off)) => match it2.next(conds,off) {
+                Some(el) => Some(el),
+                None => None
+            },
+            None => None
+        };
+        match el2 {
+            Some(el) => Some(el),
+            None => loop {
+                match self.iter1.next(conds,pos) {
+                    None => return None,
+                    Some(el) => {
+                        let npos = conds.len();
+                        let mut niter = (self.f)(el);
+                        match niter.next(conds,npos) {
+                            None => {},
+                            Some(nel) => {
+                                self.iter2 = Some((niter,npos));
+                                return Some(nel)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub struct Map<It,F> {
+    iter: It,
+    f: F
+}
+
+impl<Em,It,A,F> CondIterator<Em> for Map<It,F>
+    where Em : Embed,
+          It : CondIterator<Em>,
+          F : FnMut(It::Item) -> A {
+
+    type Item = A;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize) -> Option<A> {
+        match self.iter.next(conds,pos) {
+            None => None,
+            Some(el) => Some((self.f)(el))
+        }
+    }
+}
+
+pub struct IndexedIter<Em : DeriveValues> {
+    iter: IndexIterator<Em::Sort,Em::ValueIterator>,
+    idx: Transf<Em>
+}
+
+impl<Em : DeriveValues> CondIterator<Em> for IndexedIter<Em> {
+    type Item = usize;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize)
+            -> Option<Self::Item> {
+        match self.iter.next() {
+            None => None,
+            Some((i,val)) => {
+                conds.truncate(pos);
+                let cond_fun = move |_:&[Em::Expr],_:usize,e:Em::Expr,em:&mut Em| {
+                    let cv = em.embed(expr::Expr::Const(val.clone()))?;
+                    em.eq(e,cv)
+                };
+                let cond = Transformation::map_by_elem(Box::new(cond_fun),self.idx.clone());
+                conds.push(cond);
+                Some(i)
+            }
+        }
+    }
+}
+
+impl<T> CompVec<T> {
+    pub fn access_dyn<Em : DeriveValues>(&self,pos: Transf<Em>,
+                                         exprs: &[Em::Expr],
+                                         em: &mut Em)
+                                         -> Result<IndexedIter<Em>,Em::Error> {
+        let idx = pos.get(exprs,0,em)?;
+        let opt_vals = em.derive_values(&idx)?;
+        let it = match opt_vals {
+            Some(rvals) => IndexIterator::Limited(rvals),
+            None => {
+                let idx_srt = em.type_of(&idx)?;
+                let idx_rsrt = em.unbed_sort(&idx_srt)?;
+                IndexIterator::Unlimited(idx_rsrt,0..self.0.len())
+            }
+        };
+        Ok(IndexedIter { iter: it,
+                         idx: pos })
+    }
+}
+
+pub struct Getter<'a,Em : Embed,It,Obj : 'a> {
+    iter: It,
+    obj: &'a Obj,
+    inp_obj: Transf<Em>
+}
+
+impl<'a,Em : Embed,Idx : Clone,El : 'a,Obj : Contains<Idx,Output=El>,It : CondIterator<Em,Item=Idx>> CondIterator<Em> for Getter<'a,Em,It,Obj> {
+    type Item = (&'a El,Transf<Em>);
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize) -> Option<Self::Item> {
+        match self.iter.next(conds,pos) {
+            None => None,
+            Some(idx) => {
+                let ref el = self.obj[idx.clone()];
+                let pos = self.obj.position(idx);
+                let inp_el = Obj::get_tr(PhantomData,self.inp_obj.clone(),pos);
+                Some((el,inp_el))
+            }
+        }
+    }
+}
+
+pub struct GetterIdx<'a,Em : Embed,It,Obj : 'a> {
+    iter: It,
+    obj: &'a Obj,
+    inp_obj: Transf<Em>
+}
+
+impl<'a,Em : Embed,Idx : Clone,El : 'a,Obj : Contains<Idx,Output=El>,It : CondIterator<Em,Item=Idx>> CondIterator<Em> for GetterIdx<'a,Em,It,Obj> {
+    type Item = (Idx,&'a El,Transf<Em>);
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize) -> Option<Self::Item> {
+        match self.iter.next(conds,pos) {
+            None => None,
+            Some(idx) => {
+                let ref el = self.obj[idx.clone()];
+                let pos = self.obj.position(idx.clone());
+                let inp_el = Obj::get_tr(PhantomData,self.inp_obj.clone(),pos);
+                Some((idx,el,inp_el))
+            }
+        }
+    }
+}
+
+impl<T> Index<usize> for Choice<T> {
+    type Output = T;
+    fn index(&self,i: usize) -> &T {
+        self.0.index(i)
+    }
+}
+
+impl<T : Composite> Contains<usize> for Choice<T> {
+    type Position = (usize,usize);
+    fn position(&self,idx: usize) -> Self::Position {
+        let mut acc = 1+idx;
+        for i in 0..idx {
+            acc+=self.0[i].num_elem();
+        }
+        let sz = self.0[idx].num_elem();
+        (acc,sz)
+    }
+    fn get_tr<Em : Embed>(_:Witness<Self,usize>,inp: Transf<Em>,(off,sz): Self::Position) -> Transf<Em> {
+        Transformation::view(off,sz,inp)
+    }
+}
+
+pub struct Chosen<'a,T : 'a,Em : Embed> {
+    choice: &'a Choice<T>,
+    inp_choice: Transf<Em>,
+    idx: usize,
+    off: usize
+}
+
+impl<'a,Em : Embed,T : Composite> CondIterator<Em> for Chosen<'a,T,Em> {
+    type Item = usize;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize) -> Option<Self::Item> {
+        if self.idx<=self.choice.0.len() {
+            conds.truncate(pos);
+            conds.push(Transformation::view(self.off,1,self.inp_choice.clone()));
+            self.off+=self.choice.0[self.idx].num_elem()+1;
+            let res = self.idx;
+            self.idx+=1;
+            Some(res)
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> Choice<T> {
+    pub fn chosen<'a,Em : Embed>(&'a self,inp: Transf<Em>) -> Chosen<'a,T,Em> {
+        Chosen { choice: self,
+                 inp_choice: inp,
+                 idx: 0,
+                 off: 0 }
+    }
+}
+
+impl<T> Index<usize> for BitVecVectorStack<T> {
+    type Output = T;
+    fn index(&self,idx: usize) -> &T {
+        self.elements.index(idx)
+    }
+}
+
+impl<T> IndexMut<usize> for BitVecVectorStack<T> {
+    fn index_mut(&mut self,idx: usize) -> &mut T {
+        self.elements.index_mut(idx)
+    }
+}
+
+impl<T : Composite> Contains<usize> for BitVecVectorStack<T> {
+    type Position = (usize,usize);
+    fn position(&self,idx: usize) -> Self::Position {
+        let mut acc = 1;
+        for i in 0..idx {
+            acc += self.elements[i].num_elem()
+        }
+        let sz = self.elements[idx].num_elem();
+        (acc,sz)
+    }
+    fn get_tr<Em : Embed>(_:Witness<Self,usize>,inp: Transf<Em>,(off,sz): Self::Position) -> Transf<Em> {
+        Transformation::view(off,sz,inp)
+    }
+}
+
+impl<T : Composite> ContainsMut<usize> for BitVecVectorStack<T> {
+    fn set_tr<Em : Embed>(_:Witness<Self,usize>,
+                          inp_vec: Transf<Em>,
+                          (off,len): Self::Position,
+                          inp_el: Transf<Em>) -> Transf<Em> {
+
+        Transformation::concat(&[Transformation::view(0,off,inp_vec.clone()),
+                                 inp_el,
+                                 Transformation::view(off+len,inp_vec.size()-off-len,inp_vec)])
+    }
+}
+
+impl<T : Composite> BitVecVectorStack<T> {
+    pub fn access_top<Em : DeriveValues>(&self,
+                                         inp: Transf<Em>,
+                                         exprs: &[Em::Expr],
+                                         em: &mut Em) -> Result<IndexedIter<Em>,Em::Error> {
+        let idx = inp.get(exprs,0,em)?;
+        let opt_vals = em.derive_values(&idx)?;
+        let it = match opt_vals {
+            Some(rvals) => IndexIterator::Limited(rvals),
+            None => {
+                let idx_srt = em.type_of(&idx)?;
+                let idx_rsrt = em.unbed_sort(&idx_srt)?;
+                IndexIterator::Unlimited(idx_rsrt,0..self.elements.len())
+            }
+        };
+        Ok(IndexedIter { iter: it,
+                         idx: Transformation::view(0,1,inp) })
+
     }
 }
