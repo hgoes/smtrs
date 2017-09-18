@@ -2343,7 +2343,7 @@ pub struct Assoc<K,V> {
     tree: BTreeMap<K,(V,usize)>
 }
 
-impl<K : Ord+Hash+Clone,V : Composite+Clone> Assoc<K,V> {
+impl<K : Ord+Hash+Clone,V : Composite> Assoc<K,V> {
     pub fn new() -> Self {
         Assoc { size: 0,
                 tree: BTreeMap::new() }
