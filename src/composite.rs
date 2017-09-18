@@ -2921,6 +2921,7 @@ impl<'a,T : 'a+Composite> ContainsMut<'a,VecIdx> for Vec<T> {
     }
 }
 
+#[derive(Copy,Clone)]
 pub struct AssocKey<'a,K : 'a>(pub &'a K);
 
 impl<'a,'b,K : 'b+Ord,V : 'a+Composite> Contains<'a,AssocKey<'b,K>> for Assoc<K,V> {
