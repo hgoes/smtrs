@@ -2885,24 +2885,21 @@ pub trait ContainsMut<'a,Idx> : Contains<'a,Idx> {
     fn set_tr<Em : Embed>(Transf<Em>,Self::Position,Transf<Em>) -> Transf<Em>;
 }
 
-#[derive(Debug,PartialEq,Eq,Hash)]
-pub struct CompVec<T>(Vec<T>);
+pub struct VecIdx(usize);
 
-pub struct CompVecIdx(usize);
-
-impl<'a,T : 'a+Composite> Contains<'a,CompVecIdx> for CompVec<T> {
+impl<'a,T : 'a+Composite> Contains<'a,VecIdx> for Vec<T> {
     type Element = T;
     type Position = (usize,usize);
-    fn get_el<'b>(&self,idx: CompVecIdx) -> &T where 'a : 'b {
-        &self.0[idx.0]
+    fn get_el<'b>(&self,idx: VecIdx) -> &T where 'a : 'b {
+        &self[idx.0]
     }
-    fn position(&self,idx: CompVecIdx) -> Self::Position {
+    fn position(&self,idx: VecIdx) -> Self::Position {
         let mut acc = 0;
         for i in 0..idx.0 {
-            let sz = self.0[i].num_elem();
+            let sz = self[i].num_elem();
             acc+=sz;
         }
-        let len = self.0[idx.0].num_elem();
+        let len = self[idx.0].num_elem();
         (acc,len)
     }
     fn get_tr<Em : Embed>(inp_vec: Transf<Em>,
@@ -2911,9 +2908,9 @@ impl<'a,T : 'a+Composite> Contains<'a,CompVecIdx> for CompVec<T> {
     }
 }
 
-impl<'a,T : 'a+Composite> ContainsMut<'a,CompVecIdx> for CompVec<T> {
-    fn get_el_mut<'b>(&'b mut self,idx: CompVecIdx) -> &'b mut T where 'a : 'b {
-        &mut self.0[idx.0]
+impl<'a,T : 'a+Composite> ContainsMut<'a,VecIdx> for Vec<T> {
+    fn get_el_mut<'b>(&'b mut self,idx: VecIdx) -> &'b mut T where 'a : 'b {
+        &mut self[idx.0]
     }
     fn set_tr<Em : Embed>(inp_vec: Transf<Em>,
                           (off,len): Self::Position,
@@ -2921,42 +2918,6 @@ impl<'a,T : 'a+Composite> ContainsMut<'a,CompVecIdx> for CompVec<T> {
         Transformation::concat(&[Transformation::view(0,off,inp_vec.clone()),
                                  inp_el,
                                  Transformation::view(off+len,inp_vec.size()-off-len,inp_vec)])
-    }
-}
-
-impl<T : Composite+Clone> Composite for CompVec<T> {
-    fn num_elem(&self) -> usize {
-        self.0.num_elem()
-    }
-    fn elem_sort<Em : Embed>(&self,n: usize,em: &mut Em)
-                             -> Result<Em::Sort,Em::Error> {
-        self.0.elem_sort(n,em)
-    }
-    fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
-                                  inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
-                                  comb: &FComb,only_l: &FL,only_r: &FR,
-                                  em: &mut Em)
-                                  -> Result<Option<(OptRef<'a,Self>,Transf<Em>)>,Em::Error>
-        where Em : Embed,
-              FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
-              FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
-              FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
-
-        let rlhs = match lhs {
-            OptRef::Ref(ref vec) => OptRef::Ref(&vec.0),
-            OptRef::Owned(vec) => OptRef::Owned(vec.0)
-        };
-        let rrhs = match rhs {
-            OptRef::Ref(ref vec) => OptRef::Ref(&vec.0),
-            OptRef::Owned(vec) => OptRef::Owned(vec.0)
-        };
-        match Vec::combine(rlhs,rrhs,inp_lhs,inp_rhs,comb,only_l,only_r,em)? {
-            None => Ok(None),
-            Some((res,inp_res)) => {
-                let rres = OptRef::Owned(CompVec(res.as_obj()));
-                Ok(Some((rres,inp_res)))
-            }
-        }
     }
 }
 
@@ -3243,24 +3204,23 @@ impl<Em : DeriveValues> CondIterator<Em> for IndexedIter<Em> {
     }
 }
 
-impl<T> CompVec<T> {
-    pub fn access_dyn<Em : DeriveValues>(&self,pos: Transf<Em>,
-                                         exprs: &[Em::Expr],
-                                         em: &mut Em)
-                                         -> Result<IndexedIter<Em>,Em::Error> {
-        let idx = pos.get(exprs,0,em)?;
-        let opt_vals = em.derive_values(&idx)?;
-        let it = match opt_vals {
-            Some(rvals) => IndexIterator::Limited(rvals),
-            None => {
-                let idx_srt = em.type_of(&idx)?;
-                let idx_rsrt = em.unbed_sort(&idx_srt)?;
-                IndexIterator::Unlimited(idx_rsrt,0..self.0.len())
-            }
-        };
-        Ok(IndexedIter { iter: it,
-                         idx: pos })
-    }
+pub fn access_dyn<T,Em : DeriveValues>(vec: &Vec<T>,
+                                       pos: Transf<Em>,
+                                       exprs: &[Em::Expr],
+                                       em: &mut Em)
+                                       -> Result<IndexedIter<Em>,Em::Error> {
+    let idx = pos.get(exprs,0,em)?;
+    let opt_vals = em.derive_values(&idx)?;
+    let it = match opt_vals {
+        Some(rvals) => IndexIterator::Limited(rvals),
+        None => {
+            let idx_srt = em.type_of(&idx)?;
+            let idx_rsrt = em.unbed_sort(&idx_srt)?;
+            IndexIterator::Unlimited(idx_rsrt,0..vec.len())
+        }
+    };
+    Ok(IndexedIter { iter: it,
+                     idx: pos })
 }
 
 pub struct Getter<'a,Em : Embed,It,Obj : 'a> {
