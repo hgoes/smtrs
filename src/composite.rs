@@ -2957,7 +2957,7 @@ impl<T : Composite+Clone> Composite for CompVec<T> {
     }
 }
 
-pub struct AssocKey<'a,K : 'a>(&'a K);
+pub struct AssocKey<'a,K : 'a>(pub &'a K);
 
 impl<'a,'b,K : 'b+Ord,V : 'a+Composite> Contains<'a,AssocKey<'b,K>> for Assoc<K,V> {
     type Element = V;
