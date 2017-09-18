@@ -3039,6 +3039,10 @@ pub trait CondIterator<Em : Embed> : Sized {
                     obj: obj,
                     inp_obj: inp_obj }
     }
+    fn adjust_idx<Idx>(self,idx: Idx) -> AdjustIdx<Self,Idx> {
+        AdjustIdx { iter: self,
+                    idx: idx }
+    }
 }
 
 pub struct CondIter<Em : Embed,It : CondIterator<Em>> {
@@ -3442,5 +3446,21 @@ impl<Em : Embed,Idx> CondIterator<Em> for Once<Idx> {
     fn next(&mut self,_: &mut Vec<Transf<Em>>,_: usize)
             -> Option<Self::Item> {
         <Self as Iterator>::next(self)
+    }
+}
+
+pub struct AdjustIdx<It,Idx> {
+    iter: It,
+    idx: Idx
+}
+
+impl<Em : Embed,Idx : Copy,It : CondIterator<Em>> CondIterator<Em> for AdjustIdx<It,Idx> {
+    type Item = IndexRec<Idx,It::Item>;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize)
+            -> Option<Self::Item> {
+        match self.iter.next(conds,pos) {
+            None => None,
+            Some(idx) => Some(IndexRec(self.idx,idx))
+        }
     }
 }
