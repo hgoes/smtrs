@@ -18,7 +18,7 @@ use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::collections::Bound::*;
 use std::ops::{Range};
-use std::iter::Peekable;
+use std::iter::{Peekable,Once};
 use std::usize;
 use std::fmt;
 
@@ -3434,5 +3434,13 @@ impl<'a,Idx : Clone,SIdx,B : 'a+ContainsMut<'a,SIdx>,A : 'a+ContainsMut<'a,Idx,E
         let old = <A as Contains<'a,Idx>>::get_tr(inp.clone(),pos.0);
         let new = <B as ContainsMut<'a,SIdx>>::set_tr(old,pos.1,ninp);
         <A as ContainsMut<'a,Idx>>::set_tr(inp,pos.0,new)
+    }
+}
+
+impl<Em : Embed,Idx> CondIterator<Em> for Once<Idx> {
+    type Item = Idx;
+    fn next(&mut self,_: &mut Vec<Transf<Em>>,_: usize)
+            -> Option<Self::Item> {
+        <Self as Iterator>::next(self)
     }
 }
