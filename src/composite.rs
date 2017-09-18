@@ -2356,6 +2356,9 @@ impl<K : Ord+Hash+Clone,V : Composite+Clone> Assoc<K,V> {
         }
         assert_eq!(self.size,off);
     }
+    pub fn access<'a>(&self,key: AssocKey<'a,K>) -> &V where K : 'a {
+        &self.tree.get(key.0).expect("Assoc key not present").0
+    }
 }
 
 impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
