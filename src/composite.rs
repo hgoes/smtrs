@@ -3202,6 +3202,15 @@ impl<Em : Embed,It : CondIterator<Em>> CondIter<Em,It> {
             Some(r) => Some((&self.conds[..],r))
         }
     }
+    pub fn find<P>(&mut self,mut predicate: P) -> Option<(&[Transf<Em>],It::Item)>
+        where P : FnMut(&It::Item) -> bool {
+        while let Some(x) = self.iter.next(&mut self.conds,0) {
+            if predicate(&x) {
+                return Some((&self.conds[..],x))
+            }
+        }
+        None
+    }
 }
 
 impl<Em : Embed,Idx : Clone,El : Composite+Clone,It : CondIterator<Em,Item=(Idx,El,Transf<Em>)>> CondIter<Em,It> {
