@@ -2878,6 +2878,14 @@ pub trait Contains<'a,Idx> {
     fn get_el<'b>(&'b self,Idx) -> &'b Self::Element where 'a : 'b;
     fn position(&self,Idx) -> Self::Position;
     fn get_tr<Em : Embed>(Transf<Em>,Self::Position) -> Transf<Em>;
+    fn access<'b,Em : Embed>(&'b self,inp: Transf<Em>,idx: Idx)
+                             -> (&'b Self::Element,Transf<Em>)
+        where 'a : 'b, Idx : Clone {
+        let el = self.get_el(idx.clone());
+        let pos = self.position(idx);
+        let tr = <Self as Contains<'a,Idx>>::get_tr(inp,pos);
+        (el,tr)
+    }
 }
 
 pub trait ContainsMut<'a,Idx> : Contains<'a,Idx> {
