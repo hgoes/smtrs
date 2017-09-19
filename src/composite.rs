@@ -3445,3 +3445,75 @@ impl<Em : Embed,Idx : Copy,It : CondIterator<Em>> CondIterator<Em> for AdjustIdx
         }
     }
 }
+
+pub trait View<'a> {
+    type Viewed : 'a;
+    type Element : 'a;
+    type Position : 'static + Copy;
+    fn get_el<'b>(&self,obj: &'b Self::Viewed) -> &'b Self::Element where 'a : 'b {
+        self.get_el_ext(obj).1
+    }
+    fn get_el_ext<'b>(&self,&'b Self::Viewed) -> (Self::Position,&'b Self::Element) where 'a : 'b;
+    fn get_tr<Em : Embed>(&self,Self::Position,Transf<Em>) -> Transf<Em>;
+}
+
+pub trait ViewMut<'a> : View<'a> {
+    fn get_el_mut<'b>(&self,&'b Self::Viewed) -> &'b mut Self::Element where 'a : 'b;
+    fn set_tr<Em : Embed>(&self,Self::Position,Transf<Em>,Transf<Em>) -> Transf<Em>;
+}
+
+pub struct VecView<Up> {
+    up: Up,
+    idx: usize
+}
+
+impl<Up> VecView<Up> {
+    pub fn new(up: Up,idx: usize) -> Self {
+        VecView { up: up,
+                  idx: idx }
+    }
+}
+
+impl<'a,T : 'a+Composite,Up : View<'a,Element=Vec<T>>> View<'a> for VecView<Up> {
+    type Viewed = Up::Viewed;
+    type Element = T;
+    type Position = (Up::Position,usize,usize);
+    fn get_el<'b>(&self,obj: &'b Self::Viewed) -> &'b Self::Element where 'a : 'b {
+        &self.up.get_el(obj)[self.idx]
+    }
+    fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
+                      -> (Self::Position,&'b Self::Element) where 'a : 'b {
+        let (up_pos,up_obj) = self.up.get_el_ext(obj);
+        let mut off = 0;
+        for i in 0..self.idx {
+            off+=up_obj[i].num_elem();
+        }
+        let res = &up_obj[self.idx];
+        let sz = res.num_elem();
+        ((up_pos,off,sz),res)
+    }
+    fn get_tr<Em : Embed>(&self,(up,off,sz): Self::Position,inp: Transf<Em>) -> Transf<Em> {
+        Transformation::view(off,sz,self.up.get_tr(up,inp))
+    }
+}
+
+pub struct AssocView<'a,Up,K : 'a> {
+    up: Up,
+    key: &'a K
+}
+
+impl<'a,K : 'a+Ord,V : 'a+Composite,Up : View<'a,Element=Assoc<K,V>>> View<'a> for AssocView<'a,Up,K> {
+    type Viewed = Up::Viewed;
+    type Element = V;
+    type Position = (Up::Position,usize,usize);
+    fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
+                      -> (Self::Position,&'b Self::Element) where 'a : 'b {
+        let (up_pos,up_obj) = self.up.get_el_ext(obj);
+        let &(ref el,off) = up_obj.tree.get(self.key).expect("Key not found in Assoc");
+        let sz = el.num_elem();
+        ((up_pos,off,sz),el)
+    }
+    fn get_tr<Em : Embed>(&self,(up,off,sz): Self::Position,inp: Transf<Em>) -> Transf<Em> {
+        Transformation::view(off,sz,self.up.get_tr(up,inp))
+    }
+}
