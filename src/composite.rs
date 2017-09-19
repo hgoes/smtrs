@@ -2999,6 +2999,11 @@ pub trait CondIterator<Em : Embed> : Sized {
               iter2: None,
               f: f }
     }
+    fn seq_pure<It,F>(self,f: F) -> SeqPure<Self,It,F> {
+        SeqPure { iter1: self,
+                  iter2: None,
+                  f: f }
+    }
     fn map<F>(self,f: F) -> Map<Self,F> {
         Map { iter: self,
               f: f }
@@ -3193,6 +3198,51 @@ impl<Em,It1,It2,F> CondIterator<Em> for Seq<It1,It2,F>
         }
     }
 }
+
+pub struct SeqPure<It1,It2,F> {
+    iter1: It1,
+    iter2: Option<(It2,usize)>,
+    f: F
+}
+
+impl<Em,It1,It2,F> CondIterator<Em> for SeqPure<It1,It2,F>
+    where Em : Embed,
+          It1 : CondIterator<Em>,
+          It2 : CondIterator<Em>,
+          F : FnMut(It1::Item) -> It2 {
+
+    type Item = It2::Item;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        let el2 = match self.iter2 {
+            Some((ref mut it2,off)) => match it2.next(conds,off,em)? {
+                Some(el) => Some(el),
+                None => None
+            },
+            None => None
+        };
+        match el2 {
+            Some(el) => Ok(Some(el)),
+            None => loop {
+                match self.iter1.next(conds,pos,em)? {
+                    None => return Ok(None),
+                    Some(el) => {
+                        let npos = conds.len();
+                        let mut niter = (self.f)(el);
+                        match niter.next(conds,npos,em)? {
+                            None => {},
+                            Some(nel) => {
+                                self.iter2 = Some((niter,npos));
+                                return Ok(Some(nel))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 pub struct Map<It,F> {
     iter: It,
