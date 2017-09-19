@@ -3140,7 +3140,7 @@ impl<Em,It1,It2,F> CondIterator<Em> for Seq<It1,It2,F>
     where Em : Embed,
           It1 : CondIterator<Em>,
           It2 : CondIterator<Em>,
-          F : FnMut(It1::Item) -> It2 {
+          F : FnMut(It1::Item,&mut Em) -> Result<It2,Em::Error> {
 
     type Item = It2::Item;
     fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
@@ -3159,7 +3159,7 @@ impl<Em,It1,It2,F> CondIterator<Em> for Seq<It1,It2,F>
                     None => return Ok(None),
                     Some(el) => {
                         let npos = conds.len();
-                        let mut niter = (self.f)(el);
+                        let mut niter = (self.f)(el,em)?;
                         match niter.next(conds,npos,em)? {
                             None => {},
                             Some(nel) => {
