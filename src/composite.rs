@@ -22,7 +22,7 @@ use std::iter::{Peekable,Once};
 use std::usize;
 use std::fmt;
 
-pub trait Composite : Sized + Eq + Hash {
+pub trait Composite : Sized + Eq + Hash + Clone {
 
     fn num_elem(&self) -> usize;
     fn elem_sort<Em : Embed>(&self,usize,&mut Em)
@@ -66,7 +66,7 @@ impl fmt::Display for CompVar {
     }
 }
 
-impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
+impl<'a,C : Composite + Debug> Embed for Comp<'a,C> {
     type Sort = types::Sort;
     type Var = CompVar;
     type Expr = CompExpr<C>;
@@ -101,7 +101,7 @@ impl<'a,C : Composite + Clone + Debug> Embed for Comp<'a,C> {
     }
 }
 
-impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> Embed for CompDom<'a,C,Dom> {
+impl<'a,C : Composite+Debug,Dom : Domain<C>> Embed for CompDom<'a,C,Dom> {
     type Sort = <Comp<'a,C> as Embed>::Sort;
     type Var = <Comp<'a,C> as Embed>::Var;
     type Expr = <Comp<'a,C> as Embed>::Expr;
@@ -136,13 +136,13 @@ impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> Embed for CompDom<'a,C,Dom> {
     }
 }
 
-impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> DeriveConst for CompDom<'a,C,Dom> {
+impl<'a,C : Composite+Debug,Dom : Domain<C>> DeriveConst for CompDom<'a,C,Dom> {
     fn derive_const(&mut self,e: &Self::Expr) -> Result<Option<Value>,Self::Error> {
         self.domain.is_const(e,&mut self.comp,&|v:&CompVar| Some(v.0))
     }
 }
 
-impl<'a,C : Composite+Clone+Debug,Dom : Domain<C>> DeriveValues for CompDom<'a,C,Dom> {
+impl<'a,C : Composite+Debug,Dom : Domain<C>> DeriveValues for CompDom<'a,C,Dom> {
     type ValueIterator = Dom::ValueIterator;
     fn derive_values(&mut self,e: &Self::Expr) -> Result<Option<Self::ValueIterator>,Self::Error> {
         self.domain.values(e,&mut self.comp,&|v:&CompVar| Some(v.0))
@@ -231,7 +231,7 @@ impl Composite for SingletonBitVec {
     }
 }
 
-impl<T : Composite + Clone> Composite for Vec<T> {
+impl<T : Composite> Composite for Vec<T> {
     fn num_elem(&self) -> usize {
         let mut acc = 0;
         for el in self.iter() {
@@ -406,7 +406,7 @@ impl<'a,T : 'a> OptRef<'a,Choice<T>> {
     }
 }
 
-impl<T : Composite + Ord + Clone> Composite for Choice<T> {
+impl<T : Composite + Ord> Composite for Choice<T> {
     fn num_elem(&self) -> usize {
         let mut acc = 0;
         for el in self.0.iter() {
@@ -578,7 +578,7 @@ impl<T : Composite + Ord + Clone> Composite for Choice<T> {
     }
 }
 
-impl<K : Ord + Clone + Hash,T : Composite + Clone> Composite for BTreeMap<K,T> {
+impl<K : Ord + Clone + Hash,T : Composite> Composite for BTreeMap<K,T> {
     fn num_elem(&self) -> usize {
         let mut acc = 0;
         for v in self.values() {
@@ -713,7 +713,7 @@ impl<K : Ord + Clone + Hash,T : Composite + Clone> Composite for BTreeMap<K,T> {
     }
 }
 
-impl<T : Composite + Clone> Composite for Option<T> {
+impl<T : Composite> Composite for Option<T> {
     fn num_elem(&self) -> usize {
         match *self {
             None => 0,
@@ -788,13 +788,13 @@ impl<T : Composite + Clone> Composite for Option<T> {
     }
 }
 
-#[derive(PartialEq,Eq,Hash)]
+#[derive(PartialEq,Eq,Hash,Clone)]
 pub struct Array<Idx : Composite,T : Composite> {
     index: Idx,
     element: T
 }
 
-impl<Idx : Composite + Eq + Clone,T : Composite + Clone> Composite for Array<Idx,T> {
+impl<Idx : Composite + Eq,T : Composite> Composite for Array<Idx,T> {
     fn num_elem(&self) -> usize {
         self.element.num_elem()
     }
@@ -859,7 +859,7 @@ impl Composite for () {
     }
 }
 
-impl<A : Composite + Clone,B : Composite + Clone> Composite for (A,B) {
+impl<A : Composite,B : Composite> Composite for (A,B) {
     fn num_elem(&self) -> usize {
         self.0.num_elem() + self.1.num_elem()
     }
@@ -964,7 +964,7 @@ pub fn snd<'a,A,B,Em>(tuple: OptRef<'a,(A,B)>,inp: Transf<Em>)
 pub fn tuple<'a,'b,A,B,Em>(el_a: OptRef<'a,A>,el_b: OptRef<'a,B>,
                            inp_a: Transf<Em>,inp_b: Transf<Em>)
                            -> (OptRef<'b,(A,B)>,Transf<Em>)
-    where A : Composite + Clone,B : Composite + Clone,Em : Embed {
+    where A : Composite,B : Composite,Em : Embed {
     let res = OptRef::Owned((el_a.as_obj(),el_b.as_obj()));
     let outp = Transformation::concat(&[inp_a,inp_b]);
     (res,outp)
@@ -1661,7 +1661,7 @@ pub fn expr_as_vec_index<'a,Em,F>(limit: usize,e: &Em::Expr,em: &mut Em)
 
 pub fn get_vec_elem<'a,T,Em>(pos: usize,vec: OptRef<'a,Vec<T>>,inp: Transf<Em>)
                              -> Result<(OptRef<'a,T>,Transf<Em>),Em::Error>
-    where T : Composite + Clone, Em : Embed {
+    where T : Composite, Em : Embed {
     let mut off = 0;
     for el in vec.as_ref().iter().take(pos) {
         off+=el.num_elem();
@@ -1681,7 +1681,7 @@ pub fn get_vec_elem_dyn<'a,T,Em
                           exprs: &[Em::Expr],
                           em: &mut Em)
                           -> Result<Option<(OptRef<'a,T>,Transf<Em>)>,Em::Error>
-    where T : Composite + Clone,Em : DeriveConst {
+    where T : Composite,Em : DeriveConst {
 
     let idx = inp_pos.get(exprs,0,em)?;
     let c = em.derive_const(&idx)?;
@@ -1745,7 +1745,7 @@ pub fn access_vec_dyn<'a,T,Em
                         exprs: &[Em::Expr],
                         em: &mut Em)
                         -> Result<CondVecAccess<T,Em::Sort,Em::ValueIterator,Em>,Em::Error>
-    where T : Composite+Clone,Em : DeriveValues {
+    where T : Composite,Em : DeriveValues {
     let idx = inp_idx.get(exprs,0,em)?;
     let opt_vals = em.derive_values(&idx)?;
     let it = match opt_vals {
@@ -3044,32 +3044,52 @@ impl<Em : Embed,It : CondIterator<Em>> CondIter<Em,It> {
     }
 }
 
-impl<Em : Embed,Idx : Clone,El : Composite+Clone,It : CondIterator<Em,Item=(Idx,El,Transf<Em>)>> CondIter<Em,It> {
-    pub fn apply<'a,Pos : 'static+Copy,Obj : ContainsMut<'a,Idx,Element=El,Position=Pos>>(mut self,obj: &mut Obj,inp_obj: Transf<Em>,em: &mut Em)
-                                                                                   -> Result<Transf<Em>,Em::Error>
-    where El : 'a {
-        let mut tr = inp_obj;
-        while let Some((cond,(idx,el,inp_el))) = self.next(em)? {
-            let pos : Pos = <Obj as Contains<'a,Idx>>::position(obj,idx.clone());
-            let (nel,inp_nel) = if cond.len()==0 {
-                (el,inp_el)
+impl<'a,Em : Embed,
+     V : ViewMut<'a>,
+     It : CondIterator<Em,Item=(V,V::Element,Transf<Em>)>
+     > CondIter<Em,It> {
+
+    pub fn apply(mut self,obj: &mut V::Viewed,inp: Transf<Em>,em: &mut Em)
+                 -> Result<Transf<Em>,Em::Error> {
+        let mut ninp : Updates<Em> = Vec::new();
+        while let Some((cond,(view,el,inp_el))) = self.next(em)? {
+            if cond.len()==0 {
+                let nsize = el.num_elem();
+                let (off,osize) = {
+                    let (off,ptr) = view.get_el_mut_ext(obj);
+                    let osize = ptr.num_elem();
+                    *ptr = el;
+                    (off,osize)
+                };
+                view.adjust_size(obj,osize,nsize);
+                insert_updates(&mut ninp,off,osize,inp_el);
             } else {
-                let rcond = Transformation::and(cond.to_vec());
-                let ref old = <Obj as Contains<'a,Idx>>::get_el(obj,idx.clone());
-                let inp_old = <Obj as Contains<'a,Idx>>::get_tr(tr.clone(),pos.clone());
-                let (res,inp_res) = ite(OptRef::Owned(el),
-                                        OptRef::Ref(&old),
-                                        rcond,inp_el,inp_old,em)?.expect("Failed to apply");
-                (res.as_obj(),inp_res)
-            };
-            tr = <Obj as ContainsMut<'a,Idx>>::set_tr(tr,pos,inp_nel);
-            *obj.get_el_mut(idx) = nel;
+                let (off,osize,nsize,inp_nel) = {
+                    let (off,ptr) = view.get_el_mut_ext(obj);
+                    let osize = ptr.num_elem();
+                    let (rptr,ninp) = {
+                        let (nptr,ninp) = ite(OptRef::Owned(el),
+                                              OptRef::Ref(ptr),
+                                              Transformation::and(cond.to_vec()),
+                                              inp_el,
+                                              Transformation::view(off,ptr.num_elem(),inp.clone()),
+                                              em)?.expect("Failed to apply because of mismatching new entry");
+                        let rptr = nptr.as_obj();
+                        (rptr,ninp)
+                    };
+                    let nsize = rptr.num_elem();
+                    *ptr = rptr;
+                    (off,osize,nsize,ninp)
+                };
+                view.adjust_size(obj,osize,nsize);
+                insert_updates(&mut ninp,off,osize,inp_nel);
+            }
         }
-        Ok(tr)
+        Ok(finish_updates(ninp,inp))
     }
 }
 
-impl<Em : Embed,El : Composite+Clone,It : CondIterator<Em,Item=(El,Transf<Em>)>> CondIter<Em,It> {
+impl<Em : Embed,El : Composite,It : CondIterator<Em,Item=(El,Transf<Em>)>> CondIter<Em,It> {
     pub fn collect(mut self,def: El,inp_def: Transf<Em>,em: &mut Em) -> Result<(El,Transf<Em>),Em::Error> {
         let mut cur = def;
         let mut inp_cur = inp_def;
@@ -3090,7 +3110,7 @@ impl<Em : Embed,El : Composite+Clone,It : CondIterator<Em,Item=(El,Transf<Em>)>>
         }
     }
 }
-impl<Em : Embed,El : Ord+Composite+Clone,It : CondIterator<Em,Item=(El,Transf<Em>)>> CondIter<Em,It> {
+impl<Em : Embed,El : Ord+Composite,It : CondIterator<Em,Item=(El,Transf<Em>)>> CondIter<Em,It> {
     pub fn to_choice(mut self,em: &mut Em)
                      -> Result<(Choice<El>,Transf<Em>),Em::Error> {
         let mut els : Vec<El> = Vec::new();
@@ -3447,21 +3467,26 @@ impl<Em : Embed,Idx : Copy,It : CondIterator<Em>> CondIterator<Em> for AdjustIdx
 }
 
 pub trait View<'a> {
-    type Viewed : 'a;
-    type Element : 'a;
-    type Position : 'static + Copy;
+    type Viewed : 'a+Composite;
+    type Element : 'a+Composite;
     fn get_el<'b>(&self,obj: &'b Self::Viewed)
                   -> &'b Self::Element where 'a : 'b {
         self.get_el_ext(obj).1
     }
     fn get_el_ext<'b>(&self,&'b Self::Viewed)
-                      -> (Self::Position,&'b Self::Element) where 'a : 'b;
-    fn get_tr<Em : Embed>(&self,Self::Position,Transf<Em>) -> Transf<Em>;
+                      -> (usize,&'b Self::Element) where 'a : 'b;
 }
 
 pub trait ViewMut<'a> : View<'a> {
-    fn get_el_mut<'b>(&self,&'b Self::Viewed) -> &'b mut Self::Element where 'a : 'b;
-    fn set_tr<Em : Embed>(&self,Self::Position,Transf<Em>,Transf<Em>) -> Transf<Em>;
+    fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
+                      -> &'b mut Self::Element where 'a : 'b {
+        self.get_el_mut_ext(obj).1
+    }
+    fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
+                          -> (usize,&'b mut Self::Element)
+        where 'a : 'b;
+    /// MUST be called when get_el_mut changes the size of an element
+    fn adjust_size(&self,&mut Self::Viewed,usize,usize) -> () {}
 }
 
 pub struct VecView<Up> {
@@ -3476,26 +3501,39 @@ impl<Up> VecView<Up> {
     }
 }
 
-impl<'a,T : 'a+Composite,Up : View<'a,Element=Vec<T>>> View<'a> for VecView<Up> {
+impl<'a,T : 'a+Composite+Clone,Up : View<'a,Element=Vec<T>>> View<'a> for VecView<Up> {
     type Viewed = Up::Viewed;
     type Element = T;
-    type Position = (Up::Position,usize,usize);
-    fn get_el<'b>(&self,obj: &'b Self::Viewed) -> &'b Self::Element where 'a : 'b {
+    fn get_el<'b>(&self,obj: &'b Self::Viewed)
+                  -> &'b Self::Element where 'a : 'b {
         &self.up.get_el(obj)[self.idx]
     }
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
-                      -> (Self::Position,&'b Self::Element) where 'a : 'b {
-        let (up_pos,up_obj) = self.up.get_el_ext(obj);
-        let mut off = 0;
+                      -> (usize,&'b Self::Element) where 'a : 'b {
+        let (mut off,up_obj) = self.up.get_el_ext(obj);
         for i in 0..self.idx {
             off+=up_obj[i].num_elem();
         }
         let res = &up_obj[self.idx];
-        let sz = res.num_elem();
-        ((up_pos,off,sz),res)
+        (off,res)
     }
-    fn get_tr<Em : Embed>(&self,(up,off,sz): Self::Position,inp: Transf<Em>) -> Transf<Em> {
-        Transformation::view(off,sz,self.up.get_tr(up,inp))
+}
+
+impl<'a,T : 'a+Composite+Clone,Up : ViewMut<'a,Element=Vec<T>>> ViewMut<'a> for VecView<Up> {
+    fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
+                      -> &'b mut Self::Element where 'a : 'b {
+        &mut self.up.get_el_mut(obj)[self.idx]
+    }
+    fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
+                          -> (usize,&'b mut Self::Element)
+        where 'a : 'b {
+
+        let (mut off,up_obj) = self.up.get_el_mut_ext(obj);
+        for i in 0..self.idx {
+            off+=up_obj[i].num_elem();
+        }
+        let res = &mut up_obj[self.idx];
+        (off,res)
     }
 }
 
@@ -3511,18 +3549,73 @@ impl<'a,Up,K> AssocView<'a,Up,K> {
     }
 }
 
-impl<'a,K : 'a+Ord,V : 'a+Composite,Up : View<'a,Element=Assoc<K,V>>> View<'a> for AssocView<'a,Up,K> {
+impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite+Clone,Up : View<'a,Element=Assoc<K,V>>> View<'a> for AssocView<'a,Up,K> {
     type Viewed = Up::Viewed;
     type Element = V;
-    type Position = (Up::Position,usize,usize);
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
-                      -> (Self::Position,&'b Self::Element) where 'a : 'b {
+                      -> (usize,&'b Self::Element) where 'a : 'b {
         let (up_pos,up_obj) = self.up.get_el_ext(obj);
         let &(ref el,off) = up_obj.tree.get(self.key).expect("Key not found in Assoc");
-        let sz = el.num_elem();
-        ((up_pos,off,sz),el)
+        (up_pos+off,el)
     }
-    fn get_tr<Em : Embed>(&self,(up,off,sz): Self::Position,inp: Transf<Em>) -> Transf<Em> {
-        Transformation::view(off,sz,self.up.get_tr(up,inp))
+}
+
+impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite+Clone,Up : ViewMut<'a,Element=Assoc<K,V>>> ViewMut<'a> for AssocView<'a,Up,K> {
+    fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
+                          -> (usize,&'b mut Self::Element) where 'a : 'b {
+        let (up_pos,up_obj) = self.up.get_el_mut_ext(obj);
+        let &mut (ref mut el,off) = up_obj.tree.get_mut(self.key).expect("Key not found in Assoc");
+        (up_pos+off,el)
     }
+    fn adjust_size(&self,obj: &mut Self::Viewed,osize: usize,nsize: usize) {
+        if osize==nsize {
+            return
+        }
+        let up_obj = self.up.get_el_mut(obj);
+        for (_,&mut (_,ref mut voff)) in up_obj.tree.range_mut((Excluded(self.key.clone()),Unbounded)) {
+            *voff = *voff + nsize - osize;
+        }
+    }
+}
+
+type Updates<Em> = Vec<(usize,usize,Transf<Em>)>;
+
+fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,off: usize,old: usize,new: Transf<Em>) -> () {
+    for i in 0..upd.len() {
+        let (coff,_,_) = upd[i];
+        if coff < off {
+            debug_assert!(coff+upd[i].2.size()<=off);
+            continue
+        }
+        debug_assert!(coff!=off);
+        debug_assert!(off+old<=coff);
+        let nsz = new.size();
+        if old!=nsz {
+            for j in i..upd.len() {
+                upd[j].1 = upd[j].1 + nsz - old;
+            }
+        }
+        upd.insert(i,(off,old,new));
+        return
+    }
+    upd.push((off,old,new))
+}
+
+fn finish_updates<Em : Embed>(mut upd: Updates<Em>,orig: Transf<Em>) -> Transf<Em> {
+    let mut last = 0;
+    let mut orig_off = 0;
+    let mut res = Vec::new();
+    for (off,old,new) in upd.drain(..) {
+        debug_assert!(off>=last);
+        if off > last {
+            res.push(Transformation::view(orig_off,off-last,orig.clone()));
+        }
+        orig_off+=old;
+        last = off+new.size();
+        res.push(new);
+    }
+    if orig_off!=orig.size() {
+        res.push(Transformation::view(orig_off,orig.size()-orig_off,orig));
+    }
+    Transformation::concat(&res[..])
 }
