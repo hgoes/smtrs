@@ -3450,10 +3450,12 @@ pub trait View<'a> {
     type Viewed : 'a;
     type Element : 'a;
     type Position : 'static + Copy;
-    fn get_el<'b>(&self,obj: &'b Self::Viewed) -> &'b Self::Element where 'a : 'b {
+    fn get_el<'b>(&self,obj: &'b Self::Viewed)
+                  -> &'b Self::Element where 'a : 'b {
         self.get_el_ext(obj).1
     }
-    fn get_el_ext<'b>(&self,&'b Self::Viewed) -> (Self::Position,&'b Self::Element) where 'a : 'b;
+    fn get_el_ext<'b>(&self,&'b Self::Viewed)
+                      -> (Self::Position,&'b Self::Element) where 'a : 'b;
     fn get_tr<Em : Embed>(&self,Self::Position,Transf<Em>) -> Transf<Em>;
 }
 
@@ -3500,6 +3502,13 @@ impl<'a,T : 'a+Composite,Up : View<'a,Element=Vec<T>>> View<'a> for VecView<Up> 
 pub struct AssocView<'a,Up,K : 'a> {
     up: Up,
     key: &'a K
+}
+
+impl<'a,Up,K> AssocView<'a,Up,K> {
+    pub fn new(up: Up,key: &'a K) -> Self {
+        AssocView { up: up,
+                    key: key }
+    }
 }
 
 impl<'a,K : 'a+Ord,V : 'a+Composite,Up : View<'a,Element=Assoc<K,V>>> View<'a> for AssocView<'a,Up,K> {
