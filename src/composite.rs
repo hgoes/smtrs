@@ -2988,7 +2988,8 @@ impl<'a,T> ContainsMut<'a,Top> for BitVecVectorStack<T> {
 
 pub trait CondIterator<Em : Embed> : Sized {
     type Item;
-    fn next(&mut self,&mut Vec<Transf<Em>>,usize) -> Result<Option<Self::Item>,Em::Error>;
+    fn next(&mut self,&mut Vec<Transf<Em>>,usize,&mut Em)
+            -> Result<Option<Self::Item>,Em::Error>;
     fn cond_iter(self) -> CondIter<Em,Self> {
         CondIter { conds: Vec::new(),
                    iter: self }
@@ -3024,16 +3025,17 @@ pub struct CondIter<Em : Embed,It : CondIterator<Em>> {
 }
 
 impl<Em : Embed,It : CondIterator<Em>> CondIter<Em,It> {
-    pub fn next(&mut self) -> Result<Option<(&[Transf<Em>],It::Item)>,Em::Error> {
-        match self.iter.next(&mut self.conds,0)? {
+    pub fn next(&mut self,em: &mut Em)
+                -> Result<Option<(&[Transf<Em>],It::Item)>,Em::Error> {
+        match self.iter.next(&mut self.conds,0,em)? {
             None => Ok(None),
             Some(r) => Ok(Some((&self.conds[..],r)))
         }
     }
-    pub fn find<P>(&mut self,mut predicate: P)
+    pub fn find<P>(&mut self,mut predicate: P,em: &mut Em)
                    -> Result<Option<(&[Transf<Em>],It::Item)>,Em::Error>
         where P : FnMut(&It::Item) -> bool {
-        while let Some(x) = self.iter.next(&mut self.conds,0)? {
+        while let Some(x) = self.iter.next(&mut self.conds,0,em)? {
             if predicate(&x) {
                 return Ok(Some((&self.conds[..],x)))
             }
@@ -3047,7 +3049,7 @@ impl<Em : Embed,Idx : Clone,El : Composite+Clone,It : CondIterator<Em,Item=(Idx,
                                                                                    -> Result<Transf<Em>,Em::Error>
     where El : 'a {
         let mut tr = inp_obj;
-        while let Some((cond,(idx,el,inp_el))) = self.next()? {
+        while let Some((cond,(idx,el,inp_el))) = self.next(em)? {
             let pos : Pos = <Obj as Contains<'a,Idx>>::position(obj,idx.clone());
             let (nel,inp_nel) = if cond.len()==0 {
                 (el,inp_el)
@@ -3071,7 +3073,7 @@ impl<Em : Embed,El : Composite+Clone,It : CondIterator<Em,Item=(El,Transf<Em>)>>
     pub fn collect(mut self,def: El,inp_def: Transf<Em>,em: &mut Em) -> Result<(El,Transf<Em>),Em::Error> {
         let mut cur = def;
         let mut inp_cur = inp_def;
-        while let Some((cond,(el,inp_el))) = self.next()? {
+        while let Some((cond,(el,inp_el))) = self.next(em)? {
             let rcond = Transformation::and(cond.to_vec());
             let (res,inp_res) = ite(OptRef::Owned(el),
                                     OptRef::Owned(cur),
@@ -3082,17 +3084,18 @@ impl<Em : Embed,El : Composite+Clone,It : CondIterator<Em,Item=(El,Transf<Em>)>>
         Ok((cur,inp_cur))
     }
     pub fn collect1(mut self,em: &mut Em) -> Result<(El,Transf<Em>),Em::Error> {
-        match self.next()? {
+        match self.next(em)? {
             None => panic!("Failed to collect: Empty iterator"),
             Some((_,(el,inp_el))) => self.collect(el,inp_el,em)
         }
     }
 }
 impl<Em : Embed,El : Ord+Composite+Clone,It : CondIterator<Em,Item=(El,Transf<Em>)>> CondIter<Em,It> {
-    pub fn to_choice(mut self) -> Result<(Choice<El>,Transf<Em>),Em::Error> {
+    pub fn to_choice(mut self,em: &mut Em)
+                     -> Result<(Choice<El>,Transf<Em>),Em::Error> {
         let mut els : Vec<El> = Vec::new();
         let mut inps : Vec<Transf<Em>> = Vec::new();
-        while let Some((cond,(el,inp_el))) = self.next()? {
+        while let Some((cond,(el,inp_el))) = self.next(em)? {
             let rcond = Transformation::and(cond.to_vec());
             let mut inserted = false;
             for i in 0..els.len() {
@@ -3140,10 +3143,10 @@ impl<Em,It1,It2,F> CondIterator<Em> for Seq<It1,It2,F>
           F : FnMut(It1::Item) -> It2 {
 
     type Item = It2::Item;
-    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize)
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
         let el2 = match self.iter2 {
-            Some((ref mut it2,off)) => match it2.next(conds,off)? {
+            Some((ref mut it2,off)) => match it2.next(conds,off,em)? {
                 Some(el) => Some(el),
                 None => None
             },
@@ -3152,12 +3155,12 @@ impl<Em,It1,It2,F> CondIterator<Em> for Seq<It1,It2,F>
         match el2 {
             Some(el) => Ok(Some(el)),
             None => loop {
-                match self.iter1.next(conds,pos)? {
+                match self.iter1.next(conds,pos,em)? {
                     None => return Ok(None),
                     Some(el) => {
                         let npos = conds.len();
                         let mut niter = (self.f)(el);
-                        match niter.next(conds,npos)? {
+                        match niter.next(conds,npos,em)? {
                             None => {},
                             Some(nel) => {
                                 self.iter2 = Some((niter,npos));
@@ -3182,9 +3185,9 @@ impl<Em,It,A,F> CondIterator<Em> for Map<It,F>
           F : FnMut(It::Item) -> A {
 
     type Item = A;
-    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize)
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
             -> Result<Option<A>,Em::Error> {
-        match self.iter.next(conds,pos)? {
+        match self.iter.next(conds,pos,em)? {
             None => Ok(None),
             Some(el) => Ok(Some((self.f)(el)))
         }
@@ -3198,7 +3201,7 @@ pub struct IndexedIter<Em : DeriveValues> {
 
 impl<Em : DeriveValues> CondIterator<Em> for IndexedIter<Em> {
     type Item = usize;
-    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize)
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,_: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
         match self.iter.next() {
             None => Ok(None),
@@ -3243,9 +3246,9 @@ pub struct Getter<'a,Em : Embed,It,Obj : 'a> {
 
 impl<'a,Em : Embed,Idx : Clone,El : 'a,Obj : Contains<'a,Idx,Element=El>,It : CondIterator<Em,Item=Idx>> CondIterator<Em> for Getter<'a,Em,It,Obj> {
     type Item = (&'a El,Transf<Em>);
-    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize)
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
-        match self.iter.next(conds,pos)? {
+        match self.iter.next(conds,pos,em)? {
             None => Ok(None),
             Some(idx) => {
                 let ref el = self.obj.get_el(idx.clone());
@@ -3265,9 +3268,9 @@ pub struct GetterIdx<'a,Em : Embed,It,Obj : 'a> {
 
 impl<'a,Em : Embed,Idx : Clone,El : 'a,Obj : Contains<'a,Idx,Element=El>,It : CondIterator<Em,Item=Idx>> CondIterator<Em> for GetterIdx<'a,Em,It,Obj> {
     type Item = (Idx,&'a El,Transf<Em>);
-    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize)
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
-        match self.iter.next(conds,pos)? {
+        match self.iter.next(conds,pos,em)? {
             None => Ok(None),
             Some(idx) => {
                 let ref el = self.obj.get_el(idx.clone());
@@ -3307,7 +3310,7 @@ pub struct Chosen<'a,T : 'a,Em : Embed> {
 
 impl<'a,Em : Embed,T : Composite> CondIterator<Em> for Chosen<'a,T,Em> {
     type Item = usize;
-    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize)
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,_: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
         if self.idx<=self.choice.0.len() {
             conds.truncate(pos);
@@ -3421,7 +3424,7 @@ impl<'a,Idx : Clone,SIdx,B : 'a+ContainsMut<'a,SIdx>,A : 'a+ContainsMut<'a,Idx,E
 
 impl<Em : Embed,Idx> CondIterator<Em> for Once<Idx> {
     type Item = Idx;
-    fn next(&mut self,_: &mut Vec<Transf<Em>>,_: usize)
+    fn next(&mut self,_: &mut Vec<Transf<Em>>,_: usize,_: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
         Ok(<Self as Iterator>::next(self))
     }
@@ -3434,9 +3437,9 @@ pub struct AdjustIdx<It,Idx> {
 
 impl<Em : Embed,Idx : Copy,It : CondIterator<Em>> CondIterator<Em> for AdjustIdx<It,Idx> {
     type Item = IndexRec<Idx,It::Item>;
-    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize)
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
-        match self.iter.next(conds,pos)? {
+        match self.iter.next(conds,pos,em)? {
             None => Ok(None),
             Some(idx) => Ok(Some(IndexRec(self.idx,idx)))
         }
