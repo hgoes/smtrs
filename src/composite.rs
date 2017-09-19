@@ -3182,14 +3182,14 @@ pub struct Map<It,F> {
 impl<Em,It,A,F> CondIterator<Em> for Map<It,F>
     where Em : Embed,
           It : CondIterator<Em>,
-          F : FnMut(It::Item) -> A {
+          F : FnMut(It::Item,&mut Em) -> Result<A,Em::Error> {
 
     type Item = A;
     fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
             -> Result<Option<A>,Em::Error> {
         match self.iter.next(conds,pos,em)? {
             None => Ok(None),
-            Some(el) => Ok(Some((self.f)(el)))
+            Some(el) => Ok(Some((self.f)(el,em)?))
         }
     }
 }
