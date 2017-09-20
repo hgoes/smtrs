@@ -6,7 +6,6 @@ use domain::{Domain};
 use unique::{Uniquer,UniqueRef};
 use std::cmp::{Ordering,max,min};
 use std::collections::BTreeMap;
-use std::collections::btree_map::Entry;
 use std::rc::Rc;
 use std::cell;
 use std::cell::RefCell;
@@ -16,7 +15,6 @@ use std::slice;
 use std::vec;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
-use std::collections::Bound::*;
 use std::ops::{Range};
 use std::iter::{Peekable,Once};
 use std::usize;
@@ -2338,41 +2336,38 @@ pub fn vec_pool_alloc<'a,'b,T,F,Em>(vec: OptRef<'a,Vec<T>>,
 }
 
 #[derive(PartialEq,Eq,Hash,Clone,Debug)]
-pub struct Assoc<K,V> {
-    size: usize,
-    tree: BTreeMap<K,(V,usize)>
-}
+pub struct Assoc<K,V>(Vec<(K,V)>);
 
 impl<K : Ord+Hash+Clone,V : Composite> Assoc<K,V> {
     pub fn new() -> Self {
-        Assoc { size: 0,
-                tree: BTreeMap::new() }
-    }
-    fn check_consistency(&self) {
-        let mut off = 0;
-        for &(ref v,coff) in self.tree.values() {
-            assert_eq!(coff,off);
-            off+=v.num_elem();
-        }
-        assert_eq!(self.size,off);
+        Assoc(Vec::new())
     }
     pub fn access<'a>(&self,key: AssocKey<'a,K>) -> &V where K : 'a {
-        &self.tree.get(key.0).expect("Assoc key not present").0
+        match self.0.binary_search_by(|&(ref k,_)| k.cmp(key.0)) {
+            Ok(res) => &self.0[res].1,
+            Err(_) => panic!("Assoc key not found")
+        }
     }
 }
 
 impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
     fn num_elem(&self) -> usize {
-        self.size
+        let mut acc = 0;
+        for el in self.0.iter() {
+            acc+=el.1.num_elem()
+        }
+        acc
     }
     fn elem_sort<Em : Embed>(&self,pos: usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         debug_assert!(pos<self.num_elem());
-        for &(ref el,off) in self.tree.values() {
-            let sz = el.num_elem();
+        let mut off = 0;
+        for el in self.0.iter() {
+            let sz = el.1.num_elem();
             if pos<off+sz {
-                return el.elem_sort(pos-off,em)
+                return el.1.elem_sort(pos-off,em)
             }
+            off+=sz;
         }
         panic!("Invalid index")
     }
@@ -2384,57 +2379,60 @@ impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
               FComb : Fn(Transf<Em>,Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
               FL : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error>,
               FR : Fn(Transf<Em>,&mut Em) -> Result<Transf<Em>,Em::Error> {
-        let mut new : BTreeMap<K,(V,usize)> = BTreeMap::new();
-        let mut off = 0;
+        let mut new : Vec<(K,V)> = Vec::new();
         let mut ntrans = Vec::new();
 
-        let mut l_iter = lhs.as_ref().tree.iter();
-        let mut r_iter = rhs.as_ref().tree.iter();
+        let mut l_iter = lhs.as_ref().0.iter();
+        let mut r_iter = rhs.as_ref().0.iter();
 
-        let mut l_cur : Option<(&K,&V,usize)> = None;
-        let mut r_cur : Option<(&K,&V,usize)> = None;
+        let mut l_cur : Option<(&K,&V)> = None;
+        let mut r_cur : Option<(&K,&V)> = None;
+
+        let mut l_off = 0;
+        let mut r_off = 0;
 
         loop {
-            let (l_key,l_el,l_off) = match l_cur {
+            let (l_key,l_el) = match l_cur {
                 None => match l_iter.next() {
                     None => {
                         match r_cur {
                             None => {},
-                            Some((k,el,r_off)) => {
+                            Some((k,el)) => {
                                 let sz = el.num_elem();
-                                new.insert(k.clone(),(el.clone(),off));
+                                new.push((k.clone(),el.clone()));
                                 ntrans.push(only_r(Transformation::view(r_off,sz,inp_rhs.clone()),em)?);
-                                off+=sz;
+                                r_off+=sz;
                             }
                         }
-                        for (k,&(ref el,r_off)) in r_iter {
+                        for &(ref k,ref el) in r_iter {
                             let sz = el.num_elem();
-                            new.insert(k.clone(),(el.clone(),off));
+                            new.push((k.clone(),el.clone()));
                             ntrans.push(only_r(Transformation::view(r_off,sz,inp_rhs.clone()),em)?);
-                            off+=sz;
+                            r_off+=sz;
                         }
                         break
                     },
-                    Some((k,&(ref el,noff))) => (k,el,noff)
+                    Some(&(ref k,ref el)) => (k,el)
                 },
                 Some(el) => el
             };
-            let (r_key,r_el,r_off) = match r_cur {
+            let (r_key,r_el) = match r_cur {
                 None => match r_iter.next() {
                     None => {
                         let l_sz = l_el.num_elem();
-                        new.insert(l_key.clone(),(l_el.clone(),off));
+                        new.push((l_key.clone(),l_el.clone()));
                         ntrans.push(only_l(Transformation::view(l_off,l_sz,inp_lhs.clone()),em)?);
-                        off+=l_sz;
-                        for (k,&(ref el,l_off)) in l_iter {
+                        l_off+=l_sz;
+
+                        for &(ref k,ref el) in l_iter {
                             let sz = el.num_elem();
-                            new.insert(k.clone(),(el.clone(),off));
+                            new.push((k.clone(),el.clone()));
                             ntrans.push(only_r(Transformation::view(l_off,sz,inp_lhs.clone()),em)?);
-                            off+=sz;
+                            l_off+=sz;
                         }
                         break
                     },
-                    Some((k,&(ref el,noff))) => (k,el,noff)
+                    Some(&(ref k,ref el)) => (k,el)
                 },
                 Some(el) => el
             };
@@ -2448,41 +2446,41 @@ impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
                                      comb,only_l,only_r,em)? {
                         None => return Ok(None),
                         Some((nel,ntr)) => {
-                            let sz = nel.as_ref().num_elem();
-                            new.insert(l_key.clone(),(nel.as_obj(),off));
+                            new.push((l_key.clone(),nel.as_obj()));
                             ntrans.push(ntr);
                             l_cur = None;
                             r_cur = None;
-                            off+=sz;
+                            l_off+=l_sz;
+                            r_off+=r_sz;
                         }
                     }
                 },
                 Ordering::Less => {
                     let l_sz = l_el.num_elem();
-                    new.insert(l_key.clone(),(l_el.clone(),off));
+                    new.push((l_key.clone(),l_el.clone()));
                     ntrans.push(only_l(Transformation::view(l_off,l_sz,inp_lhs.clone()),em)?);
-                    off+=l_sz;
+                    l_off+=l_sz;
                     l_cur = None;
-                    r_cur = Some((r_key,r_el,r_off));
+                    r_cur = Some((r_key,r_el));
                 },
                 Ordering::Greater => {
                     let r_sz = r_el.num_elem();
-                    new.insert(r_key.clone(),(r_el.clone(),off));
+                    new.push((r_key.clone(),r_el.clone()));
                     ntrans.push(only_r(Transformation::view(r_off,r_sz,inp_rhs.clone()),em)?);
-                    off+=r_sz;
-                    l_cur = Some((l_key,l_el,l_off));
+                    r_off+=r_sz;
+                    l_cur = Some((l_key,l_el));
                     r_cur = None;
                 }
             }
         }
-        Ok(Some((OptRef::Owned(Assoc { size: off,
-                                       tree: new }),Transformation::concat(&ntrans[0..]))))
+        Ok(Some((OptRef::Owned(Assoc(new)),
+                 Transformation::concat(&ntrans[0..]))))
     }
 }
 
 pub fn assoc_empty<'a,K,V,Em>() -> Result<(OptRef<'a,Assoc<K,V>>,Transf<Em>),Em::Error>
     where K : Ord,Em : Embed {
-    Ok((OptRef::Owned(Assoc { size: 0, tree: BTreeMap::new() }),
+    Ok((OptRef::Owned(Assoc(Vec::new())),
         Transformation::id(0)))
 }
 
@@ -2493,21 +2491,35 @@ pub fn assoc_get<'a,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
     where K : Ord + Hash + Clone, V : Composite + Clone, Em : Embed {
     debug_assert_eq!(assoc.as_ref().num_elem(),inp_assoc.size());
     match assoc {
-        OptRef::Ref(ref rassoc) => match rassoc.tree.get(key) {
-            None => Ok(None),
-            Some(&(ref v,off)) => {
-                let sz = v.num_elem();
-                Ok(Some((OptRef::Ref(v),
-                         Transformation::view(off,sz,inp_assoc))))
+        OptRef::Ref(ref rassoc) => {
+            let mut off = 0;
+            for &(ref k,ref el) in rassoc.0.iter() {
+                match k.cmp(key) {
+                    Ordering::Less => { off+=el.num_elem() },
+                    Ordering::Greater => return Ok(None),
+                    Ordering::Equal => {
+                        let sz = el.num_elem();
+                        return Ok(Some((OptRef::Ref(el),
+                                        Transformation::view(off,sz,inp_assoc))))
+                    }
+                }
             }
+            Ok(None)
         },
-        OptRef::Owned(mut rassoc) => match rassoc.tree.remove(key) {
-            None => Ok(None),
-            Some((v,off)) => {
-                let sz = v.num_elem();
-                Ok(Some((OptRef::Owned(v),
-                         Transformation::view(off,sz,inp_assoc))))
+        OptRef::Owned(mut rassoc) => {
+            let mut off = 0;
+            for (k,el) in rassoc.0.drain(..) {
+                match k.cmp(key) {
+                    Ordering::Less => { off+=el.num_elem() },
+                    Ordering::Greater => return Ok(None),
+                    Ordering::Equal => {
+                        let sz = el.num_elem();
+                        return Ok(Some((OptRef::Owned(el),
+                                        Transformation::view(off,sz,inp_assoc))))
+                    }
+                }
             }
+            Ok(None)
         }
     }
 }
@@ -2522,57 +2534,33 @@ pub fn assoc_insert<'a,'b,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
     debug_assert_eq!(assoc.as_ref().num_elem(),inp_assoc.size());
     debug_assert_eq!(value.as_ref().num_elem(),inp_value.size());
     let mut rassoc = assoc.as_obj();
-    let nsz = value.as_ref().num_elem();
-    let existing = match rassoc.tree.entry(key.clone()) {
-        Entry::Occupied(mut occ) => {
-            let sz = occ.get().0.num_elem();
-            let off = occ.get().1;
-            occ.get_mut().0 = value.as_obj();
-            Some((off,sz))
-        },
-        Entry::Vacant(vac) => {
-            vac.insert((value.as_obj(),0));
-            None
+    let mut off = 0;
+    for i in 0..rassoc.0.len() {
+        match rassoc.0[i].0.cmp(key) {
+            Ordering::Less => { off+=rassoc.0[i].1.num_elem() },
+            Ordering::Greater => {
+                rassoc.0.insert(i,(key.clone(),value.as_obj()));
+                let before = Transformation::view(0,off,inp_assoc.clone());
+                let after = Transformation::view(off,inp_assoc.size()-off,
+                                                 inp_assoc);
+                let ninp = Transformation::concat(&[before,inp_value,after]);
+                return Ok((OptRef::Owned(rassoc),ninp))
+            },
+            Ordering::Equal => {
+                let osize = rassoc.0[i].1.num_elem();
+                rassoc.0[i].1 = value.as_obj();
+                let before = Transformation::view(0,off,inp_assoc.clone());
+                let after = Transformation::view(off+osize,
+                                                 inp_assoc.size()-osize-off,
+                                                 inp_assoc);
+                let ninp = Transformation::concat(&[before,inp_value,after]);
+                return Ok((OptRef::Owned(rassoc),ninp))
+            }
         }
-    };
-    let (off,osz) = match existing {
-        Some((off,osz)) => {
-            if nsz!=osz {
-                for (_,&mut (_,ref mut voff)) in rassoc.tree.
-                    range_mut((Excluded(key.clone()),
-                               Unbounded)) {
-                    *voff = *voff + nsz - osz;
-                }
-            }
-            (off,osz)
-        },
-        None => {
-            let noff = match rassoc.tree.range(..key.clone()).next_back() {
-                None => 0,
-                Some((_,&(ref obj,o))) => o+obj.num_elem()
-            };
-            match rassoc.tree.get_mut(key) {
-                Some(&mut (_,ref mut coff)) => { *coff = noff },
-                None => panic!("Internal error")
-            }
-            if nsz>0 {
-                for (_,&mut (_,ref mut voff)) in rassoc.tree.range_mut((Excluded(key.clone()),Unbounded)) {
-                    *voff += nsz;
-                }
-            }
-            (noff,0)
-        }
-    };
-    rassoc.size = rassoc.size - osz + nsz;
-    if cfg!(debug_assertions) {
-        rassoc.check_consistency();
     }
-    let whole_sz = inp_assoc.size();
+    rassoc.0.push((key.clone(),value.as_obj()));
     Ok((OptRef::Owned(rassoc),
-        Transformation::concat
-        (&[Transformation::view(0,off,inp_assoc.clone()),
-           inp_value,
-           Transformation::view(off+osz,whole_sz-off-osz,inp_assoc)])))
+        Transformation::concat(&[inp_assoc,inp_value])))
 }
 
 pub fn choice_empty<'a,T,Em : Embed>() -> (OptRef<'a,Choice<T>>,Transf<Em>) {
@@ -2931,37 +2919,6 @@ impl<'a,T : 'a+Composite> ContainsMut<'a,VecIdx> for Vec<T> {
 
 #[derive(Copy,Clone)]
 pub struct AssocKey<'a,K : 'a>(pub &'a K);
-
-impl<'a,'b,K : 'b+Ord,V : 'a+Composite> Contains<'a,AssocKey<'b,K>> for Assoc<K,V> {
-    type Element = V;
-    type Position = (usize,usize);
-    fn get_el<'c>(&'c self,key: AssocKey<'b,K>) -> &'c V where 'a : 'c {
-        &self.tree.get(key.0).expect("Entry not found").0
-    }
-    fn position(&self,key: AssocKey<'b,K>) -> Self::Position {
-        match self.tree.get(&key.0) {
-            None => panic!("Entry not found"),
-            Some(&(ref el,off)) => (off,el.num_elem())
-        }
-    }
-    fn get_tr<Em : Embed>(inp: Transf<Em>,
-                          (off,sz): Self::Position) -> Transf<Em> {
-        Transformation::view(off,sz,inp)
-    }
-}
-
-impl<'a,'b,K : 'b+Ord,V : 'a+Composite> ContainsMut<'a,AssocKey<'b,K>> for Assoc<K,V> {
-    fn get_el_mut<'c>(&'c mut self,key: AssocKey<'b,K>) -> &'c mut V where 'a : 'c {
-        &mut self.tree.get_mut(&key.0).expect("Entry not found").0
-    }
-    fn set_tr<Em : Embed>(inp: Transf<Em>,
-                          (off,sz): Self::Position,ninp: Transf<Em>)
-                          -> Transf<Em> {
-        Transformation::concat(&[Transformation::view(0,off,inp.clone()),
-                                 ninp,
-                                 Transformation::view(off+sz,inp.size()-off-sz,inp)])
-    }
-}
 
 pub struct Top;
 
@@ -3604,27 +3561,30 @@ impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite+Clone,Up : View<'a,Element=Assoc<
     type Element = V;
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
                       -> (usize,&'b Self::Element) where 'a : 'b {
-        let (up_pos,up_obj) = self.up.get_el_ext(obj);
-        let &(ref el,off) = up_obj.tree.get(self.key).expect("Key not found in Assoc");
-        (up_pos+off,el)
+        let (mut off,up_obj) = self.up.get_el_ext(obj);
+        for &(ref k,ref el) in up_obj.0.iter() {
+            match k.cmp(self.key) {
+                Ordering::Equal => return (off,el),
+                Ordering::Less => { off+=el.num_elem() },
+                Ordering::Greater => panic!("Assoc element not found")
+            }
+        }
+        panic!("Assoc element not found")
     }
 }
 
 impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite+Clone,Up : ViewMut<'a,Element=Assoc<K,V>>> ViewMut<'a> for AssocView<'a,Up,K> {
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
                           -> (usize,&'b mut Self::Element) where 'a : 'b {
-        let (up_pos,up_obj) = self.up.get_el_mut_ext(obj);
-        let &mut (ref mut el,off) = up_obj.tree.get_mut(self.key).expect("Key not found in Assoc");
-        (up_pos+off,el)
-    }
-    fn adjust_size(&self,obj: &mut Self::Viewed,osize: usize,nsize: usize) {
-        if osize==nsize {
-            return
+        let (mut off,up_obj) = self.up.get_el_mut_ext(obj);
+        for &mut (ref k,ref mut el) in up_obj.0.iter_mut() {
+            match k.cmp(self.key) {
+                Ordering::Equal => return (off,el),
+                Ordering::Less => { off+=el.num_elem() },
+                Ordering::Greater => panic!("Assoc element not found")
+            }
         }
-        let up_obj = self.up.get_el_mut(obj);
-        for (_,&mut (_,ref mut voff)) in up_obj.tree.range_mut((Excluded(self.key.clone()),Unbounded)) {
-            *voff = *voff + nsize - osize;
-        }
+        panic!("Assoc element not found")
     }
 }
 
