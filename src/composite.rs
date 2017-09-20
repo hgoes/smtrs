@@ -3508,7 +3508,7 @@ impl<Up> VecView<Up> {
     }
 }
 
-impl<'a,T : 'a+Composite+Clone,Up : View<'a,Element=Vec<T>>> View<'a> for VecView<Up> {
+impl<'a,T : 'a+Composite,Up : View<'a,Element=Vec<T>>> View<'a> for VecView<Up> {
     type Viewed = Up::Viewed;
     type Element = T;
     fn get_el<'b>(&self,obj: &'b Self::Viewed)
@@ -3526,7 +3526,7 @@ impl<'a,T : 'a+Composite+Clone,Up : View<'a,Element=Vec<T>>> View<'a> for VecVie
     }
 }
 
-impl<'a,T : 'a+Composite+Clone,Up : ViewMut<'a,Element=Vec<T>>> ViewMut<'a> for VecView<Up> {
+impl<'a,T : 'a+Composite,Up : ViewMut<'a,Element=Vec<T>>> ViewMut<'a> for VecView<Up> {
     fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
                       -> &'b mut Self::Element where 'a : 'b {
         &mut self.up.get_el_mut(obj)[self.idx]
@@ -3628,4 +3628,45 @@ fn finish_updates<Em : Embed>(mut upd: Updates<Em>,orig: Transf<Em>) -> Transf<E
         res.push(Transformation::view(orig_off,orig.size()-orig_off,orig));
     }
     Transformation::concat(&res[..])
+}
+
+pub struct BitVecVectorStackView<Up> {
+    up: Up,
+    idx: usize
+}
+
+impl<'a,T : 'a+Composite,Up : View<'a,Element=BitVecVectorStack<T>>> View<'a> for BitVecVectorStackView<Up> {
+    type Viewed = Up::Viewed;
+    type Element = T;
+    fn get_el<'b>(&self,obj: &'b Self::Viewed)
+                  -> &'b Self::Element where 'a : 'b {
+        &self.up.get_el(obj).elements[self.idx]
+    }
+    fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
+                      -> (usize,&'b Self::Element) where 'a : 'b {
+        let (mut off,up_obj) = self.up.get_el_ext(obj);
+        for i in 0..self.idx {
+            off+=up_obj.elements[i].num_elem();
+        }
+        let res = &up_obj.elements[self.idx];
+        (off,res)
+    }
+}
+
+impl<'a,T : 'a+Composite,Up : ViewMut<'a,Element=BitVecVectorStack<T>>> ViewMut<'a> for BitVecVectorStackView<Up> {
+    fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
+                      -> &'b mut Self::Element where 'a : 'b {
+        &mut self.up.get_el_mut(obj).elements[self.idx]
+    }
+    fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
+                          -> (usize,&'b mut Self::Element)
+        where 'a : 'b {
+
+        let (mut off,up_obj) = self.up.get_el_mut_ext(obj);
+        for i in 0..self.idx {
+            off+=up_obj.elements[i].num_elem();
+        }
+        let res = &mut up_obj.elements[self.idx];
+        (off,res)
+    }
 }
