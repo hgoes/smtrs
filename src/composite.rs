@@ -3492,6 +3492,12 @@ impl<'a,T : 'a+Composite> ViewMut<'a> for BitVecVectorStackView<T> {
 #[derive(Clone,PartialEq,Eq)]
 pub struct Then<Up,V>(Up,V);
 
+impl<Up,V> Then<Up,V> {
+    pub fn new(up: Up,nxt: V) -> Self {
+        Then(up,nxt)
+    }
+}
+
 impl<'a,Up : View<'a>,V : View<'a,Viewed=Up::Element>> View<'a> for Then<Up,V> {
     type Viewed = Up::Viewed;
     type Element = V::Element;
