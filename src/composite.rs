@@ -3016,17 +3016,15 @@ impl<'a,Em : Embed,
         let mut ninp : Updates<Em> = Vec::new();
         while let Some((cond,(view,el,inp_el))) = self.next(em)? {
             if cond.len()==0 {
-                let nsize = el.num_elem();
                 let (off,osize) = {
                     let (off,ptr) = view.get_el_mut_ext(obj);
                     let osize = ptr.num_elem();
                     *ptr = el;
                     (off,osize)
                 };
-                view.adjust_size(obj,osize,nsize);
                 insert_updates(&mut ninp,off,osize,inp_el);
             } else {
-                let (off,osize,nsize,inp_nel) = {
+                let (off,osize,inp_nel) = {
                     let (off,ptr) = view.get_el_mut_ext(obj);
                     let osize = ptr.num_elem();
                     let (rptr,ninp) = {
@@ -3039,11 +3037,9 @@ impl<'a,Em : Embed,
                         let rptr = nptr.as_obj();
                         (rptr,ninp)
                     };
-                    let nsize = rptr.num_elem();
                     *ptr = rptr;
-                    (off,osize,nsize,ninp)
+                    (off,osize,ninp)
                 };
-                view.adjust_size(obj,osize,nsize);
                 insert_updates(&mut ninp,off,osize,inp_nel);
             }
         }
@@ -3398,7 +3394,8 @@ impl<T : Composite> BitVecVectorStack<T> {
     pub fn access_top<Em : DeriveValues>(&self,
                                          inp: Transf<Em>,
                                          exprs: &[Em::Expr],
-                                         em: &mut Em) -> Result<IndexedIter<Em>,Em::Error> {
+                                         em: &mut Em)
+                                         -> Result<IndexedIter<Em>,Em::Error> {
         let idx = inp.get(exprs,0,em)?;
         let opt_vals = em.derive_values(&idx)?;
         let it = match opt_vals {
@@ -3492,8 +3489,6 @@ pub trait ViewMut<'a> : View<'a> {
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
                           -> (usize,&'b mut Self::Element)
         where 'a : 'b;
-    /// MUST be called when get_el_mut changes the size of an element
-    fn adjust_size(&self,&mut Self::Viewed,usize,usize) -> () {}
 }
 
 pub struct VecView<Up> {
@@ -3544,6 +3539,7 @@ impl<'a,T : 'a+Composite,Up : ViewMut<'a,Element=Vec<T>>> ViewMut<'a> for VecVie
     }
 }
 
+#[derive(Clone,PartialEq,Eq)]
 pub struct AssocView<'a,Up,K : 'a> {
     up: Up,
     key: &'a K
