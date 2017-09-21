@@ -3491,6 +3491,7 @@ pub trait ViewMut<'a> : View<'a> {
         where 'a : 'b;
 }
 
+#[derive(Clone,PartialEq,Eq)]
 pub struct VecView<Up> {
     up: Up,
     idx: usize
