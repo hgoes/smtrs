@@ -3490,7 +3490,7 @@ impl<'a,T : 'a+Composite,Up : ViewMut<'a,Element=BitVecVectorStack<T>>> ViewMut<
 }
 
 #[derive(Clone,PartialEq,Eq)]
-struct Then<Up,V>(Up,V);
+pub struct Then<Up,V>(Up,V);
 
 impl<'a,Up : View<'a>,V : View<'a,Viewed=Up::Element>> View<'a> for Then<Up,V> {
     type Viewed = Up::Viewed;
@@ -3525,7 +3525,6 @@ struct FstView<A,B>(PhantomData<(A,B)>);
 
 #[derive(Clone,PartialEq,Eq)]
 struct SndView<A,B>(PhantomData<(A,B)>);
-
 
 impl<'a,A : 'a+Composite,B : 'a+Composite> View<'a> for FstView<A,B> {
     type Viewed = (A,B);
