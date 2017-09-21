@@ -3527,10 +3527,22 @@ impl<'a,Up : ViewMut<'a>,V : ViewMut<'a,Viewed=Up::Element>> ViewMut<'a> for The
 }
 
 #[derive(Clone,PartialEq,Eq)]
-struct FstView<A,B>(PhantomData<(A,B)>);
+pub struct FstView<A,B>(PhantomData<(A,B)>);
 
 #[derive(Clone,PartialEq,Eq)]
-struct SndView<A,B>(PhantomData<(A,B)>);
+pub struct SndView<A,B>(PhantomData<(A,B)>);
+
+impl<A,B> FstView<A,B> {
+    pub fn new() -> Self {
+        FstView(PhantomData)
+    }
+}
+
+impl<A,B> SndView<A,B> {
+    pub fn new() -> Self {
+        SndView(PhantomData)
+    }
+}
 
 impl<'a,A : 'a+Composite,B : 'a+Composite> View<'a> for FstView<A,B> {
     type Viewed = (A,B);
