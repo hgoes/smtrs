@@ -2860,88 +2860,8 @@ impl<'a,T : Composite,Em : Embed> Iterator for VecIter<'a,T,Em> {
     }
 }
 
-pub trait Contains<'a,Idx> {
-    type Element : 'a;
-    type Position : 'static+Copy;
-    fn get_el<'b>(&'b self,Idx) -> &'b Self::Element where 'a : 'b;
-    fn position(&self,Idx) -> Self::Position;
-    fn get_tr<Em : Embed>(Transf<Em>,Self::Position) -> Transf<Em>;
-    fn access<'b,Em : Embed>(&'b self,inp: Transf<Em>,idx: Idx)
-                             -> (&'b Self::Element,Transf<Em>)
-        where 'a : 'b, Idx : Clone {
-        let el = self.get_el(idx.clone());
-        let pos = self.position(idx);
-        let tr = <Self as Contains<'a,Idx>>::get_tr(inp,pos);
-        (el,tr)
-    }
-}
-
-pub trait ContainsMut<'a,Idx> : Contains<'a,Idx> {
-    fn get_el_mut<'b>(&'b mut self,Idx) -> &'b mut Self::Element where 'a : 'b;
-    fn set_tr<Em : Embed>(Transf<Em>,Self::Position,Transf<Em>) -> Transf<Em>;
-}
-
-pub struct VecIdx(usize);
-
-impl<'a,T : 'a+Composite> Contains<'a,VecIdx> for Vec<T> {
-    type Element = T;
-    type Position = (usize,usize);
-    fn get_el<'b>(&self,idx: VecIdx) -> &T where 'a : 'b {
-        &self[idx.0]
-    }
-    fn position(&self,idx: VecIdx) -> Self::Position {
-        let mut acc = 0;
-        for i in 0..idx.0 {
-            let sz = self[i].num_elem();
-            acc+=sz;
-        }
-        let len = self[idx.0].num_elem();
-        (acc,len)
-    }
-    fn get_tr<Em : Embed>(inp_vec: Transf<Em>,
-                          (off,len): Self::Position) -> Transf<Em> {
-        Transformation::view(off,len,inp_vec)
-    }
-}
-
-impl<'a,T : 'a+Composite> ContainsMut<'a,VecIdx> for Vec<T> {
-    fn get_el_mut<'b>(&'b mut self,idx: VecIdx) -> &'b mut T where 'a : 'b {
-        &mut self[idx.0]
-    }
-    fn set_tr<Em : Embed>(inp_vec: Transf<Em>,
-                          (off,len): Self::Position,
-                          inp_el: Transf<Em>) -> Transf<Em> {
-        Transformation::concat(&[Transformation::view(0,off,inp_vec.clone()),
-                                 inp_el,
-                                 Transformation::view(off+len,inp_vec.size()-off-len,inp_vec)])
-    }
-}
-
 #[derive(Copy,Clone)]
 pub struct AssocKey<'a,K : 'a>(pub &'a K);
-
-pub struct Top;
-
-impl<'a,T> Contains<'a,Top> for BitVecVectorStack<T> {
-    type Element = SingletonBitVec;
-    type Position = ();
-    fn get_el<'b>(&'b self,_:Top) -> &'b SingletonBitVec where 'a : 'b {
-        &self.top
-    }
-    fn position(&self,_:Top) -> Self::Position { () }
-    fn get_tr<Em : Embed>(inp: Transf<Em>,_:Self::Position) -> Transf<Em> {
-        Transformation::view(0,1,inp)
-    }
-}
-
-impl<'a,T> ContainsMut<'a,Top> for BitVecVectorStack<T> {
-    fn get_el_mut<'b>(&'b mut self,_:Top) -> &'b mut SingletonBitVec where 'a : 'b {
-        &mut self.top
-    }
-    fn set_tr<Em : Embed>(inp:Transf<Em>,_:Self::Position,ninp: Transf<Em>) -> Transf<Em> {
-        Transformation::concat(&[ninp,Transformation::view(1,inp.size()-1,inp)])
-    }
-}
 
 pub trait CondIterator<Em : Embed> : Sized {
     type Item;
@@ -2964,16 +2884,6 @@ pub trait CondIterator<Em : Embed> : Sized {
     fn map<F>(self,f: F) -> Map<Self,F> {
         Map { iter: self,
               f: f }
-    }
-    fn get<'a,Obj>(self,obj: &'a Obj,inp_obj: Transf<Em>) -> Getter<'a,Em,Self,Obj> {
-        Getter { iter: self,
-                 obj: obj,
-                 inp_obj: inp_obj }
-    }
-    fn get_idx<'a,Obj>(self,obj: &'a Obj,inp_obj: Transf<Em>) -> GetterIdx<'a,Em,Self,Obj> {
-        GetterIdx { iter: self,
-                    obj: obj,
-                    inp_obj: inp_obj }
     }
     fn adjust_idx<Idx>(self,idx: Idx) -> AdjustIdx<Self,Idx> {
         AdjustIdx { iter: self,
@@ -3261,69 +3171,6 @@ pub fn access_dyn<T,Em : DeriveValues>(vec: &Vec<T>,
                      idx: pos })
 }
 
-pub struct Getter<'a,Em : Embed,It,Obj : 'a> {
-    iter: It,
-    obj: &'a Obj,
-    inp_obj: Transf<Em>
-}
-
-impl<'a,Em : Embed,Idx : Clone,El : 'a,Obj : Contains<'a,Idx,Element=El>,It : CondIterator<Em,Item=Idx>> CondIterator<Em> for Getter<'a,Em,It,Obj> {
-    type Item = (&'a El,Transf<Em>);
-    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
-            -> Result<Option<Self::Item>,Em::Error> {
-        match self.iter.next(conds,pos,em)? {
-            None => Ok(None),
-            Some(idx) => {
-                let ref el = self.obj.get_el(idx.clone());
-                let pos = self.obj.position(idx);
-                let inp_el = <Obj as Contains<Idx>>::get_tr(self.inp_obj.clone(),pos);
-                Ok(Some((el,inp_el)))
-            }
-        }
-    }
-}
-
-pub struct GetterIdx<'a,Em : Embed,It,Obj : 'a> {
-    iter: It,
-    obj: &'a Obj,
-    inp_obj: Transf<Em>
-}
-
-impl<'a,Em : Embed,Idx : Clone,El : 'a,Obj : Contains<'a,Idx,Element=El>,It : CondIterator<Em,Item=Idx>> CondIterator<Em> for GetterIdx<'a,Em,It,Obj> {
-    type Item = (Idx,&'a El,Transf<Em>);
-    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
-            -> Result<Option<Self::Item>,Em::Error> {
-        match self.iter.next(conds,pos,em)? {
-            None => Ok(None),
-            Some(idx) => {
-                let ref el = self.obj.get_el(idx.clone());
-                let pos = self.obj.position(idx.clone());
-                let inp_el = <Obj as Contains<Idx>>::get_tr(self.inp_obj.clone(),pos);
-                Ok(Some((idx,el,inp_el)))
-            }
-        }
-    }
-}
-
-impl<'a,T : 'a+Composite> Contains<'a,usize> for Choice<T> {
-    type Element = T;
-    type Position = (usize,usize);
-    fn get_el<'b>(&'b self,i: usize) -> &'b T where 'a : 'b {
-        &self.0[i]
-    }
-    fn position(&self,idx: usize) -> Self::Position {
-        let mut acc = 1+idx;
-        for i in 0..idx {
-            acc+=self.0[i].num_elem();
-        }
-        let sz = self.0[idx].num_elem();
-        (acc,sz)
-    }
-    fn get_tr<Em : Embed>(inp: Transf<Em>,(off,sz): Self::Position) -> Transf<Em> {
-        Transformation::view(off,sz,inp)
-    }
-}
-
 pub struct Chosen<'a,T : 'a,Em : Embed> {
     choice: &'a Choice<T>,
     inp_choice: Transf<Em>,
@@ -3357,39 +3204,6 @@ impl<T> Choice<T> {
     }
 }
 
-impl<'a,T : 'a+Composite> Contains<'a,usize> for BitVecVectorStack<T> {
-    type Element = T;
-    type Position = (usize,usize);
-    fn get_el<'b>(&self,idx: usize) -> &T where 'a : 'b {
-        &self.elements[idx]
-    }
-    fn position(&self,idx: usize) -> Self::Position {
-        let mut acc = 1;
-        for i in 0..idx {
-            acc += self.elements[i].num_elem()
-        }
-        let sz = self.elements[idx].num_elem();
-        (acc,sz)
-    }
-    fn get_tr<Em : Embed>(inp: Transf<Em>,(off,sz): Self::Position) -> Transf<Em> {
-        Transformation::view(off,sz,inp)
-    }
-}
-
-impl<'a,T : 'a+Composite> ContainsMut<'a,usize> for BitVecVectorStack<T> {
-    fn get_el_mut<'b>(&'b mut self,idx: usize) -> &'b mut T where 'a : 'b {
-        &mut self.elements[idx]
-    }
-    fn set_tr<Em : Embed>(inp_vec: Transf<Em>,
-                          (off,len): Self::Position,
-                          inp_el: Transf<Em>) -> Transf<Em> {
-
-        Transformation::concat(&[Transformation::view(0,off,inp_vec.clone()),
-                                 inp_el,
-                                 Transformation::view(off+len,inp_vec.size()-off-len,inp_vec)])
-    }
-}
-
 impl<T : Composite> BitVecVectorStack<T> {
     pub fn access_top<Em : DeriveValues>(&self,
                                          inp: Transf<Em>,
@@ -3415,36 +3229,6 @@ impl<T : Composite> BitVecVectorStack<T> {
 pub struct IndexRec<Idx,SIdx>(Idx,SIdx);
 #[derive(Clone,Copy)]
 pub struct PositionRec<P,SP>(P,SP);
-
-impl<'a,Idx : Clone,SIdx,B : 'a+Contains<'a,SIdx>,A : 'a+Contains<'a,Idx,Element=B>> Contains<'a,IndexRec<Idx,SIdx>> for A {
-    type Element = B::Element;
-    type Position = PositionRec<A::Position,B::Position>;
-    fn get_el<'b>(&'b self,idx: IndexRec<Idx,SIdx>) -> &'b Self::Element where 'a : 'b {
-        self.get_el(idx.0).get_el(idx.1)
-    }
-    fn position(&self,idx: IndexRec<Idx,SIdx>) -> Self::Position {
-        let pos1 = self.position(idx.0.clone());
-        let pos2 = self.get_el(idx.0).position(idx.1);
-        PositionRec(pos1,pos2)
-    }
-    fn get_tr<Em : Embed>(inp: Transf<Em>,
-                          pos: Self::Position) -> Transf<Em> {
-        <B as Contains<'a,SIdx>>::get_tr(<A as Contains<'a,Idx>>::get_tr(inp,pos.0),pos.1)
-    }
-}
-
-impl<'a,Idx : Clone,SIdx,B : 'a+ContainsMut<'a,SIdx>,A : 'a+ContainsMut<'a,Idx,Element=B>> ContainsMut<'a,IndexRec<Idx,SIdx>> for A {
-    fn get_el_mut<'b>(&'b mut self,idx: IndexRec<Idx,SIdx>) -> &'b mut Self::Element where 'a : 'b {
-        self.get_el_mut(idx.0).get_el_mut(idx.1)
-    }
-    fn set_tr<Em : Embed>(inp: Transf<Em>,
-                          pos: Self::Position,
-                          ninp: Transf<Em>) -> Transf<Em> {
-        let old = <A as Contains<'a,Idx>>::get_tr(inp.clone(),pos.0);
-        let new = <B as ContainsMut<'a,SIdx>>::set_tr(old,pos.1,ninp);
-        <A as ContainsMut<'a,Idx>>::set_tr(inp,pos.0,new)
-    }
-}
 
 impl<Em : Embed,Idx> CondIterator<Em> for Once<Idx> {
     type Item = Idx;
