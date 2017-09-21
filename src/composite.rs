@@ -3627,9 +3627,17 @@ fn finish_updates<Em : Embed>(mut upd: Updates<Em>,orig: Transf<Em>) -> Transf<E
     Transformation::concat(&res[..])
 }
 
+#[derive(Clone,PartialEq,Eq)]
 pub struct BitVecVectorStackView<Up> {
     up: Up,
     idx: usize
+}
+
+impl<Up> BitVecVectorStackView<Up> {
+    pub fn new(up: Up,idx: usize) -> Self {
+        BitVecVectorStackView { up: up,
+                                idx: idx }
+    }
 }
 
 impl<'a,T : 'a+Composite,Up : View<'a,Element=BitVecVectorStack<T>>> View<'a> for BitVecVectorStackView<Up> {
