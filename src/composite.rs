@@ -19,6 +19,7 @@ use std::ops::{Range};
 use std::iter::{Peekable,Once};
 use std::usize;
 use std::fmt;
+use std::marker::PhantomData;
 
 pub trait Composite : Sized + Eq + Hash + Clone {
 
@@ -3304,74 +3305,74 @@ pub trait ViewMut<'a> : View<'a> {
 }
 
 #[derive(Clone,PartialEq,Eq)]
-pub struct VecView<Up> {
-    up: Up,
-    idx: usize
+pub struct VecView<T> {
+    idx: usize,
+    phantom: PhantomData<T>
 }
 
-impl<Up> VecView<Up> {
-    pub fn new(up: Up,idx: usize) -> Self {
-        VecView { up: up,
-                  idx: idx }
+impl<T> VecView<T> {
+    pub fn new(idx: usize) -> Self {
+        VecView { idx: idx,
+                  phantom: PhantomData }
     }
 }
 
-impl<'a,T : 'a+Composite,Up : View<'a,Element=Vec<T>>> View<'a> for VecView<Up> {
-    type Viewed = Up::Viewed;
+impl<'a,T : 'a+Composite> View<'a> for VecView<T> {
+    type Viewed = Vec<T>;
     type Element = T;
     fn get_el<'b>(&self,obj: &'b Self::Viewed)
                   -> &'b Self::Element where 'a : 'b {
-        &self.up.get_el(obj)[self.idx]
+        &obj[self.idx]
     }
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
                       -> (usize,&'b Self::Element) where 'a : 'b {
-        let (mut off,up_obj) = self.up.get_el_ext(obj);
+        let mut off = 0;
         for i in 0..self.idx {
-            off+=up_obj[i].num_elem();
+            off+=obj[i].num_elem();
         }
-        let res = &up_obj[self.idx];
+        let res = &obj[self.idx];
         (off,res)
     }
 }
 
-impl<'a,T : 'a+Composite,Up : ViewMut<'a,Element=Vec<T>>> ViewMut<'a> for VecView<Up> {
+impl<'a,T : 'a+Composite> ViewMut<'a> for VecView<T> {
     fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
                       -> &'b mut Self::Element where 'a : 'b {
-        &mut self.up.get_el_mut(obj)[self.idx]
+        &mut obj[self.idx]
     }
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
                           -> (usize,&'b mut Self::Element)
         where 'a : 'b {
 
-        let (mut off,up_obj) = self.up.get_el_mut_ext(obj);
+        let mut off = 0;
         for i in 0..self.idx {
-            off+=up_obj[i].num_elem();
+            off+=obj[i].num_elem();
         }
-        let res = &mut up_obj[self.idx];
+        let res = &mut obj[self.idx];
         (off,res)
     }
 }
 
 #[derive(Clone,PartialEq,Eq)]
-pub struct AssocView<'a,Up,K : 'a> {
-    up: Up,
-    key: &'a K
+pub struct AssocView<'a,K : 'a,V> {
+    key: &'a K,
+    phantom: PhantomData<V>
 }
 
-impl<'a,Up,K> AssocView<'a,Up,K> {
-    pub fn new(up: Up,key: &'a K) -> Self {
-        AssocView { up: up,
-                    key: key }
+impl<'a,K,V> AssocView<'a,K,V> {
+    pub fn new(key: &'a K) -> Self {
+        AssocView { key: key,
+                    phantom: PhantomData }
     }
 }
 
-impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite+Clone,Up : View<'a,Element=Assoc<K,V>>> View<'a> for AssocView<'a,Up,K> {
-    type Viewed = Up::Viewed;
+impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite> View<'a> for AssocView<'a,K,V> {
+    type Viewed = Assoc<K,V>;
     type Element = V;
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
                       -> (usize,&'b Self::Element) where 'a : 'b {
-        let (mut off,up_obj) = self.up.get_el_ext(obj);
-        for &(ref k,ref el) in up_obj.0.iter() {
+        let mut off = 0;
+        for &(ref k,ref el) in obj.0.iter() {
             match k.cmp(self.key) {
                 Ordering::Equal => return (off,el),
                 Ordering::Less => { off+=el.num_elem() },
@@ -3382,11 +3383,11 @@ impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite+Clone,Up : View<'a,Element=Assoc<
     }
 }
 
-impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite+Clone,Up : ViewMut<'a,Element=Assoc<K,V>>> ViewMut<'a> for AssocView<'a,Up,K> {
+impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite> ViewMut<'a> for AssocView<'a,K,V> {
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
                           -> (usize,&'b mut Self::Element) where 'a : 'b {
-        let (mut off,up_obj) = self.up.get_el_mut_ext(obj);
-        for &mut (ref k,ref mut el) in up_obj.0.iter_mut() {
+        let mut off = 0;
+        for &mut (ref k,ref mut el) in obj.0.iter_mut() {
             match k.cmp(self.key) {
                 Ordering::Equal => return (off,el),
                 Ordering::Less => { off+=el.num_elem() },
@@ -3485,5 +3486,93 @@ impl<'a,T : 'a+Composite,Up : ViewMut<'a,Element=BitVecVectorStack<T>>> ViewMut<
         }
         let res = &mut up_obj.elements[self.idx];
         (off,res)
+    }
+}
+
+#[derive(Clone,PartialEq,Eq)]
+struct Then<Up,V>(Up,V);
+
+impl<'a,Up : View<'a>,V : View<'a,Viewed=Up::Element>> View<'a> for Then<Up,V> {
+    type Viewed = Up::Viewed;
+    type Element = V::Element;
+    fn get_el<'b>(&self,obj: &'b Self::Viewed)
+                  -> &'b Self::Element where 'a : 'b {
+        self.1.get_el(self.0.get_el(obj))
+    }
+    fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
+                      -> (usize,&'b Self::Element) where 'a : 'b {
+        let (off1,sub) = self.0.get_el_ext(obj);
+        let (off2,res) = self.1.get_el_ext(sub);
+        (off1+off2,res)
+    }
+}
+
+impl<'a,Up : ViewMut<'a>,V : ViewMut<'a,Viewed=Up::Element>> ViewMut<'a> for Then<Up,V> {
+    fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
+                      -> &'b mut Self::Element where 'a : 'b {
+        self.1.get_el_mut(self.0.get_el_mut(obj))
+    }
+    fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
+                          -> (usize,&'b mut Self::Element) where 'a : 'b {
+        let (off1,sub) = self.0.get_el_mut_ext(obj);
+        let (off2,res) = self.1.get_el_mut_ext(sub);
+        (off1+off2,res)
+    }
+}
+
+#[derive(Clone,PartialEq,Eq)]
+struct FstView<A,B>(PhantomData<(A,B)>);
+
+#[derive(Clone,PartialEq,Eq)]
+struct SndView<A,B>(PhantomData<(A,B)>);
+
+
+impl<'a,A : 'a+Composite,B : 'a+Composite> View<'a> for FstView<A,B> {
+    type Viewed = (A,B);
+    type Element = A;
+    fn get_el<'b>(&self,obj: &'b Self::Viewed)
+                  -> &'b Self::Element where 'a : 'b {
+        &obj.0
+    }
+    fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
+                      -> (usize,&'b Self::Element) where 'a : 'b {
+        (0,&obj.0)
+    }
+}
+
+impl<'a,A : 'a+Composite,B : 'a+Composite> View<'a> for SndView<A,B> {
+    type Viewed = (A,B);
+    type Element = B;
+    fn get_el<'b>(&self,obj: &'b Self::Viewed)
+                  -> &'b Self::Element where 'a : 'b {
+        &obj.1
+    }
+    fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
+                      -> (usize,&'b Self::Element) where 'a : 'b {
+        (obj.0.num_elem(),&obj.1)
+    }
+}
+
+impl<'a,A : 'a+Composite,B : 'a+Composite> ViewMut<'a> for FstView<A,B> {
+    fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
+                      -> &'b mut Self::Element where 'a : 'b {
+        &mut obj.0
+    }
+    fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
+                          -> (usize,&'b mut Self::Element)
+        where 'a : 'b {
+        (0,&mut obj.0)
+    }
+}
+
+impl<'a,A : 'a+Composite,B : 'a+Composite> ViewMut<'a> for SndView<A,B> {
+    fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
+                      -> &'b mut Self::Element where 'a : 'b {
+        &mut obj.1
+    }
+    fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
+                          -> (usize,&'b mut Self::Element)
+        where 'a : 'b {
+        (obj.0.num_elem(),&mut obj.1)
     }
 }
