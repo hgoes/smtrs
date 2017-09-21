@@ -3441,50 +3441,50 @@ fn finish_updates<Em : Embed>(mut upd: Updates<Em>,orig: Transf<Em>) -> Transf<E
 }
 
 #[derive(Clone,PartialEq,Eq)]
-pub struct BitVecVectorStackView<Up> {
-    up: Up,
-    idx: usize
+pub struct BitVecVectorStackView<T> {
+    idx: usize,
+    phantom: PhantomData<T>
 }
 
 impl<Up> BitVecVectorStackView<Up> {
-    pub fn new(up: Up,idx: usize) -> Self {
-        BitVecVectorStackView { up: up,
-                                idx: idx }
+    pub fn new(idx: usize) -> Self {
+        BitVecVectorStackView { idx: idx,
+                                phantom: PhantomData }
     }
 }
 
-impl<'a,T : 'a+Composite,Up : View<'a,Element=BitVecVectorStack<T>>> View<'a> for BitVecVectorStackView<Up> {
-    type Viewed = Up::Viewed;
+impl<'a,T : 'a+Composite> View<'a> for BitVecVectorStackView<T> {
+    type Viewed = BitVecVectorStack<T>;
     type Element = T;
     fn get_el<'b>(&self,obj: &'b Self::Viewed)
                   -> &'b Self::Element where 'a : 'b {
-        &self.up.get_el(obj).elements[self.idx]
+        &obj.elements[self.idx]
     }
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
                       -> (usize,&'b Self::Element) where 'a : 'b {
-        let (mut off,up_obj) = self.up.get_el_ext(obj);
+        let mut off = 0;
         for i in 0..self.idx {
-            off+=up_obj.elements[i].num_elem();
+            off+=obj.elements[i].num_elem();
         }
-        let res = &up_obj.elements[self.idx];
+        let res = &obj.elements[self.idx];
         (off,res)
     }
 }
 
-impl<'a,T : 'a+Composite,Up : ViewMut<'a,Element=BitVecVectorStack<T>>> ViewMut<'a> for BitVecVectorStackView<Up> {
+impl<'a,T : 'a+Composite> ViewMut<'a> for BitVecVectorStackView<T> {
     fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
                       -> &'b mut Self::Element where 'a : 'b {
-        &mut self.up.get_el_mut(obj).elements[self.idx]
+        &mut obj.elements[self.idx]
     }
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
                           -> (usize,&'b mut Self::Element)
         where 'a : 'b {
 
-        let (mut off,up_obj) = self.up.get_el_mut_ext(obj);
+        let mut off = 0;
         for i in 0..self.idx {
-            off+=up_obj.elements[i].num_elem();
+            off+=obj.elements[i].num_elem();
         }
-        let res = &mut up_obj.elements[self.idx];
+        let res = &mut obj.elements[self.idx];
         (off,res)
     }
 }
