@@ -2342,11 +2342,39 @@ impl<K : Ord+Hash+Clone,V : Composite> Assoc<K,V> {
     pub fn new() -> Self {
         Assoc(Vec::new())
     }
-    pub fn access<'a>(&self,key: AssocKey<'a,K>) -> &V where K : 'a {
-        match self.0.binary_search_by(|&(ref k,_)| k.cmp(key.0)) {
+    pub fn access(&self,key: &K) -> &V {
+        match self.0.binary_search_by(|&(ref k,_)| k.cmp(key)) {
             Ok(res) => &self.0[res].1,
             Err(_) => panic!("Assoc key not found")
         }
+    }
+    pub fn access_mut(&mut self,key: &K) -> &V {
+        match self.0.binary_search_by(|&(ref k,_)| k.cmp(key)) {
+            Ok(res) => &mut self.0[res].1,
+            Err(_) => panic!("Assoc key not found")
+        }
+    }
+    pub fn access_ext(&self,key: &K) -> (usize,&V) {
+        let mut off = 0;
+        for &(ref k,ref el) in self.0.iter() {
+            match k.cmp(key) {
+                Ordering::Less => { off+=el.num_elem() },
+                Ordering::Greater => panic!("Assoc key not found"),
+                Ordering::Equal => return (off,el)
+            }
+        }
+        panic!("Assoc key not found")
+    }
+    pub fn access_mut_ext(&mut self,key: &K) -> (usize,&mut V) {
+        let mut off = 0;
+        for &mut (ref k,ref mut el) in self.0.iter_mut() {
+            match k.cmp(key) {
+                Ordering::Less => { off+=el.num_elem() },
+                Ordering::Greater => panic!("Assoc key not found"),
+                Ordering::Equal => return (off,el)
+            }
+        }
+        panic!("Assoc key not found")
     }
 }
 
