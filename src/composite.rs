@@ -2900,6 +2900,11 @@ pub trait CondIterator<Em : Embed> : Sized {
         CondIter { conds: Vec::new(),
                    iter: self }
     }
+    fn get<'a,Obj,It>(self,obj: &'a Obj,obj_inp: Transf<Em>) -> Getter<'a,Em,Obj,Self> {
+        Getter { obj: obj,
+                 obj_inp: obj_inp,
+                 iter: self }
+    }
     fn seq<It,F>(self,f: F) -> Seq<Self,It,F> {
         Seq { iter1: self,
               iter2: None,
@@ -3044,6 +3049,29 @@ impl<Em : Embed,El : Ord+Composite,It : CondIterator<Em,Item=(El,Transf<Em>)>> C
             }
         }
         Ok((Choice(els),Transformation::concat(&inps[..])))
+    }
+}
+
+pub struct Getter<'a,Em : Embed,Obj : 'a,It> {
+    obj: &'a Obj,
+    obj_inp: Transf<Em>,
+    iter: It
+}
+
+impl<'a,Em : Embed,Obj : Composite,It : CondIterator<Em>> CondIterator<Em> for Getter<'a,Em,Obj,It>
+    where It::Item : View<'a,Viewed=Obj> {
+    type Item = (It::Item,&'a <It::Item as View<'a>>::Element,Transf<Em>);
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        match self.iter.next(conds,pos,em)? {
+            None => Ok(None),
+            Some(view) => {
+                let (off,el) = view.get_el_ext(self.obj);
+                let el_sz = el.num_elem();
+                let el_inp = Transformation::view(off,el_sz,self.obj_inp.clone());
+                Ok(Some((view,el,el_inp)))
+            }
+        }
     }
 }
 
