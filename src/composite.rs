@@ -2905,6 +2905,10 @@ pub trait CondIterator<Em : Embed> : Sized {
                  obj_inp: obj_inp,
                  iter: self }
     }
+    fn then<V>(self,view: V) -> ThenIterator<V,Self> {
+        ThenIterator { view: view,
+                       iter: self }
+    }
     fn seq<It,F>(self,f: F) -> Seq<Self,It,F> {
         Seq { iter1: self,
               iter2: None,
@@ -3071,6 +3075,22 @@ impl<'a,Em : Embed,Obj : Composite,It : CondIterator<Em>> CondIterator<Em> for G
                 let el_inp = Transformation::view(off,el_sz,self.obj_inp.clone());
                 Ok(Some((view,el,el_inp)))
             }
+        }
+    }
+}
+
+pub struct ThenIterator<V,It> {
+    view: V,
+    iter: It
+}
+
+impl<Em : Embed,V : Clone,It : CondIterator<Em>> CondIterator<Em> for ThenIterator<V,It> {
+    type Item = Then<It::Item,V>;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        match self.iter.next(conds,pos,em)? {
+            None => Ok(None),
+            Some(res) => Ok(Some(Then::new(res,self.view.clone())))
         }
     }
 }
