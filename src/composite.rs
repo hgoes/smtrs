@@ -3236,7 +3236,7 @@ pub struct Chosen<'a,T : 'a,Em : Embed> {
 }
 
 impl<'a,Em : Embed,T : Composite> CondIterator<Em> for Chosen<'a,T,Em> {
-    type Item = usize;
+    type Item = ChoiceView<T>;
     fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,_: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
         if self.idx<=self.choice.0.len() {
@@ -3245,7 +3245,7 @@ impl<'a,Em : Embed,T : Composite> CondIterator<Em> for Chosen<'a,T,Em> {
             self.off+=self.choice.0[self.idx].num_elem()+1;
             let res = self.idx;
             self.idx+=1;
-            Ok(Some(res))
+            Ok(Some(ChoiceView::new(res)))
         } else {
             Ok(None)
         }
@@ -3619,5 +3619,35 @@ impl<'a,A : 'a+Composite,B : 'a+Composite> ViewMut<'a> for SndView<A,B> {
                           -> (usize,&'b mut Self::Element)
         where 'a : 'b {
         (obj.0.num_elem(),&mut obj.1)
+    }
+}
+
+#[derive(Clone,PartialEq,Eq)]
+pub struct ChoiceView<T> {
+    idx: usize,
+    phantom: PhantomData<T>
+}
+
+impl<T> ChoiceView<T> {
+    pub fn new(idx: usize) -> Self {
+        ChoiceView { idx: idx,
+                     phantom: PhantomData }
+    }
+}
+
+impl<'a,T : 'a+Ord+Composite> View<'a> for ChoiceView<T> {
+    type Viewed = Choice<T>;
+    type Element = T;
+    fn get_el<'b>(&self,obj: &'b Self::Viewed)
+                  -> &'b Self::Element where 'a : 'b {
+        &obj.0[self.idx]
+    }
+    fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
+                      -> (usize,&'b Self::Element) where 'a : 'b {
+        let mut off = self.idx;
+        for i in 0..self.idx {
+            off+=obj.0[i].num_elem();
+        }
+        (off,&obj.0[self.idx])
     }
 }
