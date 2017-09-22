@@ -2909,6 +2909,10 @@ pub trait CondIterator<Em : Embed> : Sized {
         ThenIterator { view: view,
                        iter: self }
     }
+    fn before<V>(self,view: V) -> BeforeIterator<V,Self> {
+        BeforeIterator { view: view,
+                         iter: self }
+    }
     fn seq<It,F>(self,f: F) -> Seq<Self,It,F> {
         Seq { iter1: self,
               iter2: None,
@@ -3094,6 +3098,23 @@ impl<Em : Embed,V : Clone,It : CondIterator<Em>> CondIterator<Em> for ThenIterat
         }
     }
 }
+
+pub struct BeforeIterator<V,It> {
+    view: V,
+    iter: It
+}
+
+impl<Em : Embed,V : Clone,It : CondIterator<Em>> CondIterator<Em> for BeforeIterator<V,It> {
+    type Item = Then<V,It::Item>;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        match self.iter.next(conds,pos,em)? {
+            None => Ok(None),
+            Some(res) => Ok(Some(Then::new(self.view.clone(),res)))
+        }
+    }
+}
+
 
 pub struct Seq<It1,It2,F> {
     iter1: It1,
