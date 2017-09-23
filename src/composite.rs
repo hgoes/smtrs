@@ -2913,7 +2913,8 @@ pub trait CondIterator<Em : Embed> : Sized {
         BeforeIterator { view: view,
                          iter: self }
     }
-    fn seq<It,F>(self,f: F) -> Seq<Self,It,F> {
+    fn seq<It,F>(self,f: F) -> Seq<Self,It,F>
+        where F : FnMut(Self::Item,&mut Em) -> Result<It,Em::Error> {
         Seq { iter1: self,
               iter2: None,
               f: f }
