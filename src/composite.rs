@@ -2919,9 +2919,10 @@ pub trait CondIterator<Em : Embed> : Sized {
               iter2: None,
               f: f }
     }
-    fn seq_pure<It,F>(self,f: F) -> SeqPure<Self,It,F> {
+    fn seq_pure<It,Ctx,F>(self,ctx: Ctx,f: F) -> SeqPure<Self,It,Ctx,F> {
         SeqPure { iter1: self,
                   iter2: None,
+                  ctx: ctx,
                   f: f }
     }
     fn product<It : Clone+CondIterator<Em>>(self,it: It) -> Product<Em,Self,It> {
@@ -3163,17 +3164,18 @@ impl<Em,It1,It2,F> CondIterator<Em> for Seq<It1,It2,F>
     }
 }
 
-pub struct SeqPure<It1,It2,F> {
+pub struct SeqPure<It1,It2,Ctx,F> {
     iter1: It1,
     iter2: Option<(It2,usize)>,
+    ctx: Ctx,
     f: F
 }
 
-impl<Em,It1,It2,F> CondIterator<Em> for SeqPure<It1,It2,F>
+impl<Em,It1,It2,Ctx,F> CondIterator<Em> for SeqPure<It1,It2,Ctx,F>
     where Em : Embed,
           It1 : CondIterator<Em>,
           It2 : CondIterator<Em>,
-          F : FnMut(It1::Item) -> It2 {
+          F : FnMut(&Ctx,It1::Item) -> It2 {
 
     type Item = It2::Item;
     fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
@@ -3192,7 +3194,7 @@ impl<Em,It1,It2,F> CondIterator<Em> for SeqPure<It1,It2,F>
                     None => return Ok(None),
                     Some(el) => {
                         let npos = conds.len();
-                        let mut niter = (self.f)(el);
+                        let mut niter = (self.f)(&self.ctx,el);
                         match niter.next(conds,npos,em)? {
                             None => {},
                             Some(nel) => {
