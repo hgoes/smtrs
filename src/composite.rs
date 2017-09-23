@@ -2924,6 +2924,9 @@ pub trait CondIterator<Em : Embed> : Sized {
                   iter2: None,
                   f: f }
     }
+    fn product<It : Clone+CondIterator<Em>>(self,it: It) -> Product<Em,Self,It> {
+        Product::new(self,it)
+    }
     fn map<F>(self,f: F) -> Map<Self,F> {
         Map { iter: self,
               f: f }
@@ -3116,7 +3119,6 @@ impl<Em : Embed,V : Clone,It : CondIterator<Em>> CondIterator<Em> for BeforeIter
     }
 }
 
-
 pub struct Seq<It1,It2,F> {
     iter1: It1,
     iter2: Option<(It2,usize)>,
@@ -3205,6 +3207,50 @@ impl<Em,It1,It2,F> CondIterator<Em> for SeqPure<It1,It2,F>
     }
 }
 
+pub struct Product<Em : Embed,It1 : CondIterator<Em>,It2> {
+    iter1: It1,
+    iter2: It2,
+    state: Option<(It1::Item,usize,It2)>
+}
+
+impl<Em : Embed,It1 : CondIterator<Em>,It2 : Clone+CondIterator<Em>> Product<Em,It1,It2> {
+    pub fn new(it1: It1,it2: It2) -> Self {
+        Product { iter1: it1,
+                  iter2: it2,
+                  state: None }
+    }
+    fn take_state(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+                  -> Result<Option<(It1::Item,usize,It2)>,Em::Error> {
+        match self.state.take() {
+            Some(r) => Ok(Some(r)),
+            None => {
+                conds.truncate(pos);
+                match self.iter1.next(conds,pos,em)? {
+                    None => Ok(None),
+                    Some(el) => Ok(Some((el,pos,self.iter2.clone())))
+                }
+            }
+        }
+    }
+}
+
+impl<Em : Embed,It1 : CondIterator<Em>,It2 : Clone+CondIterator<Em>> CondIterator<Em> for Product<Em,It1,It2>
+    where It1::Item : Clone {
+    type Item = (It1::Item,It2::Item);
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        while let Some((el1,pos1,mut it2)) = self.take_state(conds,pos,em)? {
+            match it2.next(conds,pos1,em)? {
+                None => continue,
+                Some(el2) => {
+                    self.state = Some((el1.clone(),pos1,it2));
+                    return Ok(Some((el1,el2)))
+                }
+            }
+        }
+        Ok(None)
+    }
+}
 
 pub struct Map<It,F> {
     iter: It,
