@@ -3307,7 +3307,7 @@ impl<T : Composite> BitVecVectorStack<T> {
                                          inp: Transf<Em>,
                                          exprs: &[Em::Expr],
                                          em: &mut Em)
-                                         -> Result<IndexedIter<Em>,Em::Error> {
+                                         -> Result<BitVecVectorStackAccess<T,Em>,Em::Error> {
         let idx = inp.get(exprs,0,em)?;
         let opt_vals = em.derive_values(&idx)?;
         let it = match opt_vals {
@@ -3318,8 +3318,9 @@ impl<T : Composite> BitVecVectorStack<T> {
                 IndexIterator::Unlimited(idx_rsrt,0..self.elements.len())
             }
         };
-        Ok(IndexedIter { iter: it,
-                         idx: Transformation::view(0,1,inp) })
+        Ok(BitVecVectorStackAccess { iter: IndexedIter { iter: it,
+                                                         idx: Transformation::view(0,1,inp) },
+                                     phantom: PhantomData })
 
     }
 }
@@ -3691,4 +3692,21 @@ impl<'a,T : 'a+Ord+Composite> View<'a> for ChoiceView<T> {
         }
         (off,&obj.0[self.idx])
     }
+}
+
+pub struct BitVecVectorStackAccess<T,Em : DeriveValues> {
+    iter: IndexedIter<Em>,
+    phantom: PhantomData<T>
+}
+
+impl<T,Em : DeriveValues> CondIterator<Em> for BitVecVectorStackAccess<T,Em> {
+    type Item = BitVecVectorStackView<T>;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        match self.iter.next(conds,pos,em)? {
+            None => Ok(None),
+            Some(idx) => Ok(Some(BitVecVectorStackView::new(idx)))
+        }
+    }
+
 }
