@@ -2900,7 +2900,7 @@ pub trait CondIterator<Em : Embed> : Sized {
         CondIter { conds: Vec::new(),
                    iter: self }
     }
-    fn get<'a,Obj,It>(self,obj: &'a Obj,obj_inp: Transf<Em>) -> Getter<'a,Em,Obj,Self> {
+    fn get<'a,Obj>(self,obj: &'a Obj,obj_inp: Transf<Em>) -> Getter<'a,Em,Obj,Self> {
         Getter { obj: obj,
                  obj_inp: obj_inp,
                  iter: self }
