@@ -3409,6 +3409,10 @@ pub trait View<'a> {
     }
     fn get_el_ext<'b>(&self,&'b Self::Viewed)
                       -> (usize,&'b Self::Element) where 'a : 'b;
+    fn then<V : View<'a>>(self,v: V) -> Then<Self,V>
+        where Self : Sized {
+        Then::new(self,v)
+    }
 }
 
 pub trait ViewMut<'a> : View<'a> {
