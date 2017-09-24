@@ -3756,5 +3756,15 @@ impl<T,Em : DeriveValues> CondIterator<Em> for BitVecVectorStackAccess<T,Em> {
             Some(idx) => Ok(Some(BitVecVectorStackView::new(idx)))
         }
     }
+}
 
+impl<It : CondIterator<Em>,Em : Embed> CondIterator<Em> for Option<It> {
+    type Item = It::Item;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        match self {
+            &mut None => Ok(None),
+            &mut Some(ref mut it) => it.next(conds,pos,em)
+        }
+    }
 }
