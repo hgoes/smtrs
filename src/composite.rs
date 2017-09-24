@@ -2943,8 +2943,8 @@ pub trait CondIterator<Em : Embed> : Sized {
         AdjustIdx { iter: self,
                     idx: idx }
     }
-    fn filter<Ctx,F>(self,ctx: Ctx,f: F) -> Filter<Self,Ctx,F>
-        where F : FnMut(&Ctx,&Self::Item) -> bool {
+    fn filter<Ctx,F,R>(self,ctx: Ctx,f: F) -> Filter<Self,Ctx,F>
+        where F : FnMut(&Ctx,&Self::Item) -> Option<R> {
         Filter { ctx: ctx,
                  iter: self,
                  f: f }
