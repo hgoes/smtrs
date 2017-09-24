@@ -2913,9 +2913,10 @@ pub trait CondIterator<Em : Embed> : Sized {
         BeforeIterator { view: view,
                          iter: self }
     }
-    fn seq<It,F>(self,f: F) -> Seq<Self,It,F>
-        where F : FnMut(Self::Item,&mut Em) -> Result<It,Em::Error> {
-        Seq { iter1: self,
+    fn seq<It,Ctx,F>(self,ctx: Ctx,f: F) -> Seq<Self,It,Ctx,F>
+        where F : FnMut(&Ctx,Self::Item,&mut Em) -> Result<It,Em::Error> {
+        Seq { ctx: ctx,
+              iter1: self,
               iter2: None,
               f: f }
     }
@@ -3120,17 +3121,18 @@ impl<Em : Embed,V : Clone,It : CondIterator<Em>> CondIterator<Em> for BeforeIter
     }
 }
 
-pub struct Seq<It1,It2,F> {
+pub struct Seq<It1,It2,Ctx,F> {
+    ctx: Ctx,
     iter1: It1,
     iter2: Option<(It2,usize)>,
     f: F
 }
 
-impl<Em,It1,It2,F> CondIterator<Em> for Seq<It1,It2,F>
+impl<Em,It1,It2,Ctx,F> CondIterator<Em> for Seq<It1,It2,Ctx,F>
     where Em : Embed,
           It1 : CondIterator<Em>,
           It2 : CondIterator<Em>,
-          F : FnMut(It1::Item,&mut Em) -> Result<It2,Em::Error> {
+          F : FnMut(&Ctx,It1::Item,&mut Em) -> Result<It2,Em::Error> {
 
     type Item = It2::Item;
     fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
@@ -3149,7 +3151,7 @@ impl<Em,It1,It2,F> CondIterator<Em> for Seq<It1,It2,F>
                     None => return Ok(None),
                     Some(el) => {
                         let npos = conds.len();
-                        let mut niter = (self.f)(el,em)?;
+                        let mut niter = (self.f)(&self.ctx,el,em)?;
                         match niter.next(conds,npos,em)? {
                             None => {},
                             Some(nel) => {
