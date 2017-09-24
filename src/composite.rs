@@ -3827,6 +3827,13 @@ pub struct BitVecVectorStackAccess<T,Em : DeriveValues> {
     phantom: PhantomData<T>
 }
 
+impl<T,Em : DeriveValues> Clone for BitVecVectorStackAccess<T,Em> {
+    fn clone(&self) -> Self {
+        BitVecVectorStackAccess { iter: self.iter.clone(),
+                                  phantom: PhantomData }
+    }
+}
+
 impl<T,Em : DeriveValues> CondIterator<Em> for BitVecVectorStackAccess<T,Em> {
     type Item = BitVecVectorStackView<T>;
     fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
