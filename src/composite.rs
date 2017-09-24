@@ -2937,6 +2937,11 @@ pub trait CondIterator<Em : Embed> : Sized {
         AdjustIdx { iter: self,
                     idx: idx }
     }
+    fn filter<Ctx,F>(self,ctx: Ctx,f: F) -> Filter<Self,Ctx,F> {
+        Filter { ctx: ctx,
+                 iter: self,
+                 f: f }
+    }
 }
 
 pub struct CondIter<Em : Embed,It : CondIterator<Em>> {
@@ -3766,5 +3771,22 @@ impl<It : CondIterator<Em>,Em : Embed> CondIterator<Em> for Option<It> {
             &mut None => Ok(None),
             &mut Some(ref mut it) => it.next(conds,pos,em)
         }
+    }
+}
+
+pub struct Filter<It,Ctx,F> {
+    ctx: Ctx,
+    iter: It,
+    f: F
+}
+
+impl<Em : Embed,Ctx,It : CondIterator<Em>,F : FnMut(&Ctx,&It::Item) -> bool> CondIterator<Em> for Filter<It,Ctx,F> {
+    type Item = It::Item;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        while let Some(res) = self.iter.next(conds,pos,em)? {
+            if (self.f)(&self.ctx,&res) { return Ok(Some(res)) }
+        }
+        Ok(None)
     }
 }
