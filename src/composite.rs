@@ -2943,6 +2943,10 @@ pub trait CondIterator<Em : Embed> : Sized {
                  iter: self,
                  f: f }
     }
+    fn context<Ctx>(self,ctx: Ctx) -> Context<Self,Ctx> {
+        Context { ctx: ctx,
+                  iter: self }
+    }
 }
 
 pub struct CondIter<Em : Embed,It : CondIterator<Em>> {
@@ -3789,5 +3793,21 @@ impl<Em : Embed,Ctx,It : CondIterator<Em>,F : FnMut(&Ctx,&It::Item) -> bool> Con
             if (self.f)(&self.ctx,&res) { return Ok(Some(res)) }
         }
         Ok(None)
+    }
+}
+
+pub struct Context<It,Ctx> {
+    ctx: Ctx,
+    iter: It
+}
+
+impl<Em : Embed,Ctx : Clone,It : CondIterator<Em>> CondIterator<Em> for Context<It,Ctx> {
+    type Item = (Ctx,It::Item);
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        match self.iter.next(conds,pos,em)? {
+            None => Ok(None),
+            Some(el) => Ok(Some((self.ctx.clone(),el)))
+        }
     }
 }
