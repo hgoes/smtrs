@@ -2920,7 +2920,8 @@ pub trait CondIterator<Em : Embed> : Sized {
               iter2: None,
               f: f }
     }
-    fn seq_pure<It,Ctx,F>(self,ctx: Ctx,f: F) -> SeqPure<Self,It,Ctx,F> {
+    fn seq_pure<It,Ctx,F>(self,ctx: Ctx,f: F) -> SeqPure<Self,It,Ctx,F>
+        where F : FnMut(&Ctx,Self::Item) -> It {
         SeqPure { iter1: self,
                   iter2: None,
                   ctx: ctx,
