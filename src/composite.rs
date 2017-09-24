@@ -3726,11 +3726,23 @@ impl<Up : ViewMut,V : ViewMut<Viewed=Up::Element>> ViewMut for Then<Up,V> {
     }
 }
 
-#[derive(Clone,PartialEq,Eq)]
+#[derive(PartialEq,Eq)]
 pub struct FstView<A,B>(PhantomData<(A,B)>);
 
-#[derive(Clone,PartialEq,Eq)]
+impl<A,B> Clone for FstView<A,B> {
+    fn clone(&self) -> Self {
+        FstView(PhantomData)
+    }
+}
+
+#[derive(PartialEq,Eq)]
 pub struct SndView<A,B>(PhantomData<(A,B)>);
+
+impl<A,B> Clone for SndView<A,B> {
+    fn clone(&self) -> Self {
+        SndView(PhantomData)
+    }
+}
 
 impl<A,B> FstView<A,B> {
     pub fn new() -> Self {
