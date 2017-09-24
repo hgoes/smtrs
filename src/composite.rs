@@ -3207,7 +3207,6 @@ impl<Em,It1,It2,Ctx,F> CondIterator<Em> for Seq<It1,It2,Ctx,F>
     }
 }
 
-#[derive(Clone)]
 pub struct SeqPure<It1,It2,Ctx,F> {
     iter1: It1,
     iter2: Option<(It2,usize)>,
@@ -3847,5 +3846,15 @@ impl<Em : Embed,Ctx : Clone,It : CondIterator<Em>> CondIterator<Em> for Context<
             None => Ok(None),
             Some(el) => Ok(Some((self.ctx.clone(),el)))
         }
+    }
+}
+
+impl<It1,It2,Ctx,F> Clone for SeqPure<It1,It2,Ctx,F>
+    where It1 : Clone, It2 : Clone, Ctx : Clone, F : Copy {
+    fn clone(&self) -> Self {
+        SeqPure { iter1: self.iter1.clone(),
+                  iter2: self.iter2.clone(),
+                  ctx: self.ctx.clone(),
+                  f: self.f }
     }
 }
