@@ -1616,6 +1616,7 @@ pub fn max_index<T>(tp: &SortKind<T>) -> usize {
     }
 }
 
+#[derive(Clone)]
 pub enum IndexIterator<Tp,It : Iterator<Item=Value>> {
     Limited(It),
     Unlimited(SortKind<Tp>,Range<usize>)
@@ -3076,6 +3077,7 @@ impl<Em : Embed,El : Ord+Composite,It : CondIterator<Em,Item=(El,Transf<Em>)>> C
     }
 }
 
+#[derive(Clone)]
 pub struct Getter<'a,Em : Embed,Obj : 'a,It> {
     obj: &'a Obj,
     obj_inp: Transf<Em>,
@@ -3099,6 +3101,7 @@ impl<'a,Em : Embed,Obj : 'a+Composite,It : CondIterator<Em>> CondIterator<Em> fo
     }
 }
 
+#[derive(Clone)]
 pub struct ThenIterator<V,It> {
     view: V,
     iter: It
@@ -3115,6 +3118,7 @@ impl<Em : Embed,V : Clone,It : CondIterator<Em>> CondIterator<Em> for ThenIterat
     }
 }
 
+#[derive(Clone)]
 pub struct BeforeIterator<V,It> {
     view: V,
     iter: It
@@ -3131,6 +3135,7 @@ impl<Em : Embed,V : Clone,It : CondIterator<Em>> CondIterator<Em> for BeforeIter
     }
 }
 
+#[derive(Clone)]
 pub struct Seq<It1,It2,Ctx,F> {
     ctx: Ctx,
     iter1: It1,
@@ -3176,6 +3181,7 @@ impl<Em,It1,It2,Ctx,F> CondIterator<Em> for Seq<It1,It2,Ctx,F>
     }
 }
 
+#[derive(Clone)]
 pub struct SeqPure<It1,It2,Ctx,F> {
     iter1: It1,
     iter2: Option<(It2,usize)>,
@@ -3221,6 +3227,7 @@ impl<Em,It1,It2,Ctx,F> CondIterator<Em> for SeqPure<It1,It2,Ctx,F>
     }
 }
 
+#[derive(Clone)]
 pub struct Product<Em : Embed,It1 : CondIterator<Em>,It2> {
     iter1: It1,
     iter2: It2,
@@ -3266,6 +3273,7 @@ impl<Em : Embed,It1 : CondIterator<Em>,It2 : Clone+CondIterator<Em>> CondIterato
     }
 }
 
+#[derive(Clone)]
 pub struct Map<It,F> {
     iter: It,
     f: F
@@ -3286,6 +3294,7 @@ impl<Em,It,A,F> CondIterator<Em> for Map<It,F>
     }
 }
 
+#[derive(Clone)]
 pub struct IndexedIter<Em : DeriveValues> {
     iter: IndexIterator<Em::Sort,Em::ValueIterator>,
     idx: Transf<Em>
@@ -3330,6 +3339,7 @@ pub fn access_dyn<T,Em : DeriveValues>(vec: &Vec<T>,
                      idx: pos })
 }
 
+#[derive(Clone)]
 pub struct Chosen<'a,T : 'a,Em : Embed> {
     choice: &'a Choice<T>,
     inp_choice: Transf<Em>,
@@ -3779,6 +3789,7 @@ impl<It : CondIterator<Em>,Em : Embed> CondIterator<Em> for Option<It> {
     }
 }
 
+#[derive(Clone)]
 pub struct Filter<It,Ctx,F> {
     ctx: Ctx,
     iter: It,
@@ -3796,6 +3807,7 @@ impl<Em : Embed,Ctx,It : CondIterator<Em>,F : FnMut(&Ctx,&It::Item) -> bool> Con
     }
 }
 
+#[derive(Clone)]
 pub struct Context<It,Ctx> {
     ctx: Ctx,
     iter: It
