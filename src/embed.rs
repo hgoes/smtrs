@@ -211,6 +211,6 @@ pub trait DeriveConst : Embed {
 }
 
 pub trait DeriveValues : DeriveConst {
-    type ValueIterator : Iterator<Item=Value>;
+    type ValueIterator : Iterator<Item=Value>+Clone;
     fn derive_values(&mut self,&Self::Expr) -> Result<Option<Self::ValueIterator>,Self::Error>;
 }

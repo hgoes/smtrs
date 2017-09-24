@@ -7,7 +7,7 @@ use std::iter::{Empty,Once,once};
 use std::cmp::Ordering;
 
 pub trait Domain<T : Composite> {
-    type ValueIterator : Iterator<Item=Value>;
+    type ValueIterator : Iterator<Item=Value>+Clone;
     fn full(&T) -> Self;
     fn is_full(&self) -> bool;
     fn union(&mut self,&Self) -> ();
@@ -27,7 +27,7 @@ pub trait Domain<T : Composite> {
 }
 
 pub trait Attribute : Sized + Clone {
-    type ValueIterator : Iterator<Item=Value>;
+    type ValueIterator : Iterator<Item=Value>+Clone;
     fn full() -> Self;
     fn is_full(&self) -> bool;
     fn union(&self,&Self) -> Self;
@@ -262,17 +262,20 @@ impl<T : Composite> Domain<T> for () {
     fn intersection(&mut self,_:&()) -> bool { true }
 }
 
+#[derive(Clone)]
 pub enum OptIntersection2<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> {
     Only1(It1),
     Only2(It2),
     Both(Intersection2<V,It1,It2>)
 }
 
+#[derive(Clone)]
 pub struct Intersection2<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> {
     it1: It1,
     it2: It2
 }
 
+#[derive(Clone)]
 pub struct Union2<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> {
     it1: It1,
     it2: It2,
