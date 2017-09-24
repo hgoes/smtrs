@@ -2906,6 +2906,10 @@ pub trait CondIterator<Em : Embed> : Sized {
                  obj_inp: obj_inp,
                  iter: self }
     }
+    fn get_element<'a,Obj>(self,obj: &'a Obj) -> GetterElement<'a,Obj,Self> {
+        GetterElement { obj: obj,
+                        iter: self }
+    }
     fn then<V>(self,view: V) -> ThenIterator<V,Self> {
         ThenIterator { view: view,
                        iter: self }
@@ -2939,7 +2943,8 @@ pub trait CondIterator<Em : Embed> : Sized {
         AdjustIdx { iter: self,
                     idx: idx }
     }
-    fn filter<Ctx,F>(self,ctx: Ctx,f: F) -> Filter<Self,Ctx,F> {
+    fn filter<Ctx,F>(self,ctx: Ctx,f: F) -> Filter<Self,Ctx,F>
+        where F : FnMut(&Ctx,&Self::Item) -> bool {
         Filter { ctx: ctx,
                  iter: self,
                  f: f }
@@ -3096,6 +3101,27 @@ impl<'a,Em : Embed,Obj : 'a+Composite,It : CondIterator<Em>> CondIterator<Em> fo
                 let el_sz = el.num_elem();
                 let el_inp = Transformation::view(off,el_sz,self.obj_inp.clone());
                 Ok(Some((view,el,el_inp)))
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct GetterElement<'a,Obj : 'a,It> {
+    obj: &'a Obj,
+    iter: It
+}
+
+impl<'a,Em : Embed,Obj : 'a+Composite,It : CondIterator<Em>> CondIterator<Em> for GetterElement<'a,Obj,It>
+    where It::Item : 'a+View<Viewed=Obj> {
+    type Item = &'a <It::Item as View>::Element;
+    fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        match self.iter.next(conds,pos,em)? {
+            None => Ok(None),
+            Some(view) => {
+                let el = view.get_el(self.obj);
+                Ok(Some(el))
             }
         }
     }
