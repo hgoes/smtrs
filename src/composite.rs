@@ -3548,10 +3548,17 @@ impl<'a,T : Composite> ViewMut for VecView<T> {
     }
 }
 
-#[derive(Clone,PartialEq,Eq)]
+#[derive(PartialEq,Eq)]
 pub struct AssocView<K,V> {
     key: K,
     phantom: PhantomData<V>
+}
+
+impl<K : Clone,V> Clone for AssocView<K,V> {
+    fn clone(&self) -> Self {
+        AssocView { key: self.key.clone(),
+                    phantom: PhantomData }
+    }
 }
 
 impl<K,V> AssocView<K,V> {
