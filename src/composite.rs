@@ -2935,7 +2935,8 @@ pub trait CondIterator<Em : Embed> : Sized {
     fn product<It : Clone+CondIterator<Em>>(self,it: It) -> Product<Em,Self,It> {
         Product::new(self,it)
     }
-    fn map<F>(self,f: F) -> Map<Self,F> {
+    fn map<A,F>(self,f: F) -> Map<Self,F>
+        where F : FnMut(Self::Item,&mut Em) -> Result<A,Em::Error> {
         Map { iter: self,
               f: f }
     }
