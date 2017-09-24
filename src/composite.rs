@@ -2964,7 +2964,7 @@ impl<Em : Embed,It : CondIterator<Em>> CondIter<Em,It> {
 }
 
 impl<'a,Em : Embed,
-     V : ViewMut<'a>,
+     V : ViewMut,
      It : CondIterator<Em,Item=(V,V::Element,Transf<Em>)>
      > CondIter<Em,It> {
 
@@ -3071,9 +3071,9 @@ pub struct Getter<'a,Em : Embed,Obj : 'a,It> {
     iter: It
 }
 
-impl<'a,Em : Embed,Obj : Composite,It : CondIterator<Em>> CondIterator<Em> for Getter<'a,Em,Obj,It>
-    where It::Item : View<'a,Viewed=Obj> {
-    type Item = (It::Item,&'a <It::Item as View<'a>>::Element,Transf<Em>);
+impl<'a,Em : Embed,Obj : 'a+Composite,It : CondIterator<Em>> CondIterator<Em> for Getter<'a,Em,Obj,It>
+    where It::Item : 'a+View<Viewed=Obj> {
+    type Item = (It::Item,&'a <It::Item as View>::Element,Transf<Em>);
     fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
         match self.iter.next(conds,pos,em)? {
@@ -3402,29 +3402,28 @@ impl<Em : Embed,Idx : Copy,It : CondIterator<Em>> CondIterator<Em> for AdjustIdx
     }
 }
 
-pub trait View<'a> {
-    type Viewed : 'a+Composite;
-    type Element : 'a+Composite;
-    fn get_el<'b>(&self,obj: &'b Self::Viewed)
-                  -> &'b Self::Element where 'a : 'b {
+pub trait View {
+    type Viewed : Composite;
+    type Element : Composite;
+    fn get_el<'a>(&self,obj: &'a Self::Viewed)
+                  -> &'a Self::Element where Self : 'a {
         self.get_el_ext(obj).1
     }
-    fn get_el_ext<'b>(&self,&'b Self::Viewed)
-                      -> (usize,&'b Self::Element) where 'a : 'b;
-    fn then<V : View<'a>>(self,v: V) -> Then<Self,V>
+    fn get_el_ext<'a>(&self,&'a Self::Viewed)
+                      -> (usize,&'a Self::Element) where Self : 'a;
+    fn then<V : View>(self,v: V) -> Then<Self,V>
         where Self : Sized {
         Then::new(self,v)
     }
 }
 
-pub trait ViewMut<'a> : View<'a> {
-    fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
-                      -> &'b mut Self::Element where 'a : 'b {
+pub trait ViewMut : View {
+    fn get_el_mut<'a>(&self,obj: &'a mut Self::Viewed)
+                      -> &'a mut Self::Element where Self : 'a {
         self.get_el_mut_ext(obj).1
     }
-    fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
-                          -> (usize,&'b mut Self::Element)
-        where 'a : 'b;
+    fn get_el_mut_ext<'a>(&self,obj: &'a mut Self::Viewed)
+                          -> (usize,&'a mut Self::Element) where Self : 'a;
 }
 
 #[derive(Clone,PartialEq,Eq)]
@@ -3440,15 +3439,15 @@ impl<T> VecView<T> {
     }
 }
 
-impl<'a,T : 'a+Composite> View<'a> for VecView<T> {
+impl<T : Composite> View for VecView<T> {
     type Viewed = Vec<T>;
     type Element = T;
     fn get_el<'b>(&self,obj: &'b Self::Viewed)
-                  -> &'b Self::Element where 'a : 'b {
+                  -> &'b Self::Element where Self : 'b {
         &obj[self.idx]
     }
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
-                      -> (usize,&'b Self::Element) where 'a : 'b {
+                      -> (usize,&'b Self::Element) where Self : 'b {
         let mut off = 0;
         for i in 0..self.idx {
             off+=obj[i].num_elem();
@@ -3458,15 +3457,13 @@ impl<'a,T : 'a+Composite> View<'a> for VecView<T> {
     }
 }
 
-impl<'a,T : 'a+Composite> ViewMut<'a> for VecView<T> {
+impl<'a,T : Composite> ViewMut for VecView<T> {
     fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
-                      -> &'b mut Self::Element where 'a : 'b {
+                      -> &'b mut Self::Element where Self : 'b {
         &mut obj[self.idx]
     }
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
-                          -> (usize,&'b mut Self::Element)
-        where 'a : 'b {
-
+                          -> (usize,&'b mut Self::Element) where Self : 'b {
         let mut off = 0;
         for i in 0..self.idx {
             off+=obj[i].num_elem();
@@ -3477,26 +3474,26 @@ impl<'a,T : 'a+Composite> ViewMut<'a> for VecView<T> {
 }
 
 #[derive(Clone,PartialEq,Eq)]
-pub struct AssocView<'a,K : 'a,V> {
-    key: &'a K,
+pub struct AssocView<K,V> {
+    key: K,
     phantom: PhantomData<V>
 }
 
-impl<'a,K,V> AssocView<'a,K,V> {
-    pub fn new(key: &'a K) -> Self {
+impl<K,V> AssocView<K,V> {
+    pub fn new(key: K) -> Self {
         AssocView { key: key,
                     phantom: PhantomData }
     }
 }
 
-impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite> View<'a> for AssocView<'a,K,V> {
+impl<K : Ord+Clone+Hash,V : Composite> View for AssocView<K,V> {
     type Viewed = Assoc<K,V>;
     type Element = V;
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
-                      -> (usize,&'b Self::Element) where 'a : 'b {
+                      -> (usize,&'b Self::Element) where Self : 'b {
         let mut off = 0;
         for &(ref k,ref el) in obj.0.iter() {
-            match k.cmp(self.key) {
+            match k.cmp(&self.key) {
                 Ordering::Equal => return (off,el),
                 Ordering::Less => { off+=el.num_elem() },
                 Ordering::Greater => panic!("Assoc element not found")
@@ -3506,12 +3503,12 @@ impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite> View<'a> for AssocView<'a,K,V> {
     }
 }
 
-impl<'a,K : 'a+Ord+Clone+Hash,V : 'a+Composite> ViewMut<'a> for AssocView<'a,K,V> {
+impl<K : Ord+Clone+Hash,V : Composite> ViewMut for AssocView<K,V> {
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
-                          -> (usize,&'b mut Self::Element) where 'a : 'b {
+                          -> (usize,&'b mut Self::Element) where Self : 'b {
         let mut off = 0;
         for &mut (ref k,ref mut el) in obj.0.iter_mut() {
-            match k.cmp(self.key) {
+            match k.cmp(&self.key) {
                 Ordering::Equal => return (off,el),
                 Ordering::Less => { off+=el.num_elem() },
                 Ordering::Greater => panic!("Assoc element not found")
@@ -3576,15 +3573,15 @@ impl<Up> BitVecVectorStackView<Up> {
     }
 }
 
-impl<'a,T : 'a+Composite> View<'a> for BitVecVectorStackView<T> {
+impl<T : Composite> View for BitVecVectorStackView<T> {
     type Viewed = BitVecVectorStack<T>;
     type Element = T;
     fn get_el<'b>(&self,obj: &'b Self::Viewed)
-                  -> &'b Self::Element where 'a : 'b {
+                  -> &'b Self::Element where Self : 'b {
         &obj.elements[self.idx]
     }
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
-                      -> (usize,&'b Self::Element) where 'a : 'b {
+                      -> (usize,&'b Self::Element) where Self : 'b {
         let mut off = 0;
         for i in 0..self.idx {
             off+=obj.elements[i].num_elem();
@@ -3594,15 +3591,13 @@ impl<'a,T : 'a+Composite> View<'a> for BitVecVectorStackView<T> {
     }
 }
 
-impl<'a,T : 'a+Composite> ViewMut<'a> for BitVecVectorStackView<T> {
+impl<T : Composite> ViewMut for BitVecVectorStackView<T> {
     fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
-                      -> &'b mut Self::Element where 'a : 'b {
+                      -> &'b mut Self::Element where Self : 'b {
         &mut obj.elements[self.idx]
     }
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
-                          -> (usize,&'b mut Self::Element)
-        where 'a : 'b {
-
+                          -> (usize,&'b mut Self::Element) where Self : 'b {
         let mut off = 0;
         for i in 0..self.idx {
             off+=obj.elements[i].num_elem();
@@ -3621,28 +3616,28 @@ impl<Up,V> Then<Up,V> {
     }
 }
 
-impl<'a,Up : View<'a>,V : View<'a,Viewed=Up::Element>> View<'a> for Then<Up,V> {
+impl<Up : View,V : View<Viewed=Up::Element>> View for Then<Up,V> {
     type Viewed = Up::Viewed;
     type Element = V::Element;
     fn get_el<'b>(&self,obj: &'b Self::Viewed)
-                  -> &'b Self::Element where 'a : 'b {
+                  -> &'b Self::Element where Self : 'b {
         self.1.get_el(self.0.get_el(obj))
     }
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
-                      -> (usize,&'b Self::Element) where 'a : 'b {
+                      -> (usize,&'b Self::Element) where Self : 'b {
         let (off1,sub) = self.0.get_el_ext(obj);
         let (off2,res) = self.1.get_el_ext(sub);
         (off1+off2,res)
     }
 }
 
-impl<'a,Up : ViewMut<'a>,V : ViewMut<'a,Viewed=Up::Element>> ViewMut<'a> for Then<Up,V> {
+impl<Up : ViewMut,V : ViewMut<Viewed=Up::Element>> ViewMut for Then<Up,V> {
     fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
-                      -> &'b mut Self::Element where 'a : 'b {
+                      -> &'b mut Self::Element where Self : 'b {
         self.1.get_el_mut(self.0.get_el_mut(obj))
     }
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
-                          -> (usize,&'b mut Self::Element) where 'a : 'b {
+                          -> (usize,&'b mut Self::Element) where Self : 'b {
         let (off1,sub) = self.0.get_el_mut_ext(obj);
         let (off2,res) = self.1.get_el_mut_ext(sub);
         (off1+off2,res)
@@ -3667,52 +3662,50 @@ impl<A,B> SndView<A,B> {
     }
 }
 
-impl<'a,A : 'a+Composite,B : 'a+Composite> View<'a> for FstView<A,B> {
+impl<A : Composite,B : Composite> View for FstView<A,B> {
     type Viewed = (A,B);
     type Element = A;
     fn get_el<'b>(&self,obj: &'b Self::Viewed)
-                  -> &'b Self::Element where 'a : 'b {
+                  -> &'b Self::Element where Self : 'b {
         &obj.0
     }
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
-                      -> (usize,&'b Self::Element) where 'a : 'b {
+                      -> (usize,&'b Self::Element) where Self : 'b {
         (0,&obj.0)
     }
 }
 
-impl<'a,A : 'a+Composite,B : 'a+Composite> View<'a> for SndView<A,B> {
+impl<A : Composite,B : Composite> View for SndView<A,B> {
     type Viewed = (A,B);
     type Element = B;
     fn get_el<'b>(&self,obj: &'b Self::Viewed)
-                  -> &'b Self::Element where 'a : 'b {
+                  -> &'b Self::Element where Self : 'b {
         &obj.1
     }
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
-                      -> (usize,&'b Self::Element) where 'a : 'b {
+                      -> (usize,&'b Self::Element) where Self : 'b {
         (obj.0.num_elem(),&obj.1)
     }
 }
 
-impl<'a,A : 'a+Composite,B : 'a+Composite> ViewMut<'a> for FstView<A,B> {
+impl<A : Composite,B : Composite> ViewMut for FstView<A,B> {
     fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
-                      -> &'b mut Self::Element where 'a : 'b {
+                      -> &'b mut Self::Element where Self : 'b {
         &mut obj.0
     }
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
-                          -> (usize,&'b mut Self::Element)
-        where 'a : 'b {
+                          -> (usize,&'b mut Self::Element) where Self : 'b {
         (0,&mut obj.0)
     }
 }
 
-impl<'a,A : 'a+Composite,B : 'a+Composite> ViewMut<'a> for SndView<A,B> {
+impl<A : Composite,B : Composite> ViewMut for SndView<A,B> {
     fn get_el_mut<'b>(&self,obj: &'b mut Self::Viewed)
-                      -> &'b mut Self::Element where 'a : 'b {
+                      -> &'b mut Self::Element where Self : 'b {
         &mut obj.1
     }
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
-                          -> (usize,&'b mut Self::Element)
-        where 'a : 'b {
+                          -> (usize,&'b mut Self::Element) where Self : 'b {
         (obj.0.num_elem(),&mut obj.1)
     }
 }
@@ -3730,15 +3723,15 @@ impl<T> ChoiceView<T> {
     }
 }
 
-impl<'a,T : 'a+Ord+Composite> View<'a> for ChoiceView<T> {
+impl<T : Ord+Composite> View for ChoiceView<T> {
     type Viewed = Choice<T>;
     type Element = T;
     fn get_el<'b>(&self,obj: &'b Self::Viewed)
-                  -> &'b Self::Element where 'a : 'b {
+                  -> &'b Self::Element where Self : 'b {
         &obj.0[self.idx]
     }
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
-                      -> (usize,&'b Self::Element) where 'a : 'b {
+                      -> (usize,&'b Self::Element) where Self : 'b {
         let mut off = self.idx;
         for i in 0..self.idx {
             off+=obj.0[i].num_elem();
