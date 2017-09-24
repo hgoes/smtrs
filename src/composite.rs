@@ -3167,12 +3167,20 @@ impl<Em : Embed,V : Clone,It : CondIterator<Em>> CondIterator<Em> for BeforeIter
     }
 }
 
-#[derive(Clone)]
 pub struct Seq<It1,It2,Ctx,F> {
     ctx: Ctx,
     iter1: It1,
     iter2: Option<(It2,usize)>,
     f: F
+}
+
+impl<It1 : Clone,It2 : Clone,Ctx : Clone,F : Copy> Clone for Seq<It1,It2,Ctx,F> {
+    fn clone(&self) -> Self {
+        Seq { ctx: self.ctx.clone(),
+              iter1: self.iter1.clone(),
+              iter2: self.iter2.clone(),
+              f: self.f }
+    }
 }
 
 impl<Em,It1,It2,Ctx,F> CondIterator<Em> for Seq<It1,It2,Ctx,F>
