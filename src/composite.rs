@@ -3319,7 +3319,6 @@ impl<Em,It,A,F> CondIterator<Em> for Map<It,F>
     }
 }
 
-#[derive(Clone)]
 pub struct IndexedIter<Em : DeriveValues> {
     iter: IndexIterator<Em::Sort,Em::ValueIterator>,
     idx: Transf<Em>
@@ -3342,6 +3341,13 @@ impl<Em : DeriveValues> CondIterator<Em> for IndexedIter<Em> {
                 Ok(Some(i))
             }
         }
+    }
+}
+
+impl<Em : DeriveValues> Clone for IndexedIter<Em> {
+    fn clone(&self) -> Self {
+        IndexedIter { iter: self.iter.clone(),
+                      idx: self.idx.clone() }
     }
 }
 
