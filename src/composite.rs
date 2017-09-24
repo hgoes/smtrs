@@ -3834,7 +3834,6 @@ impl<It : CondIterator<Em>,Em : Embed> CondIterator<Em> for Option<It> {
     }
 }
 
-#[derive(Clone)]
 pub struct Filter<It,Ctx,F> {
     ctx: Ctx,
     iter: It,
@@ -3849,6 +3848,14 @@ impl<Em : Embed,Ctx,It : CondIterator<Em>,F : FnMut(&Ctx,&It::Item) -> bool> Con
             if (self.f)(&self.ctx,&res) { return Ok(Some(res)) }
         }
         Ok(None)
+    }
+}
+
+impl<It : Clone,Ctx : Clone,F : Copy> Clone for Filter<It,Ctx,F> {
+    fn clone(&self) -> Self {
+        Filter { ctx: self.ctx.clone(),
+                 iter: self.iter.clone(),
+                 f: self.f }
     }
 }
 
