@@ -3106,7 +3106,6 @@ impl<'a,Em : Embed,Obj : 'a+Composite,It : CondIterator<Em>> CondIterator<Em> fo
     }
 }
 
-#[derive(Clone)]
 pub struct GetterElement<'a,Obj : 'a,It> {
     obj: &'a Obj,
     iter: It
@@ -3124,6 +3123,13 @@ impl<'a,Em : Embed,Obj : 'a+Composite,It : CondIterator<Em>> CondIterator<Em> fo
                 Ok(Some(el))
             }
         }
+    }
+}
+
+impl<'a,Obj : 'a,It : Clone> Clone for GetterElement<'a,Obj,It> {
+    fn clone(&self) -> Self {
+        GetterElement { obj: self.obj,
+                        iter: self.iter.clone() }
     }
 }
 
@@ -3370,7 +3376,6 @@ pub fn access_dyn<T,Em : DeriveValues>(vec: &Vec<T>,
                      idx: pos })
 }
 
-#[derive(Clone)]
 pub struct Chosen<'a,T : 'a,Em : Embed> {
     choice: &'a Choice<T>,
     inp_choice: Transf<Em>,
@@ -3392,6 +3397,15 @@ impl<'a,Em : Embed,T : Composite> CondIterator<Em> for Chosen<'a,T,Em> {
         } else {
             Ok(None)
         }
+    }
+}
+
+impl<'a,T : 'a,Em : Embed> Clone for Chosen<'a,T,Em> {
+    fn clone(&self) -> Self {
+        Chosen { choice: self.choice,
+                 inp_choice: self.inp_choice.clone(),
+                 idx: self.idx,
+                 off: self.off }
     }
 }
 
