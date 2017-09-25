@@ -3534,7 +3534,19 @@ pub trait ViewOpt : View {
             None => None
         }
     }
+}
 
+pub trait ViewInsert : ViewOpt {
+    fn insert_el(&self,obj: &mut Self::Viewed,el: Self::Element)
+                 -> (usize,usize);
+    fn insert<Em : Embed>(&self,
+                          obj: &mut Self::Viewed,
+                          el: Self::Element,
+                          el_inp: Transf<Em>,
+                          upd: &mut Updates<Em>) -> () {
+        let (off,old_sz) = self.insert_el(obj,el);
+        insert_updates(upd,off,old_sz,el_inp);
+    }
 }
 
 #[derive(Clone,PartialEq,Eq)]
@@ -3648,6 +3660,29 @@ impl<K : Ord+Clone+Hash,V : Composite> ViewOpt for AssocView<K,V> {
             }
         }
         None
+    }
+}
+
+impl<K : Ord+Clone+Hash,V : Composite> ViewInsert for AssocView<K,V> {
+    fn insert_el(&self,obj: &mut Self::Viewed,el: Self::Element)
+                 -> (usize,usize) {
+        let mut off = 0;
+        for i in 0..obj.0.len() {
+            match obj.0[i].0.cmp(&self.key) {
+                Ordering::Equal => {
+                    let old_sz = obj.0[i].1.num_elem();
+                    obj.0[i].1 = el;
+                    return (off,old_sz)
+                },
+                Ordering::Less => { off+=obj.0[i].1.num_elem() },
+                Ordering::Greater => {
+                    obj.0.insert(i,(self.key.clone(),el));
+                    return (off,0)
+                }
+            }
+        }
+        obj.0.push((self.key.clone(),el));
+        (off,0)
     }
 }
 
@@ -3796,6 +3831,16 @@ impl<Up : View,V : ViewOpt<Viewed=Up::Element>> ViewOpt for Then<Up,V> {
         }
     }
 }
+
+impl<Up : ViewMut,V : ViewInsert<Viewed=Up::Element>> ViewInsert for Then<Up,V> {
+    fn insert_el(&self,obj: &mut Self::Viewed,el: Self::Element)
+                 -> (usize,usize) {
+        let (off1,sub) = self.0.get_el_mut_ext(obj);
+        let (off2,old_sz) = self.1.insert_el(sub,el);
+        (off1+off2,old_sz)
+    }
+}
+
 
 #[derive(PartialEq,Eq)]
 pub struct FstView<A,B>(PhantomData<(A,B)>);
