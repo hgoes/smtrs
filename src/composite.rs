@@ -3396,7 +3396,7 @@ impl<'a,Em : Embed,T : Composite> CondIterator<Em> for Chosen<'a,T,Em> {
     type Item = ChoiceView<T>;
     fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,_: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
-        if self.idx<=self.choice.0.len() {
+        if self.idx<self.choice.0.len() {
             conds.truncate(pos);
             conds.push(Transformation::view(self.off,1,self.inp_choice.clone()));
             self.off+=self.choice.0[self.idx].num_elem()+1;
