@@ -2593,8 +2593,8 @@ pub fn assoc_insert<'a,'b,K,V,Em>(assoc: OptRef<'a,Assoc<K,V>>,
         Transformation::concat(&[inp_assoc,inp_value])))
 }
 
-pub fn choice_empty<'a,T,Em : Embed>() -> (OptRef<'a,Choice<T>>,Transf<Em>) {
-    (OptRef::Owned(Choice(vec![])),
+pub fn choice_empty<T,Em : Embed>() -> (Choice<T>,Transf<Em>) {
+    (Choice(vec![]),
      Transformation::id(0))
 }
 
