@@ -3508,13 +3508,12 @@ pub trait ViewMut : View {
     fn write<Em : Embed>(&self,
                          el: Self::Element,
                          el_inp: Transf<Em>,
-                         old: &Self::Viewed,
                          new: &mut Self::Viewed,
                          upd: &mut Updates<Em>) -> () {
-        let (off_old,ref_old) = self.get_el_ext(old);
-        let ref_new = self.get_el_mut(new);
+        let (off,ref_new) = self.get_el_mut_ext(new);
+        let old_sz = ref_new.num_elem();
         *ref_new = el;
-        insert_updates(upd,off_old,ref_old.num_elem(),el_inp);
+        insert_updates(upd,off,old_sz,el_inp);
     }
 }
 
@@ -3688,11 +3687,13 @@ impl<K : Ord+Clone+Hash,V : Composite> ViewInsert for AssocView<K,V> {
 
 type Updates<Em> = Vec<(usize,usize,Transf<Em>)>;
 
-fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,off: usize,old: usize,new: Transf<Em>) -> () {
+fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,
+                              off: usize,old: usize,
+                              new: Transf<Em>) -> () {
     for i in 0..upd.len() {
         let (coff,old_sz,_) = upd[i];
         if coff < off {
-            debug_assert!(coff+old_sz<=off);
+            debug_assert!(coff+upd[i].2.size()<=off);
             continue
         }
         if coff==off {
