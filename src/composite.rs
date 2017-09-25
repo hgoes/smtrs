@@ -3491,7 +3491,7 @@ pub trait View {
         let (off,el) = self.get_el_ext(obj);
         (el,Transformation::view(off,el.num_elem(),inp))
     }
-    fn then<V : View>(self,v: V) -> Then<Self,V>
+    fn then<V : View<Viewed=Self::Element>>(self,v: V) -> Then<Self,V>
         where Self : Sized {
         Then::new(self,v)
     }
