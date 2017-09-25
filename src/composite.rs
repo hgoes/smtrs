@@ -3551,7 +3551,7 @@ pub trait ViewInsert : ViewOpt {
 
 #[derive(Clone,PartialEq,Eq)]
 pub struct VecView<T> {
-    idx: usize,
+    pub idx: usize,
     phantom: PhantomData<T>
 }
 
@@ -3598,7 +3598,7 @@ impl<'a,T : Composite> ViewMut for VecView<T> {
 
 #[derive(PartialEq,Eq)]
 pub struct AssocView<K,V> {
-    key: K,
+    pub key: K,
     phantom: PhantomData<V>
 }
 
