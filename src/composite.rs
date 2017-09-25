@@ -3714,7 +3714,7 @@ fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,off: usize,old: usize,new: T
     upd.push((off,old,new))
 }
 
-fn finish_updates<Em : Embed>(mut upd: Updates<Em>,orig: Transf<Em>) -> Transf<Em> {
+pub fn finish_updates<Em : Embed>(mut upd: Updates<Em>,orig: Transf<Em>) -> Transf<Em> {
     let mut last = 0;
     let mut orig_off = 0;
     let mut res = Vec::new();
