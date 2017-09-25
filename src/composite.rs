@@ -3504,6 +3504,18 @@ pub trait ViewMut : View {
     }
     fn get_el_mut_ext<'a>(&self,obj: &'a mut Self::Viewed)
                           -> (usize,&'a mut Self::Element) where Self : 'a;
+
+    fn write<Em : Embed>(&self,
+                         el: Self::Element,
+                         el_inp: Transf<Em>,
+                         old: &Self::Viewed,
+                         new: &mut Self::Viewed,
+                         upd: &mut Updates<Em>) -> () {
+        let (off_old,ref_old) = self.get_el_ext(old);
+        let ref_new = self.get_el_mut(new);
+        *ref_new = el;
+        insert_updates(upd,off_old,ref_old.num_elem(),el_inp);
+    }
 }
 
 #[derive(Clone,PartialEq,Eq)]
@@ -3609,12 +3621,17 @@ type Updates<Em> = Vec<(usize,usize,Transf<Em>)>;
 
 fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,off: usize,old: usize,new: Transf<Em>) -> () {
     for i in 0..upd.len() {
-        let (coff,_,_) = upd[i];
+        let (coff,old_sz,_) = upd[i];
         if coff < off {
-            debug_assert!(coff+upd[i].2.size()<=off);
+            debug_assert!(coff+old_sz<=off);
             continue
         }
-        debug_assert!(coff!=off);
+        if coff==off {
+            debug_assert_eq!(old_sz,old);
+            debug_assert_eq!(upd[i].2.size(),new.size());
+            upd[i].2 = new;
+            return
+        }
         debug_assert!(off+old<=coff);
         let nsz = new.size();
         if old!=nsz {
