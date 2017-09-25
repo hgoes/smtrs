@@ -3781,7 +3781,7 @@ impl<T : Composite> ViewMut for BitVecVectorStackView<T> {
 }
 
 #[derive(Clone,PartialEq,Eq)]
-pub struct Then<Up,V>(Up,V);
+pub struct Then<Up,V>(pub Up,pub V);
 
 impl<Up,V> Then<Up,V> {
     pub fn new(up: Up,nxt: V) -> Self {
