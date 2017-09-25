@@ -3518,6 +3518,25 @@ pub trait ViewMut : View {
     }
 }
 
+pub trait ViewOpt : View {
+    fn get_el_opt<'a>(&self,obj: &'a Self::Viewed)
+                      -> Option<&'a Self::Element> where Self : 'a {
+        match self.get_el_opt_ext(obj) {
+            None => None,
+            Some((_,el)) => Some(el)
+        }
+    }
+    fn get_el_opt_ext<'a>(&self,&'a Self::Viewed)
+                          -> Option<(usize,&'a Self::Element)> where Self : 'a;
+    fn get_opt_with_inp<'a,Em : Embed>(&self,obj: &'a Self::Viewed,inp: Transf<Em>) -> Option<(&'a Self::Element,Transf<Em>)> where Self : 'a {
+        match self.get_el_opt_ext(obj) {
+            Some((off,el)) => Some((el,Transformation::view(off,el.num_elem(),inp))),
+            None => None
+        }
+    }
+
+}
+
 #[derive(Clone,PartialEq,Eq)]
 pub struct VecView<T> {
     idx: usize,
@@ -3614,6 +3633,21 @@ impl<K : Ord+Clone+Hash,V : Composite> ViewMut for AssocView<K,V> {
             }
         }
         panic!("Assoc element not found")
+    }
+}
+
+impl<K : Ord+Clone+Hash,V : Composite> ViewOpt for AssocView<K,V> {
+    fn get_el_opt_ext<'b>(&self,obj: &'b Self::Viewed)
+                          -> Option<(usize,&'b Self::Element)> where Self : 'b {
+        let mut off = 0;
+        for &(ref k,ref el) in obj.0.iter() {
+            match k.cmp(&self.key) {
+                Ordering::Equal => return Some((off,el)),
+                Ordering::Less => { off+=el.num_elem() },
+                Ordering::Greater => return None
+            }
+        }
+        None
     }
 }
 
@@ -3745,6 +3779,21 @@ impl<Up : ViewMut,V : ViewMut<Viewed=Up::Element>> ViewMut for Then<Up,V> {
         let (off1,sub) = self.0.get_el_mut_ext(obj);
         let (off2,res) = self.1.get_el_mut_ext(sub);
         (off1+off2,res)
+    }
+}
+
+impl<Up : View,V : ViewOpt<Viewed=Up::Element>> ViewOpt for Then<Up,V> {
+    fn get_el_opt<'b>(&self,obj: &'b Self::Viewed)
+                      -> Option<&'b Self::Element> where Self : 'b {
+        self.1.get_el_opt(self.0.get_el(obj))
+    }
+    fn get_el_opt_ext<'b>(&self,obj: &'b Self::Viewed)
+                          -> Option<(usize,&'b Self::Element)> where Self : 'b {
+        let (off1,sub) = self.0.get_el_ext(obj);
+        match self.1.get_el_opt_ext(sub) {
+            None => None,
+            Some((off2,res)) => Some((off1+off2,res))
+        }
     }
 }
 
