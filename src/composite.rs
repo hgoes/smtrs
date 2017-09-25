@@ -3735,7 +3735,7 @@ fn finish_updates<Em : Embed>(mut upd: Updates<Em>,orig: Transf<Em>) -> Transf<E
 
 #[derive(Clone,PartialEq,Eq)]
 pub struct BitVecVectorStackView<T> {
-    idx: usize,
+    pub idx: usize,
     phantom: PhantomData<T>
 }
 
