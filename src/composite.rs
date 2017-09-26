@@ -3345,8 +3345,18 @@ impl<Em,It,A,F> CondIterator<Em> for Map<It,F>
 }
 
 pub struct IndexedIter<Em : DeriveValues> {
-    iter: IndexIterator<Em::Sort,Em::ValueIterator>,
-    idx: Transf<Em>
+    iter: Peekable<IndexIterator<Em::Sort,Em::ValueIterator>>,
+    idx: Transf<Em>,
+    no_elems: bool
+}
+
+impl<Em : DeriveValues> IndexedIter<Em> {
+    pub fn new(iter: IndexIterator<Em::Sort,Em::ValueIterator>,
+               idx: Transf<Em>) -> Self {
+        IndexedIter { iter: iter.peekable(),
+                      idx: idx,
+                      no_elems: true }
+    }
 }
 
 impl<Em : DeriveValues> CondIterator<Em> for IndexedIter<Em> {
@@ -3357,12 +3367,15 @@ impl<Em : DeriveValues> CondIterator<Em> for IndexedIter<Em> {
             None => Ok(None),
             Some((i,val)) => {
                 conds.truncate(pos);
-                let cond_fun = move |_:&[Em::Expr],_:usize,e:Em::Expr,em:&mut Em| {
-                    let cv = em.embed(expr::Expr::Const(val.clone()))?;
-                    em.eq(e,cv)
-                };
-                let cond = Transformation::map_by_elem(Box::new(cond_fun),self.idx.clone());
-                conds.push(cond);
+                if !self.no_elems || self.iter.peek().is_some() {
+                    let cond_fun = move |_:&[Em::Expr],_:usize,e:Em::Expr,em:&mut Em| {
+                        let cv = em.embed(expr::Expr::Const(val.clone()))?;
+                        em.eq(e,cv)
+                    };
+                    let cond = Transformation::map_by_elem(Box::new(cond_fun),self.idx.clone());
+                    conds.push(cond);
+                }
+                self.no_elems = false;
                 Ok(Some(i))
             }
         }
@@ -3372,7 +3385,8 @@ impl<Em : DeriveValues> CondIterator<Em> for IndexedIter<Em> {
 impl<Em : DeriveValues> Clone for IndexedIter<Em> {
     fn clone(&self) -> Self {
         IndexedIter { iter: self.iter.clone(),
-                      idx: self.idx.clone() }
+                      idx: self.idx.clone(),
+                      no_elems: self.no_elems }
     }
 }
 
@@ -3391,8 +3405,7 @@ pub fn access_dyn<T,Em : DeriveValues>(vec: &Vec<T>,
             IndexIterator::Unlimited(idx_rsrt,0..vec.len())
         }
     };
-    Ok(IndexedIter { iter: it,
-                     idx: pos })
+    Ok(IndexedIter::new(it,pos))
 }
 
 pub struct Chosen<'a,T : 'a,Em : Embed> {
@@ -3453,8 +3466,8 @@ impl<T : Composite> BitVecVectorStack<T> {
                 IndexIterator::Unlimited(idx_rsrt,0..self.elements.len()+1)
             }
         };
-        Ok(BitVecVectorStackAccess { iter: IndexedIter { iter: it,
-                                                         idx: Transformation::view(0,1,inp) },
+        Ok(BitVecVectorStackAccess { iter: IndexedIter::new(it,
+                                                            Transformation::view(0,1,inp)),
                                      phantom: PhantomData })
 
     }
