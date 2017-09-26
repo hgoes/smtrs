@@ -46,6 +46,7 @@ pub trait Attribute : Sized + Clone {
     fn values(&self) -> Option<Self::ValueIterator>;
 }
 
+#[derive(Debug)]
 pub struct AttributeDomain<Attr : Attribute> {
     attrs: Vec<Attr>
 }
