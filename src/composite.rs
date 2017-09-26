@@ -3514,6 +3514,9 @@ pub trait ViewMut : View {
         let old_sz = ref_new.num_elem();
         *ref_new = el;
         insert_updates(upd,off,old_sz,el_inp);
+        if cfg!(debug_assertions) {
+            check_updates(upd);
+        }
     }
 }
 
@@ -3545,6 +3548,9 @@ pub trait ViewInsert : ViewOpt {
                           upd: &mut Updates<Em>) -> () {
         let (off,old_sz) = self.insert_el(obj,el);
         insert_updates(upd,off,old_sz,el_inp);
+        if cfg!(debug_assertions) {
+            check_updates(upd);
+        }
     }
 }
 
@@ -3687,6 +3693,21 @@ impl<K : Ord+Clone+Hash,V : Composite> ViewInsert for AssocView<K,V> {
 
 type Updates<Em> = Vec<(usize,usize,Transf<Em>)>;
 
+fn check_updates<Em : Embed>(upd: &Updates<Em>) -> () {
+    let mut last_start = 0;
+    let mut last_end = 0;
+    for &(coff,_,ref new) in upd.iter() {
+        if coff<last_start {
+            panic!("Updates not well ordered")
+        }
+        if coff<last_end {
+            panic!("Updates overlapping")
+        }
+        last_start = coff;
+        last_end = coff+new.size();
+    }
+}
+
 fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,
                               off: usize,old: usize,
                               new: Transf<Em>) -> () {
@@ -3705,7 +3726,7 @@ fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,
         debug_assert!(off+old<=coff);
         let nsz = new.size();
         if old!=nsz {
-            for j in i+1..upd.len() {
+            for j in i..upd.len() {
                 upd[j].1 = upd[j].1 + nsz - old;
             }
         }
@@ -3723,6 +3744,7 @@ pub fn finish_updates<Em : Embed>(mut upd: Updates<Em>,orig: Transf<Em>) -> Tran
         debug_assert!(off>=last);
         if off > last {
             res.push(Transformation::view(orig_off,off-last,orig.clone()));
+            orig_off+=off-last;
         }
         orig_off+=old;
         last = off+new.size();
