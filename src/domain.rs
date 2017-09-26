@@ -145,7 +145,7 @@ impl<Attr : Attribute,T : Composite> Domain<T> for AttributeDomain<Attr> {
 }
 
 #[derive(Clone,Debug)]
-enum Const {
+pub enum Const {
     IsConst(Value),
     NotConst
 }
