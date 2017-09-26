@@ -2378,6 +2378,16 @@ impl<K : Ord+Hash+Clone,V : Composite> Assoc<K,V> {
         }
         panic!("Assoc key not found")
     }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    pub fn is_single(&self) -> Option<&(K,V)> {
+        if self.0.len()==1 {
+            Some(&self.0[0])
+        } else {
+            None
+        }
+    }
 }
 
 impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
