@@ -3546,6 +3546,7 @@ pub trait ViewInsert : ViewOpt {
                           el: Self::Element,
                           el_inp: Transf<Em>,
                           upd: &mut Updates<Em>) -> () {
+        debug_assert_eq!(el.num_elem(),el_inp.size());
         let (off,old_sz) = self.insert_el(obj,el);
         insert_updates(upd,off,old_sz,el_inp);
         if cfg!(debug_assertions) {
