@@ -6,22 +6,28 @@ use std::fmt::Debug;
 use std::iter::{Empty,Once,once};
 use std::cmp::Ordering;
 
-pub trait Domain<T : Composite> {
+pub trait Domain<T : Composite> : Sized {
     type ValueIterator : Iterator<Item=Value>+Clone;
     fn full(&T) -> Self;
     fn is_full(&self) -> bool;
     fn union(&mut self,&Self) -> ();
     fn intersection(&mut self,&Self) -> bool;
-    fn refine<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&mut self,&Em::Expr,&mut Em,&F)
-                                                            -> Result<bool,Em::Error> {
+    fn refine<Em : Embed,F>(&mut self,&Em::Expr,&mut Em,&F)
+                            -> Result<bool,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize> {
         Ok(true)
     }
-    fn is_const<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&self,&Em::Expr,&mut Em,&F)
-                                                              -> Result<Option<Value>,Em::Error> {
+    fn derive<Em : Embed,F>(&self,&[Em::Expr],&mut Em,&F)
+                            -> Result<Self,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize>;
+    fn is_const<Em : Embed,F>(&self,&Em::Expr,&mut Em,&F)
+                              -> Result<Option<Value>,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize> {
         Ok(None)
     }
-    fn values<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&self,&Em::Expr,&mut Em,&F)
-                                                            -> Result<Option<Self::ValueIterator>,Em::Error> {
+    fn values<Em : Embed,F>(&self,&Em::Expr,&mut Em,&F)
+                            -> Result<Option<Self::ValueIterator>,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize> {
         Ok(None)
     }
 }
@@ -45,8 +51,9 @@ pub struct AttributeDomain<Attr : Attribute> {
 }
 
 impl<Attr : Attribute> AttributeDomain<Attr> {
-    fn expr_attribute<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&self,e: &Em::Expr,em:&mut Em,f:&F)
-                                                                    -> Result<Attr,Em::Error> {
+    fn expr_attribute<Em : Embed,F>(&self,e: &Em::Expr,em: &mut Em,f: &F)
+                                    -> Result<Attr,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize> {
         match em.unbed(e)? {
             Expr::Var(ref v) => match f(v) {
                 None => Ok(Attr::full()),
@@ -100,12 +107,23 @@ impl<Attr : Attribute,T : Composite> Domain<T> for AttributeDomain<Attr> {
         }
         true
     }
-    fn refine<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&mut self,e: &Em::Expr,em: &mut Em,f: &F)
-                                                            -> Result<bool,Em::Error> {
+    fn refine<Em : Embed,F>(&mut self,e: &Em::Expr,em: &mut Em,f: &F)
+                            -> Result<bool,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize> {
         Attr::refine(e,&mut self.attrs,em,f)
     }
-    fn is_const<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&self,e: &Em::Expr,em: &mut Em,f: &F)
-                                                              -> Result<Option<Value>,Em::Error> {
+    fn derive<Em : Embed,F>(&self,exprs: &[Em::Expr],em: &mut Em,f: &F)
+                            -> Result<Self,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize> {
+        let mut ndom = Vec::with_capacity(exprs.len());
+        for e in exprs.iter() {
+            ndom.push(self.expr_attribute(e,em,f)?);
+        }
+        Ok(AttributeDomain { attrs: ndom })
+    }
+    fn is_const<Em : Embed,F>(&self,e: &Em::Expr,em: &mut Em,f: &F)
+                              -> Result<Option<Value>,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize> {
         if Attr::can_derive_const() {
             let attr = self.expr_attribute(e,em,f)?;
             Ok(attr.is_const())
@@ -113,8 +131,9 @@ impl<Attr : Attribute,T : Composite> Domain<T> for AttributeDomain<Attr> {
             Ok(None)
         }
     }
-    fn values<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&self,e: &Em::Expr,em: &mut Em,f: &F)
-                                                            -> Result<Option<Self::ValueIterator>,Em::Error> {
+    fn values<Em : Embed,F>(&self,e: &Em::Expr,em: &mut Em,f: &F)
+                            -> Result<Option<Self::ValueIterator>,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize> {
         if Attr::can_derive_values() {
             let attr = self.expr_attribute(e,em,f)?;
             Ok(attr.values())
@@ -260,6 +279,11 @@ impl<T : Composite> Domain<T> for () {
     fn is_full(&self) -> bool { true }
     fn union(&mut self,_:&()) -> () { }
     fn intersection(&mut self,_:&()) -> bool { true }
+    fn derive<Em : Embed,F>(&self,_:&[Em::Expr],_:&mut Em,_:&F)
+                            -> Result<Self,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize> {
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -424,6 +448,14 @@ impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
             }
         }
     }
+    fn derive<Em : Embed,F>(&self,exprs: &[Em::Expr],em: &mut Em,f: &F)
+                            -> Result<Self,Em::Error>
+        where F : Fn(&Em::Var) -> Option<usize> {
+        let ndom1 = self.0.derive(exprs,em,f)?;
+        let ndom2 = self.1.derive(exprs,em,f)?;
+        Ok((ndom1,ndom2))
+    }
+
 }
 /*
 impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>,D3 : Domain<T>> Domain<T> for (D1,D2,D3) {
