@@ -3555,7 +3555,7 @@ pub trait ViewInsert : ViewOpt {
     }
 }
 
-#[derive(Clone,PartialEq,Eq)]
+#[derive(Clone,PartialEq,Eq,Debug)]
 pub struct VecView<T> {
     pub idx: usize,
     phantom: PhantomData<T>
@@ -3602,7 +3602,7 @@ impl<'a,T : Composite> ViewMut for VecView<T> {
     }
 }
 
-#[derive(PartialEq,Eq)]
+#[derive(PartialEq,Eq,Debug)]
 pub struct AssocView<K,V> {
     pub key: K,
     phantom: PhantomData<V>
@@ -3757,7 +3757,7 @@ pub fn finish_updates<Em : Embed>(mut upd: Updates<Em>,orig: Transf<Em>) -> Tran
     Transformation::concat(&res[..])
 }
 
-#[derive(Clone,PartialEq,Eq)]
+#[derive(Clone,PartialEq,Eq,Debug)]
 pub struct BitVecVectorStackView<T> {
     pub idx: usize,
     phantom: PhantomData<T>
@@ -3804,7 +3804,7 @@ impl<T : Composite> ViewMut for BitVecVectorStackView<T> {
     }
 }
 
-#[derive(Clone,PartialEq,Eq)]
+#[derive(Clone,PartialEq,Eq,Debug)]
 pub struct Then<Up,V>(pub Up,pub V);
 
 impl<Up,V> Then<Up,V> {
