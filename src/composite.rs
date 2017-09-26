@@ -3705,7 +3705,7 @@ fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,
         debug_assert!(off+old<=coff);
         let nsz = new.size();
         if old!=nsz {
-            for j in i..upd.len() {
+            for j in i+1..upd.len() {
                 upd[j].1 = upd[j].1 + nsz - old;
             }
         }
