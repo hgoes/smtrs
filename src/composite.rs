@@ -3990,10 +3990,12 @@ impl<T,Em : DeriveValues> CondIterator<Em> for BitVecVectorStackAccess<T,Em> {
     type Item = BitVecVectorStackView<T>;
     fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
-        match self.iter.next(conds,pos,em)? {
-            None => Ok(None),
-            Some(idx) => Ok(Some(BitVecVectorStackView::new(idx)))
+        while let Some(idx) = self.iter.next(conds,pos,em)? {
+            if idx>0 {
+                return Ok(Some(BitVecVectorStackView::new(idx-1)))
+            }
         }
+        Ok(None)
     }
 }
 
