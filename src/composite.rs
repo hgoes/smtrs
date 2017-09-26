@@ -3866,7 +3866,7 @@ impl<Up : ViewMut,V : ViewInsert<Viewed=Up::Element>> ViewInsert for Then<Up,V> 
 }
 
 
-#[derive(PartialEq,Eq)]
+#[derive(PartialEq,Eq,Debug)]
 pub struct FstView<A,B>(PhantomData<(A,B)>);
 
 impl<A,B> Clone for FstView<A,B> {
@@ -3875,7 +3875,7 @@ impl<A,B> Clone for FstView<A,B> {
     }
 }
 
-#[derive(PartialEq,Eq)]
+#[derive(PartialEq,Eq,Debug)]
 pub struct SndView<A,B>(PhantomData<(A,B)>);
 
 impl<A,B> Clone for SndView<A,B> {
