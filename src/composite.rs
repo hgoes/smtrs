@@ -3450,7 +3450,7 @@ impl<T : Composite> BitVecVectorStack<T> {
             None => {
                 let idx_srt = em.type_of(&idx)?;
                 let idx_rsrt = em.unbed_sort(&idx_srt)?;
-                IndexIterator::Unlimited(idx_rsrt,0..self.elements.len())
+                IndexIterator::Unlimited(idx_rsrt,0..self.elements.len()+1)
             }
         };
         Ok(BitVecVectorStackAccess { iter: IndexedIter { iter: it,
