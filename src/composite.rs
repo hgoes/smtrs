@@ -3779,7 +3779,7 @@ impl<T : Composite> View for BitVecVectorStackView<T> {
     }
     fn get_el_ext<'b>(&self,obj: &'b Self::Viewed)
                       -> (usize,&'b Self::Element) where Self : 'b {
-        let mut off = 0;
+        let mut off = 1;
         for i in 0..self.idx {
             off+=obj.elements[i].num_elem();
         }
@@ -3795,7 +3795,7 @@ impl<T : Composite> ViewMut for BitVecVectorStackView<T> {
     }
     fn get_el_mut_ext<'b>(&self,obj: &'b mut Self::Viewed)
                           -> (usize,&'b mut Self::Element) where Self : 'b {
-        let mut off = 0;
+        let mut off = 1;
         for i in 0..self.idx {
             off+=obj.elements[i].num_elem();
         }
