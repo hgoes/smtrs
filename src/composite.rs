@@ -1212,6 +1212,7 @@ impl<Em : Embed> Transformation<Em> {
     }
     pub fn and(trs: Vec<Rc<Transformation<Em>>>)
                -> Rc<Transformation<Em>> {
+        debug_assert!(trs.len() > 0);
         Transformation::zips_by_elem(Box::new(|els,em| { em.and(els.to_vec()) }),trs)
     }
     pub fn or(trs: Vec<Rc<Transformation<Em>>>)
