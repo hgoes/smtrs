@@ -3421,7 +3421,9 @@ impl<'a,Em : Embed,T : Composite> CondIterator<Em> for Chosen<'a,T,Em> {
             -> Result<Option<Self::Item>,Em::Error> {
         if self.idx<self.choice.0.len() {
             conds.truncate(pos);
-            conds.push(Transformation::view(self.off,1,self.inp_choice.clone()));
+            if self.idx!=0 || self.choice.0.len()>1 {
+                conds.push(Transformation::view(self.off,1,self.inp_choice.clone()));
+            }
             self.off+=self.choice.0[self.idx].num_elem()+1;
             let res = self.idx;
             self.idx+=1;
