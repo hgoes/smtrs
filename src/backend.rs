@@ -50,6 +50,17 @@ pub struct PipeVar(usize);
 pub struct PipeExpr(UniqueRef<Expr<PipeSort,PipeVar,PipeExpr,PipeFun>>);
 pub type PipeFun = usize;
 
+impl<Inp : Read,Outp : Write> Pipe<Inp,Outp> {
+    pub fn new(inp: Inp,outp: Outp) -> Self {
+        Pipe { reader: inp,
+               writer: outp,
+               sorts: Uniquer::new(),
+               vars: HashMap::new(),
+               exprs: Uniquer::new(),
+               funs: HashMap::new() }
+    }
+}
+
 impl Pipe<ChildStdout,ChildStdin> {
     pub fn new_process(bin: &str,args: &[&str])
                        -> Result<Pipe<ChildStdout,ChildStdin>,Error> {
@@ -59,12 +70,8 @@ impl Pipe<ChildStdout,ChildStdin> {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()?;
-        Ok(Pipe { reader: child.stdout.expect("Process API misbehaving"),
-                  writer: child.stdin.expect("Process API misbehaving"),
-                  sorts: Uniquer::new(),
-                  vars: HashMap::new(),
-                  exprs: Uniquer::new(),
-                  funs: HashMap::new() })
+        Ok(Pipe::new(child.stdout.expect("Process API misbehaving"),
+                     child.stdin.expect("Process API misbehaving")))
     }
 }
 
