@@ -2345,11 +2345,14 @@ impl<K : Ord+Hash+Clone,V : Composite> Assoc<K,V> {
     pub fn new() -> Self {
         Assoc(Vec::new())
     }
-    pub fn access(&self,key: &K) -> &V {
+    pub fn access(&self,key: &K) -> (usize,&V) {
         match self.0.binary_search_by(|&(ref k,_)| k.cmp(key)) {
-            Ok(res) => &self.0[res].1,
+            Ok(res) => (res,&self.0[res].1),
             Err(_) => panic!("Assoc key not found")
         }
+    }
+    pub fn entry(&self,n: usize) -> &(K,V) {
+        &self.0[n]
     }
     pub fn access_mut(&mut self,key: &K) -> &V {
         match self.0.binary_search_by(|&(ref k,_)| k.cmp(key)) {
@@ -3454,6 +3457,12 @@ impl<T> Choice<T> {
 }
 
 impl<T : Composite> BitVecVectorStack<T> {
+    pub fn entry(&self,n: usize) -> &T {
+        &self.elements[n]
+    }
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
     pub fn access_top<Em : DeriveValues>(&self,
                                          inp: Transf<Em>,
                                          exprs: &[Em::Expr],
