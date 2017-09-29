@@ -63,7 +63,7 @@ pub enum ArithOp {
     Add,Sub,Mult
 }
 
-#[derive(Debug,PartialEq,Eq,Hash,Clone)]
+#[derive(Debug,PartialEq,Eq,Hash,Clone,Copy)]
 pub enum BVOp {
     Ord(bool,OrdOp), // signed?, op
     Arith(ArithOp),
@@ -289,6 +289,80 @@ impl<S,F> Function<S,F> {
             Function::Select(_,_) => true,
             Function::Store(_,_) => true,
             _ => false
+        }
+    }
+    pub fn map<S_,F_,Err,TrS,TrF>(&self,trs: &mut TrS,trf: &mut TrF) -> Result<Function<S_,F_>,Err>
+        where TrS : FnMut(&S) -> Result<S_,Err>, TrF : FnMut(&F) -> Result<F_,Err> {
+        match self {
+            &Function::Fun(ref v) => {
+                let nv = trf(v)?;
+                Ok(Function::Fun(nv))
+            },
+            &Function::Eq(ref srt,sz) => {
+                let nsrt = trs(srt)?;
+                Ok(Function::Eq(nsrt,sz))
+            },
+            &Function::Distinct(ref srt,sz) => {
+                let nsrt = trs(srt)?;
+                Ok(Function::Distinct(nsrt,sz))
+            },
+            &Function::Map(ref g,ref idx) => {
+                let mut nidx = Vec::with_capacity(idx.len());
+                let ng = g.map(trs,trf)?;
+                for i in idx.iter() {
+                    nidx.push(trs(i)?)
+                }
+                Ok(Function::Map(Box::new(ng),nidx))
+            },
+            &Function::OrdInt(op) => Ok(Function::OrdInt(op)),
+            &Function::OrdReal(op) => Ok(Function::OrdReal(op)),
+            &Function::ArithInt(op,sz) => Ok(Function::ArithInt(op,sz)),
+            &Function::ArithReal(op,sz) => Ok(Function::ArithReal(op,sz)),
+            &Function::Div => Ok(Function::Div),
+            &Function::Mod => Ok(Function::Mod),
+            &Function::Rem => Ok(Function::Rem),
+            &Function::Exp => Ok(Function::Exp),
+            &Function::Divide => Ok(Function::Divide),
+            &Function::AbsInt => Ok(Function::AbsInt),
+            &Function::AbsReal => Ok(Function::AbsReal),
+            &Function::Not => Ok(Function::Not),
+            &Function::And(sz) => Ok(Function::And(sz)),
+            &Function::Or(sz) => Ok(Function::Or(sz)),
+            &Function::XOr(sz) => Ok(Function::XOr(sz)),
+            &Function::Implies(sz) => Ok(Function::Implies(sz)),
+            &Function::AtLeast(p,sz) => Ok(Function::AtLeast(p,sz)),
+            &Function::AtMost(p,sz) => Ok(Function::AtMost(p,sz)),
+            &Function::ToReal => Ok(Function::ToReal),
+            &Function::ToInt => Ok(Function::ToInt),
+            &Function::ITE(ref srt) => {
+                let nsrt = trs(srt)?;
+                Ok(Function::ITE(nsrt))
+            },
+            &Function::BV(bw,op) => Ok(Function::BV(bw,op)),
+            &Function::Select(ref idx,ref el) => {
+                let mut nidx = Vec::with_capacity(idx.len());
+                for i in idx.iter() {
+                    nidx.push(trs(i)?)
+                }
+                let nel = trs(el)?;
+                Ok(Function::Select(nidx,nel))
+            },
+            &Function::Store(ref idx,ref el) => {
+                let mut nidx = Vec::with_capacity(idx.len());
+                for i in idx.iter() {
+                    nidx.push(trs(i)?)
+                }
+                let nel = trs(el)?;
+                Ok(Function::Store(nidx,nel))
+            },
+            &Function::ConstArray(ref idx,ref el) => {
+                let mut nidx = Vec::with_capacity(idx.len());
+                for i in idx.iter() {
+                    nidx.push(trs(i)?)
+                }
+                let nel = trs(el)?;
+                Ok(Function::ConstArray(nidx,nel))
+            }
         }
     }
 }

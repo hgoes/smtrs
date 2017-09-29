@@ -4099,3 +4099,26 @@ impl<It1,It2,Ctx,F> Clone for SeqPure<It1,It2,Ctx,F>
                   f: self.f }
     }
 }
+
+impl<C : Composite> CompExpr<C> {
+    pub fn translate<Em : Embed,F>(&self,f: &mut F,em: &mut Em) -> Result<Em::Expr,Em::Error>
+        where F : FnMut(usize,&mut Em) -> Result<Em::Expr,Em::Error> {
+        match *self.0 {
+            expr::Expr::Var(ref v) => f(v.0,em),
+            expr::Expr::Const(ref c) => em.embed(expr::Expr::Const(c.clone())),
+            expr::Expr::App(ref fun,ref args) => {
+                let nfun = fun.map(&mut |srt| srt.embed(em),&mut |_| unreachable!())?;
+                let mut nargs = Vec::with_capacity(args.len());
+                for arg in args.iter() {
+                    nargs.push(arg.translate(f,em)?)
+                }
+                em.embed(expr::Expr::App(nfun,nargs))
+            },
+            expr::Expr::AsArray(ref fun) => {
+                let nfun = fun.map(&mut |srt| srt.embed(em),&mut |_| unreachable!())?;
+                em.embed(expr::Expr::AsArray(nfun))
+            }
+            _ => unreachable!()
+        }
+    }
+}
