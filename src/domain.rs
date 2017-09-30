@@ -30,6 +30,7 @@ pub trait Domain<T : Composite> : Sized {
         where F : Fn(&Em::Var) -> Option<usize> {
         Ok(None)
     }
+    fn forget_var(&mut self,usize) -> ();
 }
 
 pub trait Attribute : Sized + Clone {
@@ -141,6 +142,9 @@ impl<Attr : Attribute,T : Composite> Domain<T> for AttributeDomain<Attr> {
         } else {
             Ok(None)
         }
+    }
+    fn forget_var(&mut self,var: usize) -> () {
+        self.attrs[var] = Attr::full()
     }
 }
 
@@ -285,6 +289,7 @@ impl<T : Composite> Domain<T> for () {
         where F : Fn(&Em::Var) -> Option<usize> {
         Ok(())
     }
+    fn forget_var(&mut self,_:usize) -> () {}
 }
 
 #[derive(Clone)]
@@ -456,7 +461,10 @@ impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
         let ndom2 = self.1.derive(exprs,em,f)?;
         Ok((ndom1,ndom2))
     }
-
+    fn forget_var(&mut self,var: usize) -> () {
+        self.0.forget_var(var);
+        self.1.forget_var(var);
+    }
 }
 /*
 impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>,D3 : Domain<T>> Domain<T> for (D1,D2,D3) {
