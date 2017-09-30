@@ -4129,11 +4129,9 @@ pub trait Semantics {
     fn meanings(&self) -> Self::Meanings;
 }
 
-pub struct VecMeaning<'a,T : 'a>
-    where &'a T : Semantics {
+pub struct VecMeaning<M> {
     pub index: usize,
-    pub meaning: <&'a T as Semantics>::Meaning,
-    phantom: PhantomData<&'a ()>
+    pub meaning: M,
 }
 
 pub struct VecMeanings<'a,T : 'a>
@@ -4145,14 +4143,13 @@ pub struct VecMeanings<'a,T : 'a>
 
 impl<'a,T> Iterator for VecMeanings<'a,T>
     where &'a T : Semantics {
-    type Item = VecMeaning<'a,T>;
-    fn next(&mut self) -> Option<VecMeaning<'a,T>> {
+    type Item = VecMeaning<<&'a T as Semantics>::Meaning>;
+    fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.iter {
                 Some(ref mut it) => match it.next() {
                     Some(r) => return Some(VecMeaning { index: self.index,
-                                                        meaning: r,
-                                                        phantom: PhantomData }),
+                                                        meaning: r }),
                     None => { self.index+=1; }
                 },
                 None => {}
@@ -4169,7 +4166,7 @@ impl<'a,T> Iterator for VecMeanings<'a,T>
 
 impl<'a,T> Semantics for &'a Vec<T>
     where &'a T : Semantics {
-    type Meaning = VecMeaning<'a,T>;
+    type Meaning = VecMeaning<<&'a T as Semantics>::Meaning>;
     type Meanings = VecMeanings<'a,T>;
     fn meanings(&self) -> Self::Meanings {
         VecMeanings { vec: *self,
