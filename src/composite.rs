@@ -4420,3 +4420,30 @@ impl<'a,T> Semantics for &'a BitVecVectorStack<T>
         }
     }
 }
+
+pub enum OptionMeanings<It> {
+    None,
+    Some(It)
+}
+
+impl<It : Iterator> Iterator for OptionMeanings<It> {
+    type Item = It::Item;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            &mut OptionMeanings::None => None,
+            &mut OptionMeanings::Some(ref mut it) => it.next()
+        }
+    }
+}
+
+impl<'a,T> Semantics for &'a Option<T>
+    where &'a T : Semantics {
+    type Meaning = <&'a T as Semantics>::Meaning;
+    type Meanings = OptionMeanings<<&'a T as Semantics>::Meanings>;
+    fn meanings(&self) -> Self::Meanings {
+        match *self {
+            &None => OptionMeanings::None,
+            &Some(ref obj) => OptionMeanings::Some(obj.meanings())
+        }
+    }
+}
