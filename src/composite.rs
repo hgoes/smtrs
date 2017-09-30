@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::cell;
 use std::cell::RefCell;
-use std::hash::Hash;
+use std::hash::{Hash,Hasher};
 use std::fmt::Debug;
 use std::slice;
 use std::vec;
@@ -4124,7 +4124,7 @@ impl<C : Composite> CompExpr<C> {
 }
 
 pub trait Semantic {
-    type Meaning;
+    type Meaning : Ord+Hash+Debug;
 }
 
 pub trait Semantics<'a> : Semantic {
@@ -4132,6 +4132,7 @@ pub trait Semantics<'a> : Semantic {
     fn meanings(&'a self) -> Self::Meanings;
 }
 
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug)]
 pub struct VecMeaning<M> {
     pub index: usize,
     pub meaning: M,
@@ -4184,6 +4185,50 @@ pub struct AssocMeaning<K,T : Semantic> {
     pub meaning: T::Meaning
 }
 
+impl<K : PartialEq,T : Semantic> PartialEq for AssocMeaning<K,T> {
+    fn eq(&self,other: &AssocMeaning<K,T>) -> bool {
+        self.key==other.key &&
+            self.meaning==other.meaning
+    }
+}
+
+impl<K : Eq,T : Semantic> Eq for AssocMeaning<K,T> {}
+
+impl<K : PartialOrd,T : Semantic> PartialOrd for AssocMeaning<K,T> {
+    fn partial_cmp(&self,other: &AssocMeaning<K,T>) -> Option<Ordering> {
+        match self.key.partial_cmp(&other.key) {
+            None => None,
+            Some(Ordering::Equal) => self.meaning.partial_cmp(&other.meaning),
+            Some(r) => Some(r)
+        }
+    }
+}
+
+impl<K : Ord,T : Semantic> Ord for AssocMeaning<K,T> {
+    fn cmp(&self,other: &AssocMeaning<K,T>) -> Ordering {
+        match self.key.cmp(&other.key) {
+            Ordering::Equal => self.meaning.cmp(&other.meaning),
+            r => r
+        }
+    }
+}
+
+impl<K : Hash,T : Semantic> Hash for AssocMeaning<K,T> {
+    fn hash<H>(&self, state: &mut H) where H: Hasher {
+        self.key.hash(state);
+        self.meaning.hash(state);
+    }
+}
+
+impl<K : Debug,T : Semantic> Debug for AssocMeaning<K,T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        f.debug_struct("AssocMeaning")
+            .field("key",&self.key)
+            .field("meaning",&self.meaning)
+            .finish()
+    }
+}
+
 pub struct AssocMeanings<'a,K : 'a,T : 'a+Semantics<'a>> {
     assoc: &'a Assoc<K,T>,
     index: usize,
@@ -4213,11 +4258,11 @@ impl<'a,K : Clone,T> Iterator for AssocMeanings<'a,K,T>
     }
 }
 
-impl<K,T : Semantic> Semantic for Assoc<K,T> {
+impl<K : Ord+Hash+Debug,T : Semantic> Semantic for Assoc<K,T> {
     type Meaning = AssocMeaning<K,T>;
 }
 
-impl<'a,K : 'a+Clone,T : 'a+Semantics<'a>> Semantics<'a> for Assoc<K,T> {
+impl<'a,K : 'a+Clone+Ord+Hash+Debug,T : 'a+Semantics<'a>> Semantics<'a> for Assoc<K,T> {
     type Meanings = AssocMeanings<'a,K,T>;
     fn meanings(&'a self) -> Self::Meanings {
         AssocMeanings { assoc: self,
@@ -4226,6 +4271,7 @@ impl<'a,K : 'a+Clone,T : 'a+Semantics<'a>> Semantics<'a> for Assoc<K,T> {
     }
 }
 
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug)]
 pub enum ChoiceMeaning<M> {
     Selector(usize),
     Item(usize,M)
@@ -4285,6 +4331,7 @@ impl<'a,T : 'a+Semantics<'a>> Semantics<'a> for Choice<T> {
     }
 }
 
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug)]
 pub enum TupleMeaning<T,U> {
     Fst(T),
     Snd(U)
@@ -4374,6 +4421,7 @@ impl<'a> Semantics<'a> for SingletonBitVec {
     fn meanings(&'a self) -> Self::Meanings { once(()) }
 }
 
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug)]
 pub enum BitVecVectorStackMeaning<M> {
     Top,
     Elem(usize,M)
