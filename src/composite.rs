@@ -4123,8 +4123,11 @@ impl<C : Composite> CompExpr<C> {
     }
 }
 
-pub trait Semantics<'a> {
+pub trait Semantic {
     type Meaning;
+}
+
+pub trait Semantics<'a> : Semantic {
     type Meanings : Iterator<Item=Self::Meaning>;
     fn meanings(&'a self) -> Self::Meanings;
 }
@@ -4142,7 +4145,7 @@ pub struct VecMeanings<'a,T : 'a+Semantics<'a>> {
 
 impl<'a,T> Iterator for VecMeanings<'a,T>
     where T : Semantics<'a> {
-    type Item = VecMeaning<<T as Semantics<'a>>::Meaning>;
+    type Item = VecMeaning<T::Meaning>;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.iter {
@@ -4163,8 +4166,11 @@ impl<'a,T> Iterator for VecMeanings<'a,T>
     }
 }
 
-impl<'a,T : 'a+Semantics<'a>> Semantics<'a> for Vec<T> {
+impl<T : Semantic> Semantic for Vec<T> {
     type Meaning = VecMeaning<T::Meaning>;
+}
+
+impl<'a,T : 'a+Semantics<'a>> Semantics<'a> for Vec<T> {
     type Meanings = VecMeanings<'a,T>;
     fn meanings(&'a self) -> Self::Meanings {
         VecMeanings { vec: self,
@@ -4173,10 +4179,9 @@ impl<'a,T : 'a+Semantics<'a>> Semantics<'a> for Vec<T> {
     }
 }
 
-pub struct AssocMeaning<'a,K,T : 'a+Semantics<'a>> {
+pub struct AssocMeaning<K,T : Semantic> {
     pub key: K,
-    pub meaning: T::Meaning,
-    phantom: PhantomData<&'a ()>
+    pub meaning: T::Meaning
 }
 
 pub struct AssocMeanings<'a,K : 'a,T : 'a+Semantics<'a>> {
@@ -4187,14 +4192,13 @@ pub struct AssocMeanings<'a,K : 'a,T : 'a+Semantics<'a>> {
 
 impl<'a,K : Clone,T> Iterator for AssocMeanings<'a,K,T>
     where T : Semantics<'a> {
-    type Item = AssocMeaning<'a,K,T>;
-    fn next(&mut self) -> Option<AssocMeaning<'a,K,T>> {
+    type Item = AssocMeaning<K,T>;
+    fn next(&mut self) -> Option<AssocMeaning<K,T>> {
         loop {
             match self.iter {
                 Some(ref mut it) => match it.next() {
                     Some(r) => return Some(AssocMeaning { key: self.assoc.0[self.index].0.clone(),
-                                                          meaning: r,
-                                                          phantom: PhantomData }),
+                                                          meaning: r }),
                     None => { self.index+=1; }
                 },
                 None => {}
@@ -4209,8 +4213,11 @@ impl<'a,K : Clone,T> Iterator for AssocMeanings<'a,K,T>
     }
 }
 
+impl<K,T : Semantic> Semantic for Assoc<K,T> {
+    type Meaning = AssocMeaning<K,T>;
+}
+
 impl<'a,K : 'a+Clone,T : 'a+Semantics<'a>> Semantics<'a> for Assoc<K,T> {
-    type Meaning = AssocMeaning<'a,K,T>;
     type Meanings = AssocMeanings<'a,K,T>;
     fn meanings(&'a self) -> Self::Meanings {
         AssocMeanings { assoc: self,
@@ -4261,8 +4268,11 @@ impl<'a,T : Semantics<'a>> Iterator for ChoiceMeanings<'a,T> {
     }
 }
 
-impl<'a,T : 'a+Semantics<'a>> Semantics<'a> for Choice<T> {
+impl<T : Semantic> Semantic for Choice<T> {
     type Meaning = ChoiceMeaning<T::Meaning>;
+}
+
+impl<'a,T : 'a+Semantics<'a>> Semantics<'a> for Choice<T> {
     type Meanings = ChoiceMeanings<'a,T>;
     fn meanings(&'a self) -> Self::Meanings {
         ChoiceMeanings { choice: self,
@@ -4313,9 +4323,13 @@ impl<'a,T,U> Iterator for TupleMeanings<'a,T,U>
     }
 }
 
+impl<T,U> Semantic for (T,U)
+    where T : Semantic, U : Semantic {
+    type Meaning = TupleMeaning<T::Meaning,U::Meaning>;
+}
+
 impl<'a,T,U> Semantics<'a> for (T,U)
     where T : 'a+Semantics<'a>,U : 'a+Semantics<'a> {
-    type Meaning = TupleMeaning<T::Meaning,U::Meaning>;
     type Meanings = TupleMeanings<'a,T,U>;
     fn meanings(&'a self) -> Self::Meanings {
         let it = (&self.0).meanings();
@@ -4324,26 +4338,38 @@ impl<'a,T,U> Semantics<'a> for (T,U)
     }
 }
 
-impl<'a,D> Semantics<'a> for Data<D> {
+impl<D> Semantic for Data<D> {
     type Meaning = ();
+}
+
+impl<'a,D> Semantics<'a> for Data<D> {
     type Meanings = Empty<()>;
     fn meanings(&'a self) -> Self::Meanings { empty() }
 }
 
+impl Semantic for Singleton {
+    type Meaning = ();
+}
+
 impl<'a> Semantics<'a> for Singleton {
-    type Meaning = ();
     type Meanings = Once<()>;
     fn meanings(&'a self) -> Self::Meanings { once(()) }
 }
 
-impl<'a> Semantics<'a> for &'a SingletonBool {
+impl Semantic for SingletonBool {
     type Meaning = ();
+}
+
+impl<'a> Semantics<'a> for SingletonBool {
     type Meanings = Once<()>;
     fn meanings(&'a self) -> Self::Meanings { once(()) }
 }
 
-impl<'a> Semantics<'a> for &'a SingletonBitVec {
+impl Semantic for SingletonBitVec {
     type Meaning = ();
+}
+
+impl<'a> Semantics<'a> for SingletonBitVec {
     type Meanings = Once<()>;
     fn meanings(&'a self) -> Self::Meanings { once(()) }
 }
@@ -4397,9 +4423,13 @@ impl<'a,T> Iterator for BitVecVectorStackMeanings<'a,T>
     }
 }
 
+impl<T> Semantic for BitVecVectorStack<T>
+    where T : Semantic {
+    type Meaning = BitVecVectorStackMeaning<T::Meaning>;
+}
+
 impl<'a,T> Semantics<'a> for BitVecVectorStack<T>
     where T : 'a+Semantics<'a> {
-    type Meaning = BitVecVectorStackMeaning<T::Meaning>;
     type Meanings = BitVecVectorStackMeanings<'a,T>;
     fn meanings(&'a self) -> Self::Meanings {
         BitVecVectorStackMeanings {
@@ -4424,9 +4454,12 @@ impl<It : Iterator> Iterator for OptionMeanings<It> {
     }
 }
 
+impl<T : Semantic> Semantic for Option<T> {
+    type Meaning = T::Meaning;
+}
+
 impl<'a,T> Semantics<'a> for Option<T>
     where T : Semantics<'a> {
-    type Meaning = T::Meaning;
     type Meanings = OptionMeanings<T::Meanings>;
     fn meanings(&'a self) -> Self::Meanings {
         match self {
@@ -4435,4 +4468,3 @@ impl<'a,T> Semantics<'a> for Option<T>
         }
     }
 }
-
