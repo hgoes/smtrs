@@ -4164,7 +4164,7 @@ impl<'a,T> Iterator for VecMeanings<'a,T>
     }
 }
 
-impl<'a,T> Semantics for &'a Vec<T>
+impl<'a,T : Sized> Semantics for &'a Vec<T>
     where &'a T : Semantics {
     type Meaning = VecMeaning<<&'a T as Semantics>::Meaning>;
     type Meanings = VecMeanings<'a,T>;
