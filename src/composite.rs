@@ -16,7 +16,7 @@ use std::vec;
 use num_bigint::BigInt;
 use num_traits::cast::ToPrimitive;
 use std::ops::{Range};
-use std::iter::{Peekable,Once};
+use std::iter::{Peekable,Once,once,Empty,empty};
 use std::usize;
 use std::fmt;
 use std::marker::PhantomData;
@@ -4119,6 +4119,304 @@ impl<C : Composite> CompExpr<C> {
                 em.embed(expr::Expr::AsArray(nfun))
             }
             _ => unreachable!()
+        }
+    }
+}
+
+pub trait Semantics {
+    type Meaning;
+    type Meanings : Iterator<Item=Self::Meaning>;
+    fn meanings(&self) -> Self::Meanings;
+}
+
+pub struct VecMeaning<'a,T : 'a>
+    where &'a T : Semantics {
+    pub index: usize,
+    pub meaning: <&'a T as Semantics>::Meaning,
+    phantom: PhantomData<&'a ()>
+}
+
+pub struct VecMeanings<'a,T : 'a>
+    where &'a T : Semantics {
+    vec: &'a Vec<T>,
+    index: usize,
+    iter: Option<<&'a T as Semantics>::Meanings>
+}
+
+impl<'a,T> Iterator for VecMeanings<'a,T>
+    where &'a T : Semantics {
+    type Item = VecMeaning<'a,T>;
+    fn next(&mut self) -> Option<VecMeaning<'a,T>> {
+        loop {
+            match self.iter {
+                Some(ref mut it) => match it.next() {
+                    Some(r) => return Some(VecMeaning { index: self.index,
+                                                        meaning: r,
+                                                        phantom: PhantomData }),
+                    None => { self.index+=1; }
+                },
+                None => {}
+            }
+            if self.index<self.vec.len() {
+                self.iter = Some((&self.vec[self.index]).meanings());
+            } else {
+                self.iter = None;
+                return None
+            }
+        }
+    }
+}
+
+impl<'a,T> Semantics for &'a Vec<T>
+    where &'a T : Semantics {
+    type Meaning = VecMeaning<'a,T>;
+    type Meanings = VecMeanings<'a,T>;
+    fn meanings(&self) -> Self::Meanings {
+        VecMeanings { vec: *self,
+                      index: 0,
+                      iter: None }
+    }
+}
+
+pub struct AssocMeaning<'a,K,T : 'a>
+    where &'a T : Semantics {
+    pub key: K,
+    pub meaning: <&'a T as Semantics>::Meaning,
+    phantom: PhantomData<&'a ()>
+}
+
+pub struct AssocMeanings<'a,K : 'a,T : 'a>
+    where &'a T : Semantics {
+    assoc: &'a Assoc<K,T>,
+    index: usize,
+    iter: Option<<&'a T as Semantics>::Meanings>
+}
+
+impl<'a,K : Clone,T> Iterator for AssocMeanings<'a,K,T>
+    where &'a T : Semantics {
+    type Item = AssocMeaning<'a,K,T>;
+    fn next(&mut self) -> Option<AssocMeaning<'a,K,T>> {
+        loop {
+            match self.iter {
+                Some(ref mut it) => match it.next() {
+                    Some(r) => return Some(AssocMeaning { key: self.assoc.0[self.index].0.clone(),
+                                                          meaning: r,
+                                                          phantom: PhantomData }),
+                    None => { self.index+=1; }
+                },
+                None => {}
+            }
+            if self.index<self.assoc.0.len() {
+                self.iter = Some((&self.assoc.0[self.index].1).meanings());
+            } else {
+                self.iter = None;
+                return None
+            }
+        }
+    }
+}
+
+impl<'a,K : Clone,T> Semantics for &'a Assoc<K,T>
+    where &'a T : Semantics {
+    type Meaning = AssocMeaning<'a,K,T>;
+    type Meanings = AssocMeanings<'a,K,T>;
+    fn meanings(&self) -> Self::Meanings {
+        AssocMeanings { assoc: *self,
+                        index: 0,
+                        iter: None }
+    }
+}
+
+pub enum ChoiceMeaning<M> {
+    Selector(usize),
+    Item(usize,M)
+}
+
+enum ChoiceMeaningsIter<It> {
+    Selector,
+    Item(It),
+    End
+}
+
+pub struct ChoiceMeanings<'a,T : 'a>
+    where &'a T : Semantics {
+    choice: &'a Choice<T>,
+    index: usize,
+    iter: ChoiceMeaningsIter<<&'a T as Semantics>::Meanings>
+}
+
+impl<'a,T> Iterator for ChoiceMeanings<'a,T>
+    where &'a T : Semantics {
+    type Item = ChoiceMeaning<<&'a T as Semantics>::Meaning>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let (res,niter) = match self.iter {
+            ChoiceMeaningsIter::Selector => {
+                (Some(ChoiceMeaning::Selector(self.index)),
+                 ChoiceMeaningsIter::Item((&self.choice.0[self.index]).meanings()))
+            },
+            ChoiceMeaningsIter::Item(ref mut it) => match it.next() {
+                Some(r) => return Some(ChoiceMeaning::Item(self.index,r)),
+                None => if self.index+1<self.choice.0.len() {
+                    self.index+=1;
+                    (Some(ChoiceMeaning::Selector(self.index)),
+                     ChoiceMeaningsIter::Item((&self.choice.0[self.index]).meanings()))
+                } else {
+                    (None,ChoiceMeaningsIter::End)
+                }
+            },
+            ChoiceMeaningsIter::End => return None
+        };
+        self.iter = niter;
+        res
+    }
+}
+
+impl<'a,T> Semantics for &'a Choice<T>
+    where &'a T : Semantics {
+    type Meaning = ChoiceMeaning<<&'a T as Semantics>::Meaning>;
+    type Meanings = ChoiceMeanings<'a,T>;
+    fn meanings(&self) -> Self::Meanings {
+        ChoiceMeanings { choice: *self,
+                         index: 0,
+                         iter: if self.0.len() > 0 {
+                             ChoiceMeaningsIter::Selector
+                         } else {
+                             ChoiceMeaningsIter::End
+                         } }
+    }
+}
+
+pub enum TupleMeaning<T,U> {
+    Fst(T),
+    Snd(U)
+}
+
+enum TupleMeaningsIter<It1,It2> {
+    Fst(It1),
+    Snd(It2)
+}
+
+pub struct TupleMeanings<'a,T : 'a,U : 'a>
+    where &'a T : Semantics, &'a U : Semantics {
+    tuple: &'a (T,U),
+    iter: TupleMeaningsIter<<&'a T as Semantics>::Meanings,<&'a U as Semantics>::Meanings>
+}
+
+impl<'a,T,U> Iterator for TupleMeanings<'a,T,U>
+    where &'a T : Semantics, &'a U : Semantics {
+    type Item = TupleMeaning<<&'a T as Semantics>::Meaning,<&'a U as Semantics>::Meaning>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut snd = match self.iter {
+            TupleMeaningsIter::Fst(ref mut it) => match it.next() {
+                Some(r) => return Some(TupleMeaning::Fst(r)),
+                None => (&self.tuple.1).meanings()
+            },
+            TupleMeaningsIter::Snd(ref mut it) => match it.next() {
+                Some(r) => return Some(TupleMeaning::Snd(r)),
+                None => return None
+            }
+        };
+        let r = match snd.next() {
+            None => None,
+            Some(r) => Some(TupleMeaning::Snd(r))
+        };
+        self.iter = TupleMeaningsIter::Snd(snd);
+        r
+    }
+}
+
+impl<'a,T,U> Semantics for &'a (T,U)
+    where &'a T : Semantics,&'a U : Semantics {
+    type Meaning = TupleMeaning<<&'a T as Semantics>::Meaning,<&'a U as Semantics>::Meaning>;
+    type Meanings = TupleMeanings<'a,T,U>;
+    fn meanings(&self) -> Self::Meanings {
+        let it = (&self.0).meanings();
+        TupleMeanings { tuple: *self,
+                        iter: TupleMeaningsIter::Fst(it) }
+    }
+}
+
+impl<'a,D> Semantics for &'a Data<D> {
+    type Meaning = ();
+    type Meanings = Empty<()>;
+    fn meanings(&self) -> Self::Meanings { empty() }
+}
+
+impl<'a> Semantics for &'a Singleton {
+    type Meaning = ();
+    type Meanings = Once<()>;
+    fn meanings(&self) -> Self::Meanings { once(()) }
+}
+
+impl<'a> Semantics for &'a SingletonBool {
+    type Meaning = ();
+    type Meanings = Once<()>;
+    fn meanings(&self) -> Self::Meanings { once(()) }
+}
+
+impl<'a> Semantics for &'a SingletonBitVec {
+    type Meaning = ();
+    type Meanings = Once<()>;
+    fn meanings(&self) -> Self::Meanings { once(()) }
+}
+
+pub enum BitVecVectorStackMeaning<M> {
+    Top,
+    Elem(usize,M)
+}
+
+enum BitVecVectorStackMeaningsIter<It> {
+    Top,
+    Elem(usize,It),
+    End
+}
+
+pub struct BitVecVectorStackMeanings<'a,T : 'a>
+    where &'a T : Semantics {
+    stack: &'a BitVecVectorStack<T>,
+    iter: BitVecVectorStackMeaningsIter<<&'a T as Semantics>::Meanings>
+}
+
+impl<'a,T> Iterator for BitVecVectorStackMeanings<'a,T>
+    where &'a T : Semantics {
+    type Item = BitVecVectorStackMeaning<<&'a T as Semantics>::Meaning>;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let (res,niter) = match self.iter {
+                BitVecVectorStackMeaningsIter::Top
+                    => (Some(BitVecVectorStackMeaning::Top),
+                        if self.stack.elements.len() > 0 {
+                            BitVecVectorStackMeaningsIter::Elem(0,(&self.stack.elements[0]).meanings())
+                        } else {
+                            BitVecVectorStackMeaningsIter::End
+                        }),
+                BitVecVectorStackMeaningsIter::Elem(idx,ref mut it)
+                    => match it.next() {
+                        Some(r) => return Some(BitVecVectorStackMeaning::Elem(idx,r)),
+                        None => (None,if self.stack.elements.len() > idx+1 {
+                            BitVecVectorStackMeaningsIter::Elem(idx+1,(&self.stack.elements[idx+1]).meanings())
+                        } else {
+                            BitVecVectorStackMeaningsIter::End
+                        })
+                    },
+                BitVecVectorStackMeaningsIter::End => return None
+            };
+            self.iter = niter;
+            if let Some(r) = res {
+                return Some(r)
+            }
+        }
+    }
+}
+
+impl<'a,T> Semantics for &'a BitVecVectorStack<T>
+    where &'a T : Semantics {
+    type Meaning = BitVecVectorStackMeaning<<&'a T as Semantics>::Meaning>;
+    type Meanings = BitVecVectorStackMeanings<'a,T>;
+    fn meanings(&self) -> Self::Meanings {
+        BitVecVectorStackMeanings {
+            stack: *self,
+            iter: BitVecVectorStackMeaningsIter::Top
         }
     }
 }
