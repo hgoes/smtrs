@@ -394,6 +394,27 @@ impl<'a,T : 'a+Composite+Ord> Choice<T> {
         }
         Ok((Choice(nvec),Transformation::concat(&ninp[..])))
     }
+    pub fn condition<Em : Embed>(&'a self,inp: Transf<Em>,el: &T,conds: &mut Vec<Transf<Em>>,pos: usize)
+                                 -> Option<Transf<Em>> {
+        let singleton = self.0.len()==1;
+        let mut off = 0;
+        conds.truncate(pos);
+        for el_ in self.0.iter() {
+            match el.cmp(el_) {
+                Ordering::Equal => {
+                    if singleton {
+                        return Some(Transformation::view(1,inp.size()-1,inp))
+                    } else {
+                        conds.push(Transformation::view(off,1,inp.clone()));
+                        return Some(Transformation::view(off+1,el.num_elem(),inp))
+                    }
+                },
+                Ordering::Less => { off+=1+el_.num_elem() },
+                Ordering::Greater => return None
+            }
+        }
+        None
+    }
 }
 
 impl<'a,T : 'a> OptRef<'a,Choice<T>> {
