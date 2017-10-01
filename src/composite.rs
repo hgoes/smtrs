@@ -3554,6 +3554,7 @@ impl<T : Composite> BitVecVectorStack<T> {
             el_view.write(new,new_inp,self,&mut updates);
         }
         self.elements.push(el.clone());
+        conds.truncate(pos);
         Ok(finish_updates(updates,inp))
     }
 }
