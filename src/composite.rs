@@ -3509,7 +3509,7 @@ impl<T : Composite> BitVecVectorStack<T> {
             None => {
                 let idx_srt = em.type_of(&ridx)?;
                 let idx_rsrt = em.unbed_sort(&idx_srt)?;
-                IndexIterator::Unlimited(idx_rsrt,0..self.elements.len()+1)
+                IndexIterator::Unlimited(idx_rsrt,0..self.elements.len())
             }
         };
         Ok(BitVecVectorStackAccess { iter: IndexedIter::new(it,idx),
@@ -4100,9 +4100,7 @@ impl<T,Em : DeriveValues> CondIterator<Em> for BitVecVectorStackAccess<T,Em> {
     fn next(&mut self,conds: &mut Vec<Transf<Em>>,pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
         while let Some(idx) = self.iter.next(conds,pos,em)? {
-            if idx>0 {
-                return Ok(Some(BitVecVectorStackView::new(idx-1)))
-            }
+            return Ok(Some(BitVecVectorStackView::new(idx)))
         }
         Ok(None)
     }
