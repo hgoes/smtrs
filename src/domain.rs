@@ -1,10 +1,12 @@
-use expr::{Expr,Function};
+use expr::{Expr,Function,BVOp,ArithOp};
 use types::{Value};
 use embed::Embed;
 use composite::*;
 use std::fmt::Debug;
 use std::iter::{Empty,Once,once};
 use std::cmp::Ordering;
+use num_bigint::BigInt;
+use std::ops::Shl;
 
 pub trait Domain<T : Composite> : Sized {
     type ValueIterator : Iterator<Item=Value>+Clone;
@@ -256,6 +258,34 @@ impl Attribute for Const {
                         },
                         Const::NotConst => Const::NotConst
                     }
+                },
+                Function::BV(bw,op) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                        Const::IsConst(Value::BitVec(_,ref rhs)) => match op {
+                            BVOp::Arith(ArithOp::Add) => {
+                                let res = lhs+rhs;
+                                let limit = BigInt::from(1).shl(bw);
+                                let nres = if res >= limit {
+                                    res-limit
+                                } else {
+                                    res
+                                };
+                                Const::IsConst(Value::BitVec(bw,nres))
+                            },
+                            BVOp::Arith(ArithOp::Sub) => {
+                                let res = lhs-rhs;
+                                let nres = if res < BigInt::from(0) {
+                                    res+BigInt::from(1).shl(bw)
+                                } else {
+                                    res
+                                };
+                                Const::IsConst(Value::BitVec(bw,nres))
+                            },
+                            _ => panic!("Derive bv op: {:?}",op)
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
                 },
                 _ => panic!("Derive function: {:?}",fun)
             },
