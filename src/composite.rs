@@ -3489,20 +3489,72 @@ impl<T : Composite> BitVecVectorStack<T> {
                                          exprs: &[Em::Expr],
                                          em: &mut Em)
                                          -> Result<BitVecVectorStackAccess<T,Em>,Em::Error> {
-        let idx = inp.get(exprs,0,em)?;
-        let opt_vals = em.derive_values(&idx)?;
+        let sz = self.top.0;
+        let top = Transformation::map_by_elem(
+            Box::new(move |_,_,e: Em::Expr,em: &mut Em| {
+                let one = em.const_bitvec(sz,BigInt::from(1))?;
+                let ne = em.bvsub(e,one)?;
+                Ok(ne) }),Transformation::view(0,1,inp));
+        self.access(top,exprs,em)
+    }
+    pub fn access<Em : DeriveValues>(&self,
+                                     idx: Transf<Em>,
+                                     exprs: &[Em::Expr],
+                                     em: &mut Em)
+                                     -> Result<BitVecVectorStackAccess<T,Em>,Em::Error> {
+        let ridx = idx.get(exprs,0,em)?;
+        let opt_vals = em.derive_values(&ridx)?;
         let it = match opt_vals {
             Some(rvals) => IndexIterator::Limited(rvals),
             None => {
-                let idx_srt = em.type_of(&idx)?;
+                let idx_srt = em.type_of(&ridx)?;
                 let idx_rsrt = em.unbed_sort(&idx_srt)?;
                 IndexIterator::Unlimited(idx_rsrt,0..self.elements.len()+1)
             }
         };
-        Ok(BitVecVectorStackAccess { iter: IndexedIter::new(it,
-                                                            Transformation::view(0,1,inp)),
+        Ok(BitVecVectorStackAccess { iter: IndexedIter::new(it,idx),
                                      phantom: PhantomData })
+    }
+    pub fn push_cond<Em : DeriveValues>(&mut self,
+                                        inp: Transf<Em>,
+                                        el: T,
+                                        el_inp: Transf<Em>,
+                                        conds: &mut Vec<Transf<Em>>,
+                                        exprs: &[Em::Expr],
+                                        em: &mut Em)
+                                        -> Result<Transf<Em>,Em::Error> {
+        let pos = conds.len();
+        let elements_size = self.elements.num_elem();
+        let sz = self.top.0;
+        let ntop = Transformation::map_by_elem(
+            Box::new(move |_,_,e: Em::Expr,em: &mut Em| {
+                let one = em.const_bitvec(sz,BigInt::from(1))?;
+                let ne = em.bvadd(e,one)?;
+                Ok(ne) }),Transformation::view(0,1,inp.clone()));
 
+        let mut updates = vec![(0,1,ntop),(elements_size,0,el_inp.clone())];
+        let mut iter = self.access(Transformation::view(0,1,inp.clone()),
+                                   exprs,em)?;
+        while let Some(el_view) = iter.next(conds,pos,em)? {
+            if el_view.idx == self.elements.len()+1 {
+                continue
+            }
+            let rcond = if conds.len()==0 {
+                let c = em.const_bool(true)?;
+                Transformation::constant(vec![c])
+            } else {
+                Transformation::and(conds.to_vec())
+            };
+            let (new,new_inp) = {
+                let (old,old_inp) = el_view.get_with_inp(self,inp.clone());
+                let (new,new_inp) = ite(OptRef::Ref(&el),OptRef::Ref(old),
+                                        rcond,el_inp.clone(),old_inp,em)?.expect("Incompatible element pushed");
+                (new.as_obj(),new_inp)
+            };
+            el_view.write(new,new_inp,self,&mut updates);
+        }
+        self.elements.push(el.clone());
+        Ok(finish_updates(updates,inp))
     }
 }
 
