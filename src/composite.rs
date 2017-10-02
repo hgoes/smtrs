@@ -3627,6 +3627,35 @@ pub trait ViewMut : View {
             check_updates(upd);
         }
     }
+    fn write_cond<Em : Embed>(&self,el: Self::Element,
+                              el_inp: Transf<Em>,
+                              new: &mut Self::Viewed,
+                              conds: &Vec<Transf<Em>>,
+                              upd: &mut Updates<Em>,
+                              orig: Transf<Em>,
+                              em: &mut Em) -> Result<(),Em::Error> {
+        if conds.len()==0 {
+            self.write(el,el_inp,new,upd);
+        } else {
+            let rcond = Transformation::and(conds.clone());
+            let (off,ref_new) = self.get_el_mut_ext(new);
+            let old_sz = ref_new.num_elem();
+            let old_inp = read_updates(off,old_sz,upd,orig);
+            let (nel,nel_inp) = match ite(OptRef::Owned(el),
+                                          OptRef::Ref(ref_new),
+                                          rcond,
+                                          el_inp.clone(),old_inp,em)? {
+                Some((nel_,nel_inp_)) => (nel_.as_obj(),nel_inp_),
+                None => panic!("write_cond with incompatible elements")
+            };
+            *ref_new = nel;
+            insert_updates(upd,off,old_sz,nel_inp);
+            if cfg!(debug_assertions) {
+                check_updates(upd);
+            }
+        }
+        Ok(())
+    }
 }
 
 pub trait ViewOpt : View {
@@ -3660,6 +3689,23 @@ pub trait ViewInsert : ViewOpt {
         insert_updates(upd,off,old_sz,el_inp);
         if cfg!(debug_assertions) {
             check_updates(upd);
+        }
+    }
+    fn insert_cond<Em : Embed>(&self,obj: &mut Self::Viewed,
+                               el: Self::Element,
+                               el_inp: Transf<Em>,
+                               conds: &Vec<Transf<Em>>,
+                               upd: &mut Updates<Em>,
+                               orig: Transf<Em>,
+                               em: &mut Em) -> Result<(),Em::Error>
+        where Self : ViewMut {
+        if conds.len()==0 {
+            Ok(self.insert(obj,el,el_inp,upd))
+        } else {
+            match self.get_el_opt(obj) {
+                None => Ok(self.insert(obj,el,el_inp,upd)),
+                Some(_) => self.write_cond(el,el_inp,obj,conds,upd,orig,em)
+            }
         }
     }
 }
@@ -3844,6 +3890,74 @@ fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,
         return
     }
     upd.push((off,old,new))
+}
+
+pub fn read_updates<Em : Embed>(off: usize,
+                                size: usize,
+                                upd: &Updates<Em>,
+                                orig: Transf<Em>) -> Transf<Em> {
+    let mut old_off = 0;
+    let mut new_off = 0;
+    let mut it = upd.iter();
+    while let Some(&(coff,old_sz,ref new)) = it.next() {
+        let nsz = new.size();
+        if off < coff+nsz {
+            if off+size <= coff {
+                return Transformation::view(off+new_off-old_off,size,orig)
+            }
+            if off==coff && size==nsz {
+                return new.clone()
+            }
+            if off>=coff && off+size <= coff+nsz {
+                return Transformation::view(off-coff,size,new.clone());
+            }
+            let mut res = Vec::new();
+            if off < coff {
+                res.push(Transformation::view(off+old_off-new_off,
+                                              coff-off,orig.clone()));
+            }
+            if off+size < coff+nsz {
+                res.push(Transformation::view(0,off+size-coff,new.clone()));
+                return Transformation::concat(&res[..])
+            }
+            res.push(new.clone());
+            old_off+=coff-new_off+old_sz;
+            new_off =coff+nsz;
+            let mut rem = off+size+nsz-coff;
+            while rem>0 {
+                match it.next() {
+                    None => {
+                        res.push(Transformation::view(old_off,rem,orig));
+                        return Transformation::concat(&res[..])
+                    },
+                    Some(&(coff,old_sz,ref new)) => {
+                        if coff>new_off {
+                            if coff-new_off >= rem {
+                                res.push(Transformation::view(old_off,rem,orig));
+                                return Transformation::concat(&res[..])
+                            }
+                            res.push(Transformation::view(old_off,coff-new_off,
+                                                          orig.clone()));
+                            rem = rem+coff-new_off;
+                        }
+                        let nsz = new.size();
+                        if rem<nsz {
+                            res.push(Transformation::view(0,rem,new.clone()));
+                            return Transformation::concat(&res[..])
+                        }
+                        res.push(new.clone());
+                        rem-=nsz;
+                        old_off+=coff-new_off+old_sz;
+                        new_off = coff+nsz;
+                    }
+                }
+            }
+            return Transformation::concat(&res[..])
+        }
+        old_off+=coff-new_off+old_sz;
+        new_off =coff+nsz;
+    }
+    Transformation::view(off+old_off-new_off,size,orig)
 }
 
 pub fn finish_updates<Em : Embed>(mut upd: Updates<Em>,orig: Transf<Em>) -> Transf<Em> {
