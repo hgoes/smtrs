@@ -259,6 +259,42 @@ impl Attribute for Const {
                         Const::NotConst => Const::NotConst
                     }
                 },
+                Function::Not => match args[0] {
+                    Const::IsConst(Value::Bool(x)) => Const::IsConst(Value::Bool(!x)),
+                    _ => Const::NotConst
+                },
+                Function::And(_) => {
+                    let mut all_true = true;
+                    for arg in args.iter() {
+                        match arg {
+                            &Const::IsConst(Value::Bool(x)) => if !x {
+                                return Const::IsConst(Value::Bool(false))
+                            },
+                            _ => { all_true = false; }
+                        }
+                    }
+                    if all_true {
+                        Const::IsConst(Value::Bool(true))
+                    } else {
+                        Const::NotConst
+                    }
+                },
+                Function::Or(_) => {
+                    let mut all_false = true;
+                    for arg in args.iter() {
+                        match arg {
+                            &Const::IsConst(Value::Bool(x)) => if x {
+                                return Const::IsConst(Value::Bool(true))
+                            },
+                            _ => { all_false = false; }
+                        }
+                    }
+                    if all_false {
+                        Const::IsConst(Value::Bool(false))
+                    } else {
+                        Const::NotConst
+                    }
+                },
                 Function::BV(bw,op) => match args[0] {
                     Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                         Const::IsConst(Value::BitVec(_,ref rhs)) => match op {
