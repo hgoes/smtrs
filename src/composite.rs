@@ -3532,7 +3532,7 @@ impl<T : Composite> BitVecVectorStack<T> {
                 let ne = em.bvadd(e,one)?;
                 Ok(ne) }),Transformation::view(0,1,inp.clone()));
 
-        let mut updates = vec![(0,1,ntop),(elements_size,0,el_inp.clone())];
+        let mut updates = vec![(0,1,ntop),(elements_size+1,0,el_inp.clone())];
         let mut iter = self.access(Transformation::view(0,1,inp.clone()),
                                    exprs,em)?;
         while let Some(el_view) = iter.next(conds,pos,em)? {
