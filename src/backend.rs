@@ -21,11 +21,16 @@ pub trait Backend : Embed {
     fn push(&mut self) -> Result<(),Self::Error>;
     fn pop(&mut self) -> Result<(),Self::Error>;
     fn declare_var(&mut self,Self::Sort) -> Result<Self::Var,Self::Error>;
+    fn define_var(&mut self,Self::Expr) -> Result<Self::Var,Self::Error>;
     fn assert(&mut self,Self::Expr) -> Result<(),Self::Error>;
     fn check_sat(&mut self) -> Result<CheckSatResult,Self::Error>;
     fn get_value(&mut self,Self::Expr) -> Result<Value,Self::Error>;
     fn declare(&mut self,srt: Self::Sort) -> Result<Self::Expr,Self::Error> {
         let var = self.declare_var(srt)?;
+        self.embed(Expr::Var(var))
+    }
+    fn define(&mut self,e: Self::Expr) -> Result<Self::Expr,Self::Error> {
+        let var = self.define_var(e)?;
         self.embed(Expr::Var(var))
     }
 }
@@ -257,8 +262,15 @@ impl<R : Read,W : Write> Backend for Pipe<R,W> {
     }
     fn declare_var(&mut self,tp: PipeSort) -> Result<PipeVar,PipeError> {
         let vid = self.vars.len();
-        write!(self.writer,"(declare-fun {}{} () {}",PIPE_VAR_NAME,vid,tp).map_err(PipeError::IOError)?;
-        write!(self.writer,")\n").map_err(PipeError::IOError)?;
+        write!(self.writer,"(declare-fun {}{} () {})\n",PIPE_VAR_NAME,vid,tp).map_err(PipeError::IOError)?;
+        self.vars.insert(PipeVar(vid),tp);
+        Ok(PipeVar(vid))
+    }
+    fn define_var(&mut self,e: PipeExpr) -> Result<PipeVar,PipeError> {
+        let vid = self.vars.len();
+        let tp = self.type_of(&e)?;
+        write!(self.writer,"(define-fun {}{} () {} {})\n",PIPE_VAR_NAME,vid,tp,e)
+            .map_err(PipeError::IOError)?;
         self.vars.insert(PipeVar(vid),tp);
         Ok(PipeVar(vid))
     }
