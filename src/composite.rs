@@ -3536,7 +3536,7 @@ impl<T : Composite> BitVecVectorStack<T> {
         let mut iter = self.access(Transformation::view(0,1,inp.clone()),
                                    exprs,em)?;
         while let Some(el_view) = iter.next(conds,pos,em)? {
-            if el_view.idx == self.elements.len()+1 {
+            if el_view.idx == self.elements.len() {
                 continue
             }
             let rcond = if conds.len()==0 {
