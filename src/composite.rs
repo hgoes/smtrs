@@ -3827,7 +3827,7 @@ fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,
             debug_assert!(coff+upd[i].2.size()<=off);
             continue
         }
-        if coff==off {
+        if coff==off && old!=0 {
             debug_assert_eq!(old_sz,old);
             debug_assert_eq!(upd[i].2.size(),new.size());
             upd[i].2 = new;
