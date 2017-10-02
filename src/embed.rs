@@ -121,7 +121,7 @@ pub trait Embed : Sized {
            -> Result<Self::Expr,Self::Error> {
         match args.len() {
             0 => self.embed(Expr::Const(Value::Bool(true))),
-            1 => Ok(args[1].clone()),
+            1 => Ok(args[0].clone()),
             _ => self.embed(Expr::App(Function::And(args.len()),args))
         }
     }
