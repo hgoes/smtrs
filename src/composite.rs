@@ -3596,9 +3596,19 @@ pub trait View {
     }
     fn get_el_ext<'a>(&self,&'a Self::Viewed)
                       -> (usize,&'a Self::Element) where Self : 'a;
-    fn get_with_inp<'a,Em : Embed>(&self,obj: &'a Self::Viewed,inp: Transf<Em>) -> (&'a Self::Element,Transf<Em>) where Self : 'a {
+    fn get_with_inp<'a,Em : Embed>(&self,obj: &'a Self::Viewed,inp: Transf<Em>)
+                                   -> (&'a Self::Element,Transf<Em>)
+        where Self : 'a {
         let (off,el) = self.get_el_ext(obj);
         (el,Transformation::view(off,el.num_elem(),inp))
+    }
+    fn get_with_upd<'a,Em : Embed>(&self,obj: &'a Self::Viewed,
+                                   upd: &Updates<Em>,
+                                   orig: Transf<Em>)
+                                   -> (&'a Self::Element,Transf<Em>)
+        where Self : 'a {
+        let (off,el) = self.get_el_ext(obj);
+        (el,read_updates(off,el.num_elem(),upd,orig))
     }
     fn then<V : View<Viewed=Self::Element>>(self,v: V) -> Then<Self,V>
         where Self : Sized {
