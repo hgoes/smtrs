@@ -3874,9 +3874,9 @@ fn check_updates<Em : Embed>(upd: &Updates<Em>) -> () {
     }
 }
 
-fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,
-                              off: usize,old: usize,
-                              new: Transf<Em>) -> () {
+pub fn insert_updates<Em : Embed>(upd: &mut Updates<Em>,
+                                  off: usize,old: usize,
+                                  new: Transf<Em>) -> () {
     for i in 0..upd.len() {
         let (coff,old_sz,_) = upd[i];
         if coff < off {
