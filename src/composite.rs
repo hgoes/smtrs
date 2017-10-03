@@ -3847,7 +3847,7 @@ impl<K : Ord+Clone+Hash,V : Composite> ViewInsert for AssocView<K,V> {
     }
 }
 
-type Updates<Em> = Vec<(usize,usize,Transf<Em>)>;
+pub type Updates<Em> = Vec<(usize,usize,Transf<Em>)>;
 
 fn check_updates<Em : Embed>(upd: &Updates<Em>) -> () {
     let mut last_start = 0;
