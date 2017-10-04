@@ -72,7 +72,8 @@ pub enum BVOp {
     SHL,LSHR,ASHR,
     XOr,And,Or,
     Not,Neg,
-    Extract(usize,usize) // start, len
+    Extract(usize,usize), // start, len
+    Concat
 }
 
 impl<S : Clone + Eq + Debug,
@@ -424,7 +425,8 @@ impl Display for BVOp {
             BVOp::Extract(start,len) => {
                 let end = start+len;
                 write!(f,"(_ extract {} {})",end,start)
-            }
+            },
+            BVOp::Concat => write!(f,"concat")
         }
     }
 }

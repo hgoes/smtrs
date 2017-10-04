@@ -271,6 +271,31 @@ pub trait Embed : Sized {
         self.embed(Expr::App(Function::BV(bw,BVOp::Div(false)),
                              vec![lhs,rhs]))
     }
+    fn extract(&mut self,start: usize,len: usize,e: Self::Expr)
+               -> Result<Self::Expr,Self::Error> {
+        let srt = self.type_of(&e)?;
+        let bw = match self.is_bitvec(&srt)? {
+            Some(r) => r,
+            None => panic!("Argument to extract not a bitvector")
+        };
+        self.embed(Expr::App(Function::BV(bw,BVOp::Extract(start,len)),
+                             vec![e]))
+    }
+    fn concat(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+              -> Result<Self::Expr,Self::Error> {
+        let srt_lhs = self.type_of(&lhs)?;
+        let bw_lhs = match self.is_bitvec(&srt_lhs)? {
+            Some(r) => r,
+            None => panic!("Argument to concat not a bitvector")
+        };
+        let srt_rhs = self.type_of(&rhs)?;
+        let bw_rhs = match self.is_bitvec(&srt_rhs)? {
+            Some(r) => r,
+            None => panic!("Argument to concat not a bitvector")
+        };
+        self.embed(Expr::App(Function::BV(bw_lhs+bw_rhs,BVOp::Concat),
+                             vec![lhs,rhs]))
+    }
     fn select(&mut self,arr: Self::Expr,idx: Vec<Self::Expr>)
               -> Result<Self::Expr,Self::Error> {
         let arr_tp = self.type_of(&arr)?;
