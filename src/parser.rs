@@ -1,7 +1,7 @@
 extern crate num_bigint;
 extern crate num_rational;
 
-use self::num_bigint::BigInt;
+use self::num_bigint::{BigInt,BigUint};
 use self::num_rational::Ratio;
 use types::{SortKind};
 use expr::{Expr,Function,OrdOp,ArithOp,BVOp};
@@ -932,9 +932,15 @@ fn parse_value<'inp,P : Parser>(input: &'inp[u8],pos: &mut Pos,p: &mut P, hint: 
                         pos.col+=off;
                         PResult::Done(Value::Real(Ratio::from(v)),&input[off..])
                     },
-                    Ok(SortKind::BitVec(sz)) => {
-                        pos.col+=off;
-                        PResult::Done(Value::BitVec(sz,v),&input[off..])
+                    Ok(SortKind::BitVec(sz)) => match v.to_biguint() {
+                        Some(rv) => {
+                            pos.col+=off;
+                            PResult::Done(Value::BitVec(sz,rv),&input[off..])
+                        },
+                        None => {
+                            pos.col+=off;
+                            PResult::SyntaxError(ParseError::NumberNotOfSort(v,(*srt).clone()))
+                        }
                     },
                     Ok(_) => PResult::SyntaxError(ParseError::NumberNotOfSort(v,(*srt).clone()))
                 },
@@ -955,7 +961,7 @@ fn parse_value<'inp,P : Parser>(input: &'inp[u8],pos: &mut Pos,p: &mut P, hint: 
                     if !(input[off] as char).is_digit(16) { break; }
                     off+=1;
                 }
-                match BigInt::parse_bytes(&input[2..off],16) {
+                match BigUint::parse_bytes(&input[2..off],16) {
                     None => panic!("Internal error: Cannot parse {:?} to BigInt",&input[2..off]),
                     Some(v) => {
                         pos.col+=off-2;
@@ -971,8 +977,8 @@ fn parse_value<'inp,P : Parser>(input: &'inp[u8],pos: &mut Pos,p: &mut P, hint: 
                         input[off]!=b'1' { break }
                     off+=1;
                 }
-                match BigInt::parse_bytes(&input[2..off],2) {
-                    None => panic!("Internal error: Cannot parse {:?} to BigInt",&input[2..off]),
+                match BigUint::parse_bytes(&input[2..off],2) {
+                    None => panic!("Internal error: Cannot parse {:?} to BigUint",&input[2..off]),
                     Some(v) => {
                         pos.col+=off-2;
                         PResult::Done(Value::BitVec((off-2),v),&input[off..])
@@ -1015,8 +1021,8 @@ fn parse_value<'inp,P : Parser>(input: &'inp[u8],pos: &mut Pos,p: &mut P, hint: 
         if off==2 {
             return PResult::Incomplete
         }
-        match BigInt::parse_bytes(&input2[2..off],10) {
-            None => panic!("Internal error: Cannot parse {:?} to BigInt",&input2[2..off]),
+        match BigUint::parse_bytes(&input2[2..off],10) {
+            None => panic!("Internal error: Cannot parse {:?} to BigUint",&input2[2..off]),
             Some(v) => {
                 pos.col+=off;
                 let input3 = eat_ws(&input2[off..],pos);

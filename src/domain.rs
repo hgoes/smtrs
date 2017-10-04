@@ -5,8 +5,9 @@ use composite::*;
 use std::fmt::Debug;
 use std::iter::{Empty,Once,once};
 use std::cmp::Ordering;
-use num_bigint::BigInt;
-use std::ops::Shl;
+use num_bigint::BigUint;
+use std::ops::{Shl,Shr};
+use num_traits::CheckedSub;
 
 pub trait Domain<T : Composite> : Sized {
     type ValueIterator : Iterator<Item=Value>+Clone;
@@ -299,7 +300,7 @@ impl Attribute for Const {
                     Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                         Const::IsConst(Value::BitVec(_,ref rhs)) => {
                             let res = lhs+rhs;
-                            let limit = BigInt::from(1).shl(bw);
+                            let limit = BigUint::from(1 as u8).shl(bw);
                             let nres = if res >= limit {
                                 res-limit
                             } else {
@@ -314,13 +315,11 @@ impl Attribute for Const {
                 Function::BV(bw,BVOp::Arith(ArithOp::Sub)) => match args[0] {
                     Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                         Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let res = lhs-rhs;
-                            let nres = if res < BigInt::from(0) {
-                                res+BigInt::from(1).shl(bw)
-                            } else {
-                                res
+                            let res = match lhs.checked_sub(rhs) {
+                                Some(r) => r,
+                                None => lhs+BigUint::from(1 as u8).shl(bw)-rhs
                             };
-                            Const::IsConst(Value::BitVec(bw,nres))
+                            Const::IsConst(Value::BitVec(bw,res))
                         },
                         _ => Const::NotConst
                     },
@@ -329,11 +328,19 @@ impl Attribute for Const {
                 Function::BV(bw,BVOp::Arith(ArithOp::Mult)) => match args[0] {
                     Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                         Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let limit = BigInt::from(1).shl(bw);
+                            let limit = BigUint::from(1 as u8).shl(bw);
                             let res = (lhs*rhs) % limit ;
                             Const::IsConst(Value::BitVec(bw,res))
                         },
                         _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
+                },
+                Function::BV(bw,BVOp::Extract(start,len)) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref x)) => {
+                        let x1 = x.shr(start);
+                        let mask = BigUint::from(1 as u8).shl(len)-(1 as u8);
+                        Const::IsConst(Value::BitVec(bw,x1 & mask))
                     },
                     _ => Const::NotConst
                 },

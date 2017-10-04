@@ -13,7 +13,7 @@ use std::hash::{Hash,Hasher};
 use std::fmt::Debug;
 use std::slice;
 use std::vec;
-use num_bigint::BigInt;
+use num_bigint::{BigInt,BigUint};
 use num_traits::cast::ToPrimitive;
 use std::ops::{Range};
 use std::iter::{Peekable,Once,once,Empty,empty};
@@ -1621,7 +1621,7 @@ pub fn index_as_value<T>(tp: &SortKind<T>,idx: usize) -> Value {
     match *tp {
         SortKind::Bool => Value::Bool(idx!=0),
         SortKind::Int => Value::Int(BigInt::from(idx)),
-        SortKind::BitVec(bw) => Value::BitVec(bw,BigInt::from(idx)),
+        SortKind::BitVec(bw) => Value::BitVec(bw,BigUint::from(idx)),
         _ => panic!("Cannot make value from index")
     }
 }
@@ -1738,7 +1738,7 @@ pub fn get_vec_elem_dyn<'a,T,Em
                     for i in 1..vec.as_ref().len() {
                         let (n_el,n_inp) = get_vec_elem(i,OptRef::Ref(vec.as_ref()),inp_vec.clone())?;
                         let cond_fun = move |vec:&[Em::Expr],res:&mut Vec<Em::Expr>,em:&mut Em| {
-                            let val = em.const_bitvec(sz,BigInt::from(i))?;
+                            let val = em.const_bitvec(sz,BigUint::from(i))?;
                             let expr = em.eq(vec[0].clone(),val)?;
                             res.push(expr);
                             Ok(())
@@ -2053,10 +2053,10 @@ impl<T : Composite + Clone> Composite for BitVecVectorStack<T> {
 }
 
 pub fn bv_vec_stack_empty<'a,T,Em>(bitwidth: usize,em: &mut Em)
-                                   -> Result<(OptRef<'a,BitVecVectorStack<T>>,Transf<Em>),Em::Error>
+                                   -> Result<(BitVecVectorStack<T>,Transf<Em>),Em::Error>
     where T : Composite, Em : Embed {
-    let res = OptRef::Owned(BitVecVectorStack { top: SingletonBitVec(bitwidth), elements: vec![] });
-    let outp = Transformation::constant(vec![em.const_bitvec(bitwidth,BigInt::from(0))?]);
+    let res = BitVecVectorStack { top: SingletonBitVec(bitwidth), elements: vec![] };
+    let outp = Transformation::constant(vec![em.const_bitvec(bitwidth,BigUint::from(0 as u8))?]);
     Ok((res,outp))
 }
 
@@ -2068,7 +2068,7 @@ pub fn bv_vec_stack_singleton<'a,T,Em>(bitwidth: usize,
     where T : Composite+Clone, Em : Embed {
     let res = OptRef::Owned(BitVecVectorStack { top: SingletonBitVec(bitwidth),
                                                 elements: vec![el.as_obj()] });
-    let inp_res = Transformation::concat(&[Transformation::constant(vec![em.const_bitvec(bitwidth,BigInt::from(1))?]),
+    let inp_res = Transformation::concat(&[Transformation::constant(vec![em.const_bitvec(bitwidth,BigUint::from(1 as u8))?]),
                                            inp_el]);
     Ok((res,inp_res))
 }
@@ -2208,7 +2208,7 @@ pub fn bv_vec_stack_push<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
                     Ordering::Greater => panic!("top of bitvector stack out of range"),
                     Ordering::Less => {
                         let (nvec,inp_nvec) = set_vec_elem(rx,vec,el,inp_vec,inp_el)?;
-                        let ntop = em.const_bitvec(bitwidth.0,x+1)?;
+                        let ntop = em.const_bitvec(bitwidth.0,x+(1 as u8))?;
                         let inp_ntop = Transformation::constant(vec![ntop]);
                         Ok(Some((OptRef::Owned(BitVecVectorStack { top: bitwidth,
                                                                    elements: nvec.as_obj() }),
@@ -2216,7 +2216,7 @@ pub fn bv_vec_stack_push<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
                     },
                     Ordering::Equal => {
                         let (nvec,inp_nvec) = push_vec_elem(vec,el,inp_vec,inp_el)?;
-                        let ntop = em.const_bitvec(bitwidth.0,x+1)?;
+                        let ntop = em.const_bitvec(bitwidth.0,x+(1 as u8))?;
                         let inp_ntop = Transformation::constant(vec![ntop]);
                         Ok(Some((OptRef::Owned(BitVecVectorStack { top: bitwidth,
                                                                    elements: nvec.as_obj() }),
@@ -2234,7 +2234,7 @@ pub fn bv_vec_stack_push<'a,'b,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
                 Some((nvec1,inp_nvec1)) => {
                     let (nvec2,inp_nvec2) = push_vec_elem(nvec1,OptRef::Ref(el.as_ref()),inp_nvec1.clone(),inp_el.clone())?;
                     let ntop_fun = move |_:&[Em::Expr],_:usize,e: Em::Expr,em: &mut Em| {
-                        let one = em.const_bitvec(bitwidth.0,BigInt::from(1))?;
+                        let one = em.const_bitvec(bitwidth.0,BigUint::from(1 as u8))?;
                         em.bvadd(e,one)
                     };
                     let ntop_inp = Transformation::map_by_elem(Box::new(ntop_fun),
@@ -2266,7 +2266,7 @@ pub fn bv_vec_stack_pop<'a,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
             debug_assert_eq!(bitwidth.0,bitwidth2);
             match x.to_usize() {
                 Some(rx) => if rx==0 || rx==1 {
-                    let zero = em.const_bitvec(bitwidth.0,BigInt::from(0))?;
+                    let zero = em.const_bitvec(bitwidth.0,BigUint::from(0 as u8))?;
                     Ok(Some((OptRef::Owned(BitVecVectorStack { top: bitwidth,
                                                                elements: vec![] }),
                              Transformation::constant(vec![zero]))))
@@ -2284,7 +2284,7 @@ pub fn bv_vec_stack_pop<'a,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
                         }
                     };
                     let inp_nvec = Transformation::view(1,nst.as_ref().elements.num_elem(),inp_stack);
-                    let inp_ntop = Transformation::constant(vec![em.const_bitvec(bitwidth.0,BigInt::from(rx-1))?]);
+                    let inp_ntop = Transformation::constant(vec![em.const_bitvec(bitwidth.0,BigUint::from(rx-1))?]);
                     Ok(Some((nst,Transformation::concat(&[inp_ntop,inp_nvec]))))
                 },
                 None => panic!("Index overflow")
@@ -2293,8 +2293,8 @@ pub fn bv_vec_stack_pop<'a,T,Em>(stack: OptRef<'a,BitVecVectorStack<T>>,
         Some(_) => panic!("Invalid index type"),
         None => {
             let ntop_fun = move |_:&[Em::Expr],_:usize,e: Em::Expr,em: &mut Em| {
-                let zero = em.const_bitvec(bitwidth.0,BigInt::from(0))?;
-                let one = em.const_bitvec(bitwidth.0,BigInt::from(1))?;
+                let zero = em.const_bitvec(bitwidth.0,BigUint::from(0 as u8))?;
+                let one = em.const_bitvec(bitwidth.0,BigUint::from(1 as u8))?;
                 let cond = em.eq(e.clone(),zero.clone())?;
                 let ne = em.bvsub(e.clone(),one)?;
                 em.ite(cond,e,ne)
@@ -3492,7 +3492,7 @@ impl<T : Composite> BitVecVectorStack<T> {
         let sz = self.top.0;
         let top = Transformation::map_by_elem(
             Box::new(move |_,_,e: Em::Expr,em: &mut Em| {
-                let one = em.const_bitvec(sz,BigInt::from(1))?;
+                let one = em.const_bitvec(sz,BigUint::from(1 as u8))?;
                 let ne = em.bvsub(e,one)?;
                 Ok(ne) }),Transformation::view(0,1,inp));
         self.access(top,exprs,em)
@@ -3528,7 +3528,7 @@ impl<T : Composite> BitVecVectorStack<T> {
         let sz = self.top.0;
         let ntop = Transformation::map_by_elem(
             Box::new(move |_,_,e: Em::Expr,em: &mut Em| {
-                let one = em.const_bitvec(sz,BigInt::from(1))?;
+                let one = em.const_bitvec(sz,BigUint::from(1 as u8))?;
                 let ne = em.bvadd(e,one)?;
                 Ok(ne) }),Transformation::view(0,1,inp.clone()));
 

@@ -1,7 +1,7 @@
 extern crate num_bigint;
 extern crate num_rational;
 
-use self::num_bigint::BigInt;
+use self::num_bigint::{BigInt,BigUint};
 use self::num_rational::Ratio;
 use embed::Embed;
 use std::fmt::{Display,Formatter,Error};
@@ -20,7 +20,7 @@ pub enum Value {
     Bool(bool),
     Int(BigInt),
     Real(Ratio<BigInt>),
-    BitVec(usize,BigInt)
+    BitVec(usize,BigUint)
 }
 
 #[derive(Clone,Debug,PartialEq,Eq,PartialOrd,Ord,Hash)]

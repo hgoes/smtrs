@@ -1,6 +1,6 @@
 use types::*;
 use expr::{Expr,Function,BVOp,ArithOp};
-use num_bigint::BigInt;
+use num_bigint::{BigInt,BigUint};
 use num_rational::Ratio;
 use std::fmt::Debug;
 
@@ -77,7 +77,7 @@ pub trait Embed : Sized {
                   -> Result<Self::Expr,Self::Error> {
         self.embed(Expr::Const(Value::Real(val)))
     }
-    fn const_bitvec(&mut self,bw: usize,val: BigInt)
+    fn const_bitvec(&mut self,bw: usize,val: BigUint)
                     -> Result<Self::Expr,Self::Error> {
         self.embed(Expr::Const(Value::BitVec(bw,val)))
     }
