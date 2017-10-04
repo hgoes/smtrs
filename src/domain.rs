@@ -344,6 +344,15 @@ impl Attribute for Const {
                     },
                     _ => Const::NotConst
                 },
+                Function::BV(bw,BVOp::Concat) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                        Const::IsConst(Value::BitVec(bwr,ref rhs)) => {
+                            Const::IsConst(Value::BitVec(bw,lhs.shl(bwr) | rhs))
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
+                },
                 _ => panic!("Derive function: {:?}",fun)
             },
             _ => panic!("Derive: {:?}",e)
