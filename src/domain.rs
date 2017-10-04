@@ -295,29 +295,43 @@ impl Attribute for Const {
                         Const::NotConst
                     }
                 },
-                Function::BV(bw,op) => match args[0] {
+                Function::BV(bw,BVOp::Arith(ArithOp::Add)) => match args[0] {
                     Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => match op {
-                            BVOp::Arith(ArithOp::Add) => {
-                                let res = lhs+rhs;
-                                let limit = BigInt::from(1).shl(bw);
-                                let nres = if res >= limit {
-                                    res-limit
-                                } else {
-                                    res
-                                };
-                                Const::IsConst(Value::BitVec(bw,nres))
-                            },
-                            BVOp::Arith(ArithOp::Sub) => {
-                                let res = lhs-rhs;
-                                let nres = if res < BigInt::from(0) {
-                                    res+BigInt::from(1).shl(bw)
-                                } else {
-                                    res
-                                };
-                                Const::IsConst(Value::BitVec(bw,nres))
-                            },
-                            _ => panic!("Derive bv op: {:?}",op)
+                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                            let res = lhs+rhs;
+                            let limit = BigInt::from(1).shl(bw);
+                            let nres = if res >= limit {
+                                res-limit
+                            } else {
+                                res
+                            };
+                            Const::IsConst(Value::BitVec(bw,nres))
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
+                },
+                Function::BV(bw,BVOp::Arith(ArithOp::Sub)) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                            let res = lhs-rhs;
+                            let nres = if res < BigInt::from(0) {
+                                res+BigInt::from(1).shl(bw)
+                            } else {
+                                res
+                            };
+                            Const::IsConst(Value::BitVec(bw,nres))
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
+                },
+                Function::BV(bw,BVOp::Arith(ArithOp::Mult)) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                            let limit = BigInt::from(1).shl(bw);
+                            let res = (lhs*rhs) % limit ;
+                            Const::IsConst(Value::BitVec(bw,res))
                         },
                         _ => Const::NotConst
                     },
