@@ -409,8 +409,8 @@ impl<'a,T : 'a+Composite+Ord> Choice<T> {
                         return Some(Transformation::view(off+1,el.num_elem(),inp))
                     }
                 },
-                Ordering::Less => { off+=1+el_.num_elem() },
-                Ordering::Greater => return None
+                Ordering::Less => return None,
+                Ordering::Greater => { off+=1+el_.num_elem() }
             }
         }
         None
