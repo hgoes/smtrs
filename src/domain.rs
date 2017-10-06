@@ -296,6 +296,24 @@ impl Attribute for Const {
                         Const::NotConst
                     }
                 },
+                Function::ITE(_) => match args[0] {
+                    Const::IsConst(Value::Bool(c)) => if c {
+                        args[1].clone()
+                    } else {
+                        args[2].clone()
+                    },
+                    _ => match args[1] {
+                        Const::IsConst(ref v1) => match args[2] {
+                            Const::IsConst(ref v2) => if v1==v2 {
+                                Const::IsConst(v1.clone())
+                            } else {
+                                Const::NotConst
+                            },
+                            _ => Const::NotConst
+                        },
+                        _ => Const::NotConst
+                    }
+                },
                 Function::BV(bw,BVOp::Arith(ArithOp::Add)) => match args[0] {
                     Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                         Const::IsConst(Value::BitVec(_,ref rhs)) => {
