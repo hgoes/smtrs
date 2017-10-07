@@ -4208,7 +4208,7 @@ impl<T : Ord+Composite> View for ChoiceView<T> {
 }
 
 pub struct BitVecVectorStackAccess<T,Em : DeriveValues> {
-    iter: IndexedIter<Em>,
+    pub iter: IndexedIter<Em>,
     phantom: PhantomData<T>
 }
 
