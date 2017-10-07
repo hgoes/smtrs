@@ -1640,7 +1640,7 @@ pub fn max_index<T>(tp: &SortKind<T>) -> usize {
 
 #[derive(Clone)]
 pub enum IndexIterator<Tp,It : Iterator<Item=Value>> {
-    Limited(It),
+    Limited(It,usize),
     Unlimited(SortKind<Tp>,Range<usize>)
 }
 
@@ -1648,9 +1648,14 @@ impl<Tp,It : Iterator<Item=Value>> Iterator for IndexIterator<Tp,It> {
     type Item = (usize,Value);
     fn next(&mut self) -> Option<Self::Item> {
         match *self {
-            IndexIterator::Limited(ref mut it) => match it.next() {
-                None => None,
-                Some(val) => Some((value_as_index(&val),val))
+            IndexIterator::Limited(ref mut it,upper) => {
+                while let Some(val) = it.next() {
+                    let idx = value_as_index(&val);
+                    if idx<upper {
+                        return Some((idx,val))
+                    }
+                }
+                None
             },
             IndexIterator::Unlimited(ref tp,ref mut rng) => match rng.next() {
                 None => None,
@@ -1660,7 +1665,7 @@ impl<Tp,It : Iterator<Item=Value>> Iterator for IndexIterator<Tp,It> {
     }
     fn size_hint(&self) -> (usize,Option<usize>) {
         match *self {
-            IndexIterator::Limited(ref it) => it.size_hint(),
+            IndexIterator::Limited(ref it,_) => it.size_hint(),
             IndexIterator::Unlimited(_,ref it) => it.size_hint()
         }
     }
@@ -1676,7 +1681,7 @@ pub fn expr_as_vec_index<'a,Em,F>(limit: usize,e: &Em::Expr,em: &mut Em)
             Ok(IndexIterator::Unlimited(srtk,0..limit))
         },
         Some(it) => {
-            Ok(IndexIterator::Limited(it))
+            Ok(IndexIterator::Limited(it,limit))
         }
     }
 }
@@ -1771,7 +1776,7 @@ pub fn access_vec_dyn<'a,T,Em
     let idx = inp_idx.get(exprs,0,em)?;
     let opt_vals = em.derive_values(&idx)?;
     let it = match opt_vals {
-        Some(rvals) => IndexIterator::Limited(rvals),
+        Some(rvals) => IndexIterator::Limited(rvals,vec.as_ref().len()),
         None => {
             let idx_srt = em.type_of(&idx)?;
             let idx_rsrt = em.unbed_sort(&idx_srt)?;
@@ -3423,7 +3428,7 @@ pub fn access_dyn<T,Em : DeriveValues>(vec: &Vec<T>,
     let idx = pos.get(exprs,0,em)?;
     let opt_vals = em.derive_values(&idx)?;
     let it = match opt_vals {
-        Some(rvals) => IndexIterator::Limited(rvals),
+        Some(rvals) => IndexIterator::Limited(rvals,vec.len()),
         None => {
             let idx_srt = em.type_of(&idx)?;
             let idx_rsrt = em.unbed_sort(&idx_srt)?;
@@ -3505,7 +3510,7 @@ impl<T : Composite> BitVecVectorStack<T> {
         let ridx = idx.get(exprs,0,em)?;
         let opt_vals = em.derive_values(&ridx)?;
         let it = match opt_vals {
-            Some(rvals) => IndexIterator::Limited(rvals),
+            Some(rvals) => IndexIterator::Limited(rvals,self.elements.len()),
             None => {
                 let idx_srt = em.type_of(&ridx)?;
                 let idx_rsrt = em.unbed_sort(&idx_srt)?;
