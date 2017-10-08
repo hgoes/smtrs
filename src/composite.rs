@@ -4206,9 +4206,9 @@ impl<T : Ord+Composite> View for ChoiceView<T> {
                       -> (usize,&'b Self::Element) where Self : 'b {
         let mut off = self.idx;
         for i in 0..self.idx {
-            off+=obj.0[i].num_elem();
+            off+=1+obj.0[i].num_elem();
         }
-        (off,&obj.0[self.idx])
+        (off+1,&obj.0[self.idx])
     }
 }
 
