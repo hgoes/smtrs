@@ -1,10 +1,11 @@
 extern crate num_bigint;
 extern crate num_rational;
 
-use self::num_bigint::{BigInt,BigUint};
+use self::num_bigint::{BigInt,BigUint,ToBigInt};
 use self::num_rational::Ratio;
 use embed::Embed;
 use std::fmt::{Display,Formatter,Error};
+use std::ops::Shl;
 
 #[derive(Clone,Debug,PartialEq,Eq,PartialOrd,Ord,Hash)]
 pub enum SortKind<T> {
@@ -25,6 +26,16 @@ pub enum Value {
 
 #[derive(Clone,Debug,PartialEq,Eq,PartialOrd,Ord,Hash)]
 pub struct Sort(SortKind<Box<Sort>>);
+
+/// Get the signed value from a bitvector
+pub fn bv_signed_value(bw: usize,val: &BigUint) -> BigInt {
+    let limit = BigUint::from(1 as u8).shl(bw-1);
+    if *val<limit {
+        val.to_bigint().unwrap()
+    } else {
+        -((limit.shl(1)-val).to_bigint().unwrap())
+    }
+}
 
 impl Sort {
     pub fn from_kind(tp: SortKind<Sort>) -> Sort {

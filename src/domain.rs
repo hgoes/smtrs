@@ -1,5 +1,5 @@
-use expr::{Expr,Function,BVOp,ArithOp};
-use types::{Value};
+use expr::{Expr,Function,BVOp,ArithOp,OrdOp};
+use types::{Value,bv_signed_value};
 use embed::Embed;
 use composite::*;
 use std::fmt::Debug;
@@ -313,6 +313,33 @@ impl Attribute for Const {
                         },
                         _ => Const::NotConst
                     }
+                },
+                Function::BV(bw,BVOp::Ord(signed,op)) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                            if signed {
+                                let s_lhs = bv_signed_value(bw,lhs);
+                                let s_rhs = bv_signed_value(bw,rhs);
+                                let res = match op {
+                                    OrdOp::Ge => s_lhs>=s_rhs,
+                                    OrdOp::Gt => s_lhs> s_rhs,
+                                    OrdOp::Le => s_lhs<=s_rhs,
+                                    OrdOp::Lt => s_lhs< s_rhs
+                                };
+                                Const::IsConst(Value::Bool(res))
+                            } else {
+                                let res = match op {
+                                    OrdOp::Ge => lhs>=rhs,
+                                    OrdOp::Gt => lhs> rhs,
+                                    OrdOp::Le => lhs<=rhs,
+                                    OrdOp::Lt => lhs< rhs
+                                };
+                                Const::IsConst(Value::Bool(res))
+                            }
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
                 },
                 Function::BV(bw,BVOp::Arith(ArithOp::Add)) => match args[0] {
                     Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
