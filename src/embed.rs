@@ -1,5 +1,5 @@
 use types::*;
-use expr::{Expr,Function,BVOp,ArithOp};
+use expr::{Expr,Function,BVOp,ArithOp,OrdOp};
 use num_bigint::{BigInt,BigUint};
 use num_rational::Ratio;
 use std::fmt::Debug;
@@ -151,6 +151,56 @@ pub trait Embed : Sized {
         } else {
             self.embed(Expr::App(Function::ITE(srt),vec![cond,if_t,if_f]))
         }
+    }
+    fn bvcmp(&mut self,signed: bool,op: OrdOp,
+             lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        let srt_lhs = self.type_of(&lhs)?;
+        let bw = match self.is_bitvec(&srt_lhs)? {
+            Some(r) => r,
+            None => panic!("Argument to bitvector compare not a bitvector")
+        };
+        debug_assert!(match self.type_of(&rhs) {
+            Ok(tp_r) => match self.is_bitvec(&tp_r) {
+                Ok(Some(bw_r)) => bw==bw_r,
+                _ => false
+            },
+            Err(_) => false
+        });
+        self.embed(Expr::App(Function::BV(bw,BVOp::Ord(signed,op)),
+                             vec![lhs,rhs]))
+    }
+    fn bvuge(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        self.bvcmp(false,OrdOp::Ge,lhs,rhs)
+    }
+    fn bvugt(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        self.bvcmp(false,OrdOp::Gt,lhs,rhs)
+    }
+    fn bvule(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        self.bvcmp(false,OrdOp::Le,lhs,rhs)
+    }
+    fn bvult(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        self.bvcmp(false,OrdOp::Lt,lhs,rhs)
+    }
+    fn bvsge(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        self.bvcmp(true,OrdOp::Ge,lhs,rhs)
+    }
+    fn bvsgt(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        self.bvcmp(true,OrdOp::Gt,lhs,rhs)
+    }
+    fn bvsle(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        self.bvcmp(true,OrdOp::Le,lhs,rhs)
+    }
+    fn bvslt(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+             -> Result<Self::Expr,Self::Error> {
+        self.bvcmp(true,OrdOp::Lt,lhs,rhs)
     }
     fn bvadd(&mut self,lhs: Self::Expr,rhs: Self::Expr)
              -> Result<Self::Expr,Self::Error> {
