@@ -133,6 +133,14 @@ pub trait Embed : Sized {
             _ => self.embed(Expr::App(Function::Or(args.len()),args))
         }
     }
+    fn xor(&mut self,args: Vec<Self::Expr>)
+           -> Result<Self::Expr,Self::Error> {
+        match args.len() {
+            0 => self.embed(Expr::Const(Value::Bool(false))),
+            1 => Ok(args[0].clone()),
+            _ => self.embed(Expr::App(Function::XOr(args.len()),args))
+        }
+    }
     fn ite(&mut self,cond: Self::Expr,if_t: Self::Expr,if_f: Self::Expr)
            -> Result<Self::Expr,Self::Error> {
         let srt = self.type_of(&if_t)?;
@@ -319,6 +327,23 @@ pub trait Embed : Sized {
             Err(_) => false
         });
         self.embed(Expr::App(Function::BV(bw,BVOp::Div(false)),
+                             vec![lhs,rhs]))
+    }
+    fn bvxor(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+              -> Result<Self::Expr,Self::Error> {
+        let srt_lhs = self.type_of(&lhs)?;
+        let bw = match self.is_bitvec(&srt_lhs)? {
+            Some(r) => r,
+            None => panic!("Argument to bvxor not a bitvector")
+        };
+        debug_assert!(match self.type_of(&rhs) {
+            Ok(tp_r) => match self.is_bitvec(&tp_r) {
+                Ok(Some(bw_r)) => bw==bw_r,
+                _ => false
+            },
+            Err(_) => false
+        });
+        self.embed(Expr::App(Function::BV(bw,BVOp::XOr),
                              vec![lhs,rhs]))
     }
     fn extract(&mut self,start: usize,len: usize,e: Self::Expr)
