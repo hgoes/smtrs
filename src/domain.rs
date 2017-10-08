@@ -7,7 +7,7 @@ use std::iter::{Empty,Once,once};
 use std::cmp::Ordering;
 use num_bigint::BigUint;
 use std::ops::{Shl,Shr};
-use num_traits::CheckedSub;
+use num_traits::{CheckedSub,ToPrimitive};
 
 pub trait Domain<T : Composite> : Sized {
     type ValueIterator : Iterator<Item=Value>+Clone;
@@ -375,6 +375,28 @@ impl Attribute for Const {
                         Const::IsConst(Value::BitVec(_,ref rhs)) => {
                             let limit = BigUint::from(1 as u8).shl(bw);
                             let res = (lhs*rhs) % limit ;
+                            Const::IsConst(Value::BitVec(bw,res))
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
+                },
+                Function::BV(bw,BVOp::ASHR) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                            let mask = BigUint::from(1 as u8).shl(bw-1);
+                            let sgn  = lhs & mask.clone();
+                            let amount = match rhs.to_usize() {
+                                None => bw,
+                                Some(r) => if r>bw { bw } else { r }
+                            };
+                            let shifted = lhs.shr(amount);
+                            let res = if sgn==mask {
+                                let ones : BigUint = BigUint::from(1 as u8).shl(amount)-(1 as u8); 
+                                shifted | ones.shl(bw-amount)
+                            } else {
+                                shifted
+                            };
                             Const::IsConst(Value::BitVec(bw,res))
                         },
                         _ => Const::NotConst
