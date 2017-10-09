@@ -251,11 +251,11 @@ impl Attribute for Const {
                         Const::IsConst(ref v) => {
                             for el in args[1..].iter() {
                                 match *el {
-                                    Const::IsConst(ref nv) => if v!=nv { return Const::NotConst },
+                                    Const::IsConst(ref nv) => if v!=nv { return Const::IsConst(Value::Bool(false)) },
                                     Const::NotConst => return Const::NotConst
                                 }
                             }
-                            Const::IsConst(v.clone())
+                            Const::IsConst(Value::Bool(true))
                         },
                         Const::NotConst => Const::NotConst
                     }
