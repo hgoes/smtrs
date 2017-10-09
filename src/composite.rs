@@ -462,8 +462,8 @@ impl<'a,T : 'a+Composite+Ord> Choice<T> {
                                  oth: &Self,oth_inp: Transf<Em>,
                                  cmp: Cmp,em: &mut Em)
                                  -> Result<Transf<Em>,Em::Error>
-        where Cmp : Fn(&T,Transf<Em>,&T,Transf<Em>)
-                       -> Option<Transf<Em>>,
+        where Cmp : Fn(&T,Transf<Em>,&T,Transf<Em>,&mut Em)
+                       -> Result<Option<Transf<Em>>,Em::Error>,
               Em : Embed {
         let mut disj = Vec::new();
         let mut off_l = 0;
@@ -474,7 +474,7 @@ impl<'a,T : 'a+Composite+Ord> Choice<T> {
             for el_r in oth.0.iter() {
                 let sz_r = el_r.num_elem();
                 let inp_r = Transformation::view(off_r+1,sz_r,oth_inp.clone());
-                if let Some(cond) = cmp(el_l,inp_l.clone(),el_r,inp_r) {
+                if let Some(cond) = cmp(el_l,inp_l.clone(),el_r,inp_r,em)? {
                     let conj = vec![Transformation::view(off_l,1,inp.clone()),
                                     Transformation::view(off_r,1,oth_inp.clone()),
                                     cond];
