@@ -296,6 +296,18 @@ impl Attribute for Const {
                         Const::NotConst
                     }
                 },
+                Function::XOr(_) => {
+                    let mut val = false;
+                    for arg in args.iter() {
+                        match arg {
+                            &Const::IsConst(Value::Bool(x)) => {
+                                val = val^x;
+                            },
+                            _ => return Const::NotConst
+                        }
+                    }
+                    Const::IsConst(Value::Bool(val))
+                },
                 Function::ITE(_) => match args[0] {
                     Const::IsConst(Value::Bool(c)) => if c {
                         args[1].clone()
