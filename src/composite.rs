@@ -4370,8 +4370,9 @@ impl<C : Composite> CompExpr<C> {
     }
 }
 
-pub trait Semantic {
+pub trait Semantic : Composite {
     type Meaning : Ord+Hash+Debug;
+    fn meaning(&self,usize) -> Self::Meaning;
 }
 
 pub trait Semantics<'a> : Semantic {
@@ -4416,6 +4417,18 @@ impl<'a,T> Iterator for VecMeanings<'a,T>
 
 impl<T : Semantic> Semantic for Vec<T> {
     type Meaning = VecMeaning<T::Meaning>;
+    fn meaning(&self,n: usize) -> Self::Meaning {
+        let mut off = 0;
+        for (idx,el) in self.iter().enumerate() {
+            let sz = el.num_elem();
+            if n<off+sz {
+                return VecMeaning { index: idx,
+                                    meaning: el.meaning(n-off) }
+            }
+            off+=sz;
+        }
+        panic!("Index overflow")
+    }
 }
 
 impl<'a,T : 'a+Semantics<'a>> Semantics<'a> for Vec<T> {
@@ -4505,8 +4518,20 @@ impl<'a,K : Clone,T> Iterator for AssocMeanings<'a,K,T>
     }
 }
 
-impl<K : Ord+Hash+Debug,T : Semantic> Semantic for Assoc<K,T> {
+impl<K : Ord+Hash+Debug+Clone,T : Semantic> Semantic for Assoc<K,T> {
     type Meaning = AssocMeaning<K,T>;
+    fn meaning(&self,n: usize) -> Self::Meaning {
+        let mut off = 0;
+        for &(ref k,ref el) in self.0.iter() {
+            let sz = el.num_elem();
+            if n<off+sz {
+                return AssocMeaning { key: k.clone(),
+                                      meaning: el.meaning(n-off) }
+            }
+            off+=sz;
+        }
+        panic!("Index overflow")
+    }
 }
 
 impl<'a,K : 'a+Clone+Ord+Hash+Debug,T : 'a+Semantics<'a>> Semantics<'a> for Assoc<K,T> {
@@ -4561,11 +4586,25 @@ impl<'a,T : Semantics<'a>> Iterator for ChoiceMeanings<'a,T> {
     }
 }
 
-impl<T : Semantic> Semantic for Choice<T> {
+impl<T : Ord+Semantic> Semantic for Choice<T> {
     type Meaning = ChoiceMeaning<T::Meaning>;
+    fn meaning(&self,n: usize) -> Self::Meaning {
+        let mut off = 0;
+        for (idx,el) in self.0.iter().enumerate() {
+            if n==off {
+                return ChoiceMeaning::Selector(idx)
+            }
+            let sz = el.num_elem();
+            if n<off+1+sz {
+                return ChoiceMeaning::Item(idx,el.meaning(n-off-1))
+            }
+            off+=1+sz;
+        }
+        panic!("Index overflow")
+    }
 }
 
-impl<'a,T : 'a+Semantics<'a>> Semantics<'a> for Choice<T> {
+impl<'a,T : 'a+Semantics<'a>+Ord> Semantics<'a> for Choice<T> {
     type Meanings = ChoiceMeanings<'a,T>;
     fn meanings(&'a self) -> Self::Meanings {
         ChoiceMeanings { choice: self,
@@ -4620,6 +4659,14 @@ impl<'a,T,U> Iterator for TupleMeanings<'a,T,U>
 impl<T,U> Semantic for (T,U)
     where T : Semantic, U : Semantic {
     type Meaning = TupleMeaning<T::Meaning,U::Meaning>;
+    fn meaning(&self,n: usize) -> Self::Meaning {
+        let sz_0 = self.0.num_elem();
+        if n<sz_0 {
+            TupleMeaning::Fst(self.0.meaning(n))
+        } else {
+            TupleMeaning::Snd(self.1.meaning(n-sz_0))
+        }
+    }
 }
 
 impl<'a,T,U> Semantics<'a> for (T,U)
@@ -4632,17 +4679,23 @@ impl<'a,T,U> Semantics<'a> for (T,U)
     }
 }
 
-impl<D> Semantic for Data<D> {
+impl<D : Eq+Clone+Hash> Semantic for Data<D> {
     type Meaning = ();
+    fn meaning(&self,_:usize) -> Self::Meaning {
+        ()
+    }
 }
 
-impl<'a,D> Semantics<'a> for Data<D> {
+impl<'a,D : Eq+Clone+Hash> Semantics<'a> for Data<D> {
     type Meanings = Empty<()>;
     fn meanings(&'a self) -> Self::Meanings { empty() }
 }
 
 impl Semantic for Singleton {
     type Meaning = ();
+    fn meaning(&self,_:usize) -> Self::Meaning {
+        panic!("meaning called for Singleton")
+    }
 }
 
 impl<'a> Semantics<'a> for Singleton {
@@ -4652,6 +4705,9 @@ impl<'a> Semantics<'a> for Singleton {
 
 impl Semantic for SingletonBool {
     type Meaning = ();
+    fn meaning(&self,_:usize) -> Self::Meaning {
+        panic!("meaning called for SingletonBool")
+    }
 }
 
 impl<'a> Semantics<'a> for SingletonBool {
@@ -4661,6 +4717,9 @@ impl<'a> Semantics<'a> for SingletonBool {
 
 impl Semantic for SingletonBitVec {
     type Meaning = ();
+    fn meaning(&self,_:usize) -> Self::Meaning {
+        panic!("meaning called for SingletonBitVec")
+    }
 }
 
 impl<'a> Semantics<'a> for SingletonBitVec {
@@ -4721,6 +4780,20 @@ impl<'a,T> Iterator for BitVecVectorStackMeanings<'a,T>
 impl<T> Semantic for BitVecVectorStack<T>
     where T : Semantic {
     type Meaning = BitVecVectorStackMeaning<T::Meaning>;
+    fn meaning(&self,n: usize) -> Self::Meaning {
+        if n==0 {
+            return BitVecVectorStackMeaning::Top
+        }
+        let mut off = 1;
+        for (idx,el) in self.elements.iter().enumerate() {
+            let sz = el.num_elem();
+            if n<off+sz {
+                return BitVecVectorStackMeaning::Elem(idx,el.meaning(n-off))
+            }
+            off+=sz;
+        }
+        panic!("Index overflow")
+    }
 }
 
 impl<'a,T> Semantics<'a> for BitVecVectorStack<T>
@@ -4751,6 +4824,12 @@ impl<It : Iterator> Iterator for OptionMeanings<It> {
 
 impl<T : Semantic> Semantic for Option<T> {
     type Meaning = T::Meaning;
+    fn meaning(&self,n: usize) -> Self::Meaning {
+        match self {
+            &None => panic!("meaning called for None"),
+            &Some(ref obj) => obj.meaning(n)
+        }
+    }
 }
 
 impl<'a,T> Semantics<'a> for Option<T>
