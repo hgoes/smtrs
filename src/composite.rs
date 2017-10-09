@@ -458,6 +458,38 @@ impl<'a,T : 'a+Composite+Ord> Choice<T> {
         }
         Transformation::or(disj)
     }
+    pub fn compare_using<Cmp,Em>(&self,inp: Transf<Em>,
+                                 oth: &Self,oth_inp: Transf<Em>,
+                                 cmp: Cmp,em: &mut Em)
+                                 -> Result<Transf<Em>,Em::Error>
+        where Cmp : Fn(&T,Transf<Em>,&T,Transf<Em>)
+                       -> Option<Transf<Em>>,
+              Em : Embed {
+        let mut disj = Vec::new();
+        let mut off_l = 0;
+        for el_l in self.0.iter() {
+            let sz_l = el_l.num_elem();
+            let inp_l = Transformation::view(off_l+1,sz_l,inp.clone());
+            let mut off_r = 0;
+            for el_r in oth.0.iter() {
+                let sz_r = el_r.num_elem();
+                let inp_r = Transformation::view(off_r+1,sz_r,oth_inp.clone());
+                if let Some(cond) = cmp(el_l,inp_l.clone(),el_r,inp_r) {
+                    let conj = vec![Transformation::view(off_l,1,inp.clone()),
+                                    Transformation::view(off_r,1,oth_inp.clone()),
+                                    cond];
+                    disj.push(Transformation::and(conj));
+                }
+                off_r+=sz_r+1;
+            }
+            off_l+=sz_l+1;
+        }
+        match disj.len() {
+            0 => Transformation::const_bool(false,em),
+            1 => Ok(disj.remove(0)),
+            _ => Ok(Transformation::or(disj))
+        }
+    }
 }
 
 impl<'a,T : 'a> OptRef<'a,Choice<T>> {
