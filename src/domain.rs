@@ -405,6 +405,22 @@ impl Attribute for Const {
                     },
                     _ => Const::NotConst
                 },
+                Function::BV(bw,BVOp::SHL) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                            let mask = BigUint::from(1 as u8).shl(bw)-(1 as u8);
+                            let amount = match rhs.to_usize() {
+                                None => bw,
+                                Some(r) => if r>bw { bw } else { r }
+                            };
+                            let shifted = lhs.shl(amount);
+                            let res = shifted&mask;
+                            Const::IsConst(Value::BitVec(bw,res))
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
+                },
                 Function::BV(bw,BVOp::ASHR) => match args[0] {
                     Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                         Const::IsConst(Value::BitVec(_,ref rhs)) => {
