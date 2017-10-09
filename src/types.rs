@@ -37,6 +37,21 @@ pub fn bv_signed_value(bw: usize,val: &BigUint) -> BigInt {
     }
 }
 
+/// Get the bitvector representation from a signed value
+pub fn bv_from_signed_value(bw: usize,val: &BigInt) -> BigUint {
+    let limit = BigInt::from(1 as u8).shl(bw-1);
+    if *val>=limit {
+        (limit-(1 as i8)).to_biguint().unwrap()
+    } else if *val < (-limit) {
+        (BigInt::from(1 as u8).shl(bw)-(1 as u8)).to_biguint().unwrap()
+    } else if *val >= BigInt::from(0) {
+        val.to_biguint().unwrap()
+    } else {
+        (BigInt::from(1 as u8).shl(bw)+val).to_biguint().unwrap()
+    }
+}
+
+
 impl Sort {
     pub fn from_kind(tp: SortKind<Sort>) -> Sort {
         let ntp = tp.consume(Box::new);

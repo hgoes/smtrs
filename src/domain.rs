@@ -1,5 +1,5 @@
 use expr::{Expr,Function,BVOp,ArithOp,OrdOp};
-use types::{Value,bv_signed_value};
+use types::{Value,bv_signed_value,bv_from_signed_value};
 use embed::Embed;
 use composite::*;
 use std::fmt::Debug;
@@ -375,6 +375,18 @@ impl Attribute for Const {
                         Const::IsConst(Value::BitVec(_,ref rhs)) => {
                             let limit = BigUint::from(1 as u8).shl(bw);
                             let res = (lhs*rhs) % limit ;
+                            Const::IsConst(Value::BitVec(bw,res))
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
+                },
+                Function::BV(bw,BVOp::Div(true)) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                            let rl = bv_signed_value(bw,lhs);
+                            let rr = bv_signed_value(bw,rhs);
+                            let res = bv_from_signed_value(bw,&(rl/rr));
                             Const::IsConst(Value::BitVec(bw,res))
                         },
                         _ => Const::NotConst
