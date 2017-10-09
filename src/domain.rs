@@ -425,6 +425,16 @@ impl Attribute for Const {
                     },
                     _ => Const::NotConst
                 },
+                Function::BV(bw,BVOp::And) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                            let res = lhs&rhs;
+                            Const::IsConst(Value::BitVec(bw,res))
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
+                },
                 Function::BV(bw,BVOp::Extract(start,len)) => match args[0] {
                     Const::IsConst(Value::BitVec(_,ref x)) => {
                         let x1 = x.shr(start);
