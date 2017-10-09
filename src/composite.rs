@@ -415,6 +415,49 @@ impl<'a,T : 'a+Composite+Ord> Choice<T> {
         }
         None
     }
+    pub fn eq<Em : Embed>(&self,inp: Transf<Em>,
+                          oth: &Self,oth_inp: Transf<Em>) -> Transf<Em> {
+        let mut lpos = 0;
+        let mut loff = 0;
+        let mut rpos = 0;
+        let mut roff = 0;
+        let mut disj = Vec::new();
+        while lpos<self.0.len() && rpos<oth.0.len() {
+            let lref = &self.0[lpos];
+            let rref = &oth.0[rpos];
+            match lref.cmp(rref) {
+                Ordering::Equal => {
+                    let cond_l = Transformation::view(loff,1,inp.clone());
+                    let cond_r = Transformation::view(roff,1,oth_inp.clone());
+                    let sz = lref.num_elem();
+                    let mut conj = Vec::with_capacity(sz+2);
+                    conj.push(cond_l);
+                    conj.push(cond_r);
+                    for i in 0..sz {
+                        let lel = Transformation::view(loff+1+i,1,
+                                                       inp.clone());
+                        let rel = Transformation::view(roff+1+i,1,
+                                                       oth_inp.clone());
+                        conj.push(Transformation::eq(vec![lel,rel]));
+                    }
+                    disj.push(Transformation::and(conj));
+                    lpos+=1;
+                    rpos+=1;
+                    loff+=1+sz;
+                    roff+=1+sz;
+                },
+                Ordering::Less => {
+                    lpos+=1;
+                    loff+=1+lref.num_elem();
+                },
+                Ordering::Greater => {
+                    rpos+=1;
+                    roff+=1+rref.num_elem();
+                }
+            }
+        }
+        Transformation::or(disj)
+    }
 }
 
 impl<'a,T : 'a> OptRef<'a,Choice<T>> {
@@ -1226,6 +1269,9 @@ impl<Em : Embed> Transformation<Em> {
                                     vec![(cond,
                                           if_true)],
                                     if_false))
+    }
+    pub fn eq(trs: Vec<Transf<Em>>) -> Transf<Em> {
+        Transformation::zips_by_elem(Box::new(|els,em| { em.eq_many(els.to_vec()) }),trs)
     }
     pub fn not(tr: Transf<Em>)
                -> Transf<Em> {
