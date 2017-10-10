@@ -329,6 +329,23 @@ pub trait Embed : Sized {
         self.embed(Expr::App(Function::BV(bw,BVOp::Div(false)),
                              vec![lhs,rhs]))
     }
+    fn bvlshr(&mut self,lhs: Self::Expr,rhs: Self::Expr)
+              -> Result<Self::Expr,Self::Error> {
+        let srt_lhs = self.type_of(&lhs)?;
+        let bw = match self.is_bitvec(&srt_lhs)? {
+            Some(r) => r,
+            None => panic!("Argument to bvlshr not a bitvector")
+        };
+        debug_assert!(match self.type_of(&rhs) {
+            Ok(tp_r) => match self.is_bitvec(&tp_r) {
+                Ok(Some(bw_r)) => bw==bw_r,
+                _ => false
+            },
+            Err(_) => false
+        });
+        self.embed(Expr::App(Function::BV(bw,BVOp::LSHR),
+                             vec![lhs,rhs]))
+    }
     fn bvashr(&mut self,lhs: Self::Expr,rhs: Self::Expr)
               -> Result<Self::Expr,Self::Error> {
         let srt_lhs = self.type_of(&lhs)?;

@@ -443,6 +443,20 @@ impl Attribute for Const {
                     },
                     _ => Const::NotConst
                 },
+                Function::BV(bw,BVOp::LSHR) => match args[0] {
+                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                            let amount = match rhs.to_usize() {
+                                None => bw,
+                                Some(r) => if r>bw { bw } else { r }
+                            };
+                            let res = lhs.shr(amount);
+                            Const::IsConst(Value::BitVec(bw,res))
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
+                },
                 Function::BV(bw,BVOp::XOr) => match args[0] {
                     Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                         Const::IsConst(Value::BitVec(_,ref rhs)) => {
