@@ -4874,3 +4874,30 @@ impl<'a,T> Semantics<'a> for Option<T>
         }
     }
 }
+
+pub fn comp_eq<C,Em>(lhs: &C,lhs_inp: Transf<Em>,
+                     rhs: &C,rhs_inp: Transf<Em>,
+                     em: &mut Em)
+                     -> Result<Option<Transf<Em>>,Em::Error>
+    where C : Composite, Em : Embed {
+    if lhs==rhs {
+        debug_assert_eq!(lhs_inp.size(),rhs_inp.size());
+        if lhs_inp.size()==0 {
+            let res = Transformation::const_bool(true,em)?;
+            Ok(Some(res))
+        } else {
+            let f = |l: &[Em::Expr],r: &[Em::Expr],res: &mut Vec<Em::Expr>,em: &mut Em| {
+                let mut conj = Vec::with_capacity(l.len());
+                for (x,y) in l.iter().zip(r.iter()) {
+                    conj.push(em.eq(x.clone(),y.clone())?);
+                }
+                res.push(em.and(conj)?);
+                Ok(())
+            };
+            let res = Transformation::zip2(1,Box::new(f),lhs_inp,rhs_inp);
+            Ok(Some(res))
+        }
+    } else {
+        Ok(None)
+    }
+}
