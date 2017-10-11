@@ -2744,7 +2744,7 @@ pub fn choice_insert<'a,T,Em>(choice: OptRef<'a,Choice<T>>,
             Ordering::Less => break,
             Ordering::Greater => {
                 pos+=1;
-                off+=sz;
+                off+=sz+1;
             }
         }
     }
