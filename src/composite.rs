@@ -4405,6 +4405,7 @@ impl<C : Composite> CompExpr<C> {
 pub trait Semantic : Composite {
     type Meaning : Ord+Hash+Debug;
     fn meaning(&self,usize) -> Self::Meaning;
+    fn fmt_meaning<F : fmt::Write>(&self,&Self::Meaning,&mut F) -> Result<(),fmt::Error>;
 }
 
 pub trait Semantics<'a> : Semantic {
@@ -4460,6 +4461,10 @@ impl<T : Semantic> Semantic for Vec<T> {
             off+=sz;
         }
         panic!("Index overflow")
+    }
+    fn fmt_meaning<F : fmt::Write>(&self,m: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+        write!(fmt,"{}.",m.index)?;
+        self[m.index].fmt_meaning(&m.meaning,fmt)
     }
 }
 
@@ -4564,6 +4569,15 @@ impl<K : Ord+Hash+Debug+Clone,T : Semantic> Semantic for Assoc<K,T> {
         }
         panic!("Index overflow")
     }
+    fn fmt_meaning<F : fmt::Write>(&self,m: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+        write!(fmt,"key({:?}).",m.key)?;
+        for &(ref k,ref el) in self.0.iter() {
+            if *k==m.key {
+                return el.fmt_meaning(&m.meaning,fmt)
+            }
+        }
+        panic!("Key {:?} not found in Assoc",m.key)
+    }
 }
 
 impl<'a,K : 'a+Clone+Ord+Hash+Debug,T : 'a+Semantics<'a>> Semantics<'a> for Assoc<K,T> {
@@ -4618,7 +4632,7 @@ impl<'a,T : Semantics<'a>> Iterator for ChoiceMeanings<'a,T> {
     }
 }
 
-impl<T : Ord+Semantic> Semantic for Choice<T> {
+impl<T : Ord+Semantic+Debug> Semantic for Choice<T> {
     type Meaning = ChoiceMeaning<T::Meaning>;
     fn meaning(&self,n: usize) -> Self::Meaning {
         let mut off = 0;
@@ -4634,9 +4648,20 @@ impl<T : Ord+Semantic> Semantic for Choice<T> {
         }
         panic!("Index overflow")
     }
+    fn fmt_meaning<F : fmt::Write>(&self,m: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+        match m {
+            &ChoiceMeaning::Selector(idx) => {
+                write!(fmt,"selector({:?})",self.0[idx])
+            },
+            &ChoiceMeaning::Item(idx,ref nm) => {
+                write!(fmt,"choice({:?}).",self.0[idx])?;
+                self.0[idx].fmt_meaning(nm,fmt)
+            }
+        }
+    }
 }
 
-impl<'a,T : 'a+Semantics<'a>+Ord> Semantics<'a> for Choice<T> {
+impl<'a,T : 'a+Semantics<'a>+Ord+Debug> Semantics<'a> for Choice<T> {
     type Meanings = ChoiceMeanings<'a,T>;
     fn meanings(&'a self) -> Self::Meanings {
         ChoiceMeanings { choice: self,
@@ -4699,6 +4724,18 @@ impl<T,U> Semantic for (T,U)
             TupleMeaning::Snd(self.1.meaning(n-sz_0))
         }
     }
+    fn fmt_meaning<F : fmt::Write>(&self,m: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+        match m {
+            &TupleMeaning::Fst(ref nm) => {
+                write!(fmt,"0.")?;
+                self.0.fmt_meaning(nm,fmt)
+            },
+            &TupleMeaning::Snd(ref nm) => {
+                write!(fmt,"1.")?;
+                self.1.fmt_meaning(nm,fmt)
+            }
+        }
+    }
 }
 
 impl<'a,T,U> Semantics<'a> for (T,U)
@@ -4716,6 +4753,9 @@ impl<D : Eq+Clone+Hash> Semantic for Data<D> {
     fn meaning(&self,_:usize) -> Self::Meaning {
         ()
     }
+    fn fmt_meaning<F : fmt::Write>(&self,_: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+       write!(fmt,"#")
+    }
 }
 
 impl<'a,D : Eq+Clone+Hash> Semantics<'a> for Data<D> {
@@ -4726,7 +4766,10 @@ impl<'a,D : Eq+Clone+Hash> Semantics<'a> for Data<D> {
 impl Semantic for Singleton {
     type Meaning = ();
     fn meaning(&self,_:usize) -> Self::Meaning {
-        panic!("meaning called for Singleton")
+        ()
+    }
+    fn fmt_meaning<F : fmt::Write>(&self,_: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+       write!(fmt,"#")
     }
 }
 
@@ -4738,7 +4781,10 @@ impl<'a> Semantics<'a> for Singleton {
 impl Semantic for SingletonBool {
     type Meaning = ();
     fn meaning(&self,_:usize) -> Self::Meaning {
-        panic!("meaning called for SingletonBool")
+        ()
+    }
+    fn fmt_meaning<F : fmt::Write>(&self,_: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+       write!(fmt,"#")
     }
 }
 
@@ -4750,7 +4796,10 @@ impl<'a> Semantics<'a> for SingletonBool {
 impl Semantic for SingletonBitVec {
     type Meaning = ();
     fn meaning(&self,_:usize) -> Self::Meaning {
-        panic!("meaning called for SingletonBitVec")
+        ()
+    }
+    fn fmt_meaning<F : fmt::Write>(&self,_: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+       write!(fmt,"#")
     }
 }
 
@@ -4826,6 +4875,15 @@ impl<T> Semantic for BitVecVectorStack<T>
         }
         panic!("Index overflow")
     }
+    fn fmt_meaning<F : fmt::Write>(&self,m: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+        match m {
+            &BitVecVectorStackMeaning::Top => write!(fmt,"top"),
+            &BitVecVectorStackMeaning::Elem(idx,ref nm) => {
+                write!(fmt,"{}.",idx)?;
+                self.elements[idx].fmt_meaning(nm,fmt)
+            }
+        }
+    }
 }
 
 impl<'a,T> Semantics<'a> for BitVecVectorStack<T>
@@ -4860,6 +4918,12 @@ impl<T : Semantic> Semantic for Option<T> {
         match self {
             &None => panic!("meaning called for None"),
             &Some(ref obj) => obj.meaning(n)
+        }
+    }
+    fn fmt_meaning<F : fmt::Write>(&self,m: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+        match self {
+            &None => panic!("fmt_meaning called for None"),
+            &Some(ref obj) => obj.fmt_meaning(m,fmt)
         }
     }
 }
