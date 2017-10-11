@@ -423,7 +423,7 @@ impl Display for BVOp {
             BVOp::Not => write!(f,"bvnot"),
             BVOp::Neg => write!(f,"bvneg"),
             BVOp::Extract(start,len) => {
-                let end = start+len;
+                let end = start+len-1;
                 write!(f,"(_ extract {} {})",end,start)
             },
             BVOp::Concat => write!(f,"concat")
