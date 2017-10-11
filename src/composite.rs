@@ -4413,6 +4413,24 @@ pub trait Semantics<'a> : Semantic {
     fn meanings(&'a self) -> Self::Meanings;
 }
 
+pub struct MeaningOf<'a,T : 'a+Semantic> {
+    obj: &'a T,
+    meaning: &'a T::Meaning
+}
+
+impl<'a,T : Semantic> MeaningOf<'a,T> {
+    pub fn new(obj: &'a T,m: &'a T::Meaning) -> Self {
+        MeaningOf { obj: obj,
+                    meaning: m }
+    }
+}
+
+impl<'a,T : Semantic> fmt::Display for MeaningOf<'a,T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        self.obj.fmt_meaning(self.meaning,f)
+    }
+}
+
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug)]
 pub struct VecMeaning<M> {
     pub index: usize,
