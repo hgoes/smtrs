@@ -4403,9 +4403,12 @@ impl<C : Composite> CompExpr<C> {
 }
 
 pub trait Semantic : Composite {
-    type Meaning : Ord+Hash+Debug;
+    type Meaning : Ord+Hash+Debug+Clone;
+    type MeaningCtx;
     fn meaning(&self,usize) -> Self::Meaning;
     fn fmt_meaning<F : fmt::Write>(&self,&Self::Meaning,&mut F) -> Result<(),fmt::Error>;
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)>;
+    fn next_meaning(&self,&mut Self::MeaningCtx,&mut Self::Meaning) -> bool;
 }
 
 pub trait Semantics<'a> : Semantic {
@@ -4431,7 +4434,7 @@ impl<'a,T : Semantic> fmt::Display for MeaningOf<'a,T> {
     }
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
 pub struct VecMeaning<M> {
     pub index: usize,
     pub meaning: M,
@@ -4468,6 +4471,7 @@ impl<'a,T> Iterator for VecMeanings<'a,T>
 
 impl<T : Semantic> Semantic for Vec<T> {
     type Meaning = VecMeaning<T::Meaning>;
+    type MeaningCtx = T::MeaningCtx;
     fn meaning(&self,n: usize) -> Self::Meaning {
         let mut off = 0;
         for (idx,el) in self.iter().enumerate() {
@@ -4484,6 +4488,31 @@ impl<T : Semantic> Semantic for Vec<T> {
         write!(fmt,"{}.",m.index)?;
         self[m.index].fmt_meaning(&m.meaning,fmt)
     }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        for (idx,el) in self.iter().enumerate() {
+            if let Some((ctx,m)) = el.first_meaning() {
+                return Some((ctx,VecMeaning { index: idx,
+                                              meaning: m }))
+            }
+        }
+        None
+    }
+    fn next_meaning(&self,
+                    ctx: &mut Self::MeaningCtx,
+                    m: &mut Self::Meaning) -> bool {
+        if self[m.index].next_meaning(ctx,&mut m.meaning) {
+            return true
+        }
+        for idx in m.index+1..self.len() {
+            if let Some((nctx,nm)) = self[idx].first_meaning() {
+                *ctx = nctx;
+                m.index = idx;
+                m.meaning = nm;
+                return true
+            }
+        }
+        false
+    }
 }
 
 impl<'a,T : 'a+Semantics<'a>> Semantics<'a> for Vec<T> {
@@ -4495,6 +4524,7 @@ impl<'a,T : 'a+Semantics<'a>> Semantics<'a> for Vec<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct AssocMeaning<K,T : Semantic> {
     pub key: K,
     pub meaning: T::Meaning
@@ -4575,6 +4605,7 @@ impl<'a,K : Clone,T> Iterator for AssocMeanings<'a,K,T>
 
 impl<K : Ord+Hash+Debug+Clone,T : Semantic> Semantic for Assoc<K,T> {
     type Meaning = AssocMeaning<K,T>;
+    type MeaningCtx = (usize,T::MeaningCtx);
     fn meaning(&self,n: usize) -> Self::Meaning {
         let mut off = 0;
         for &(ref k,ref el) in self.0.iter() {
@@ -4596,6 +4627,32 @@ impl<K : Ord+Hash+Debug+Clone,T : Semantic> Semantic for Assoc<K,T> {
         }
         panic!("Key {:?} not found in Assoc",m.key)
     }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        for (idx,&(ref k,ref el)) in self.0.iter().enumerate() {
+            if let Some((ctx,m)) = el.first_meaning() {
+                return Some(((idx,ctx),AssocMeaning { key: k.clone(),
+                                                      meaning: m }))
+            }
+        }
+        None
+    }
+    fn next_meaning(&self,
+                    &mut (ref mut idx,ref mut ctx): &mut Self::MeaningCtx,
+                    m: &mut Self::Meaning) -> bool {
+        if self.0[*idx].1.next_meaning(ctx,&mut m.meaning) {
+            return true
+        }
+        for ni in *idx+1..self.0.len() {
+            if let Some((nctx,nm)) = self.0[ni].1.first_meaning() {
+                *idx = ni;
+                *ctx = nctx;
+                m.key = self.0[ni].0.clone();
+                m.meaning = nm;
+                return true
+            }
+        }
+        false
+    }
 }
 
 impl<'a,K : 'a+Clone+Ord+Hash+Debug,T : 'a+Semantics<'a>> Semantics<'a> for Assoc<K,T> {
@@ -4607,7 +4664,7 @@ impl<'a,K : 'a+Clone+Ord+Hash+Debug,T : 'a+Semantics<'a>> Semantics<'a> for Asso
     }
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
 pub enum ChoiceMeaning<M> {
     Selector(usize),
     Item(usize,M)
@@ -4652,6 +4709,7 @@ impl<'a,T : Semantics<'a>> Iterator for ChoiceMeanings<'a,T> {
 
 impl<T : Ord+Semantic+Debug> Semantic for Choice<T> {
     type Meaning = ChoiceMeaning<T::Meaning>;
+    type MeaningCtx = Option<T::MeaningCtx>;
     fn meaning(&self,n: usize) -> Self::Meaning {
         let mut off = 0;
         for (idx,el) in self.0.iter().enumerate() {
@@ -4677,6 +4735,49 @@ impl<T : Ord+Semantic+Debug> Semantic for Choice<T> {
             }
         }
     }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        if self.0.len() > 0 {
+            Some((None,ChoiceMeaning::Selector(0)))
+        } else {
+            None
+        }
+    }
+    fn next_meaning(&self,ctx: &mut Self::MeaningCtx,
+                    m: &mut Self::Meaning) -> bool {
+        let nm = match m {
+            &mut ChoiceMeaning::Selector(ref mut idx)
+                => match self.0[*idx].first_meaning() {
+                    None => if *idx+1 < self.0.len() {
+                        *ctx = None;
+                        *idx = *idx+1;
+                        return true
+                    } else {
+                        return false
+                    },
+                    Some((nctx,nm)) => {
+                        *ctx = Some(nctx);
+                        ChoiceMeaning::Item(*idx,nm)
+                    }
+                },
+            &mut ChoiceMeaning::Item(idx,ref mut cm)
+                => {
+                    let (nm,nctx) = match ctx {
+                        &mut Some(ref mut rctx) => if self.0[idx].next_meaning(rctx,cm) {
+                            return true
+                        } else if idx+1<self.0.len() {
+                            (ChoiceMeaning::Selector(idx+1),None)
+                        } else {
+                            return false
+                        },
+                        _ => unreachable!()
+                    };
+                    *ctx = nctx;
+                    nm
+                }
+        };
+        *m = nm;
+        true
+    }
 }
 
 impl<'a,T : 'a+Semantics<'a>+Ord+Debug> Semantics<'a> for Choice<T> {
@@ -4692,7 +4793,7 @@ impl<'a,T : 'a+Semantics<'a>+Ord+Debug> Semantics<'a> for Choice<T> {
     }
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
 pub enum TupleMeaning<T,U> {
     Fst(T),
     Snd(U)
@@ -4734,6 +4835,7 @@ impl<'a,T,U> Iterator for TupleMeanings<'a,T,U>
 impl<T,U> Semantic for (T,U)
     where T : Semantic, U : Semantic {
     type Meaning = TupleMeaning<T::Meaning,U::Meaning>;
+    type MeaningCtx = TupleMeaning<T::MeaningCtx,U::MeaningCtx>;
     fn meaning(&self,n: usize) -> Self::Meaning {
         let sz_0 = self.0.num_elem();
         if n<sz_0 {
@@ -4754,6 +4856,49 @@ impl<T,U> Semantic for (T,U)
             }
         }
     }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        match self.0.first_meaning() {
+            Some((ctx,m)) => Some((TupleMeaning::Fst(ctx),
+                                   TupleMeaning::Fst(m))),
+            None => match self.1.first_meaning() {
+                Some((ctx,m)) => Some((TupleMeaning::Snd(ctx),
+                                       TupleMeaning::Snd(m))),
+                None => None
+            }
+        }
+    }
+    fn next_meaning(&self,
+                    ctx: &mut Self::MeaningCtx,
+                    m: &mut Self::Meaning) -> bool {
+        let nm = match m {
+            &mut TupleMeaning::Fst(ref mut cm) => {
+                let (nm,nctx) = match ctx {
+                    &mut TupleMeaning::Fst(ref mut cctx)
+                        => if self.0.next_meaning(cctx,cm) {
+                            return true
+                        } else {
+                            match self.1.first_meaning() {
+                                None => return false,
+                                Some((nctx,nm)) => {
+                                    (TupleMeaning::Snd(nm),
+                                     TupleMeaning::Snd(nctx))
+                                }
+                            }
+                        },
+                    _ => unreachable!()
+                };
+                *ctx = nctx;
+                nm
+            },
+            &mut TupleMeaning::Snd(ref mut cm) => match ctx {
+                &mut TupleMeaning::Snd(ref mut cctx)
+                    => return self.1.next_meaning(cctx,cm),
+                _ => unreachable!()
+            }
+        };
+        *m = nm;
+        true
+    }
 }
 
 impl<'a,T,U> Semantics<'a> for (T,U)
@@ -4768,11 +4913,18 @@ impl<'a,T,U> Semantics<'a> for (T,U)
 
 impl<D : Eq+Clone+Hash> Semantic for Data<D> {
     type Meaning = ();
+    type MeaningCtx = ();
     fn meaning(&self,_:usize) -> Self::Meaning {
         ()
     }
     fn fmt_meaning<F : fmt::Write>(&self,_: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
        write!(fmt,"#")
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        None
+    }
+    fn next_meaning(&self,_:&mut Self::MeaningCtx,_:&mut Self::Meaning) -> bool {
+        false
     }
 }
 
@@ -4783,11 +4935,20 @@ impl<'a,D : Eq+Clone+Hash> Semantics<'a> for Data<D> {
 
 impl Semantic for Singleton {
     type Meaning = ();
+    type MeaningCtx = ();
     fn meaning(&self,_:usize) -> Self::Meaning {
         ()
     }
     fn fmt_meaning<F : fmt::Write>(&self,_: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
        write!(fmt,"#")
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        Some(((),()))
+    }
+    fn next_meaning(&self,
+                    _: &mut Self::MeaningCtx,
+                    _: &mut Self::Meaning) -> bool {
+        false
     }
 }
 
@@ -4798,11 +4959,20 @@ impl<'a> Semantics<'a> for Singleton {
 
 impl Semantic for SingletonBool {
     type Meaning = ();
+    type MeaningCtx = ();
     fn meaning(&self,_:usize) -> Self::Meaning {
         ()
     }
     fn fmt_meaning<F : fmt::Write>(&self,_: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
        write!(fmt,"#")
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        Some(((),()))
+    }
+    fn next_meaning(&self,
+                    _: &mut Self::MeaningCtx,
+                    _: &mut Self::Meaning) -> bool {
+        false
     }
 }
 
@@ -4813,11 +4983,20 @@ impl<'a> Semantics<'a> for SingletonBool {
 
 impl Semantic for SingletonBitVec {
     type Meaning = ();
+    type MeaningCtx = ();
     fn meaning(&self,_:usize) -> Self::Meaning {
         ()
     }
     fn fmt_meaning<F : fmt::Write>(&self,_: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
        write!(fmt,"#")
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        Some(((),()))
+    }
+    fn next_meaning(&self,
+                    _: &mut Self::MeaningCtx,
+                    _: &mut Self::Meaning) -> bool {
+        false
     }
 }
 
@@ -4826,7 +5005,7 @@ impl<'a> Semantics<'a> for SingletonBitVec {
     fn meanings(&'a self) -> Self::Meanings { once(()) }
 }
 
-#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug)]
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
 pub enum BitVecVectorStackMeaning<M> {
     Top,
     Elem(usize,M)
@@ -4879,6 +5058,7 @@ impl<'a,T> Iterator for BitVecVectorStackMeanings<'a,T>
 impl<T> Semantic for BitVecVectorStack<T>
     where T : Semantic {
     type Meaning = BitVecVectorStackMeaning<T::Meaning>;
+    type MeaningCtx = Option<T::MeaningCtx>;
     fn meaning(&self,n: usize) -> Self::Meaning {
         if n==0 {
             return BitVecVectorStackMeaning::Top
@@ -4899,6 +5079,41 @@ impl<T> Semantic for BitVecVectorStack<T>
             &BitVecVectorStackMeaning::Elem(idx,ref nm) => {
                 write!(fmt,"{}.",idx)?;
                 self.elements[idx].fmt_meaning(nm,fmt)
+            }
+        }
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        Some((None,BitVecVectorStackMeaning::Top))
+    }
+    fn next_meaning(&self,ctx: &mut Self::MeaningCtx,
+                    m: &mut Self::Meaning) -> bool {
+        match m {
+            &mut BitVecVectorStackMeaning::Top => {
+                for (idx,ref el) in self.elements.iter().enumerate() {
+                    if let Some((nctx,nm)) = el.first_meaning() {
+                        *ctx = Some(nctx);
+                        *m = BitVecVectorStackMeaning::Elem(idx,nm);
+                        return true
+                    }
+                }
+                false
+            },
+            &mut BitVecVectorStackMeaning::Elem(ref mut idx,ref mut cm) => match ctx {
+                &mut Some(ref mut cctx)
+                    => if self.elements[*idx].next_meaning(cctx,cm) {
+                        true
+                    } else {
+                        for i in *idx+1..self.elements.len() {
+                            if let Some((nctx,nm)) = self.elements[i].first_meaning() {
+                                *cctx = nctx;
+                                *idx = i;
+                                *cm = nm;
+                                return true
+                            }
+                        }
+                        false
+                    },
+                _ => unreachable!()
             }
         }
     }
@@ -4932,6 +5147,7 @@ impl<It : Iterator> Iterator for OptionMeanings<It> {
 
 impl<T : Semantic> Semantic for Option<T> {
     type Meaning = T::Meaning;
+    type MeaningCtx = T::MeaningCtx;
     fn meaning(&self,n: usize) -> Self::Meaning {
         match self {
             &None => panic!("meaning called for None"),
@@ -4942,6 +5158,19 @@ impl<T : Semantic> Semantic for Option<T> {
         match self {
             &None => panic!("fmt_meaning called for None"),
             &Some(ref obj) => obj.fmt_meaning(m,fmt)
+        }
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        match self {
+            &None => None,
+            &Some(ref obj) => obj.first_meaning()
+        }
+    }
+    fn next_meaning(&self,ctx: &mut Self::MeaningCtx,
+                    m: &mut Self::Meaning) -> bool {
+        match self {
+            &None => false,
+            &Some(ref obj) => obj.next_meaning(ctx,m)
         }
     }
 }
