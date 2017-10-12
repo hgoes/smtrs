@@ -42,7 +42,8 @@ pub trait Attribute : Sized + Clone {
     fn is_full(&self) -> bool;
     fn union(&self,&Self) -> Self;
     fn intersection(&self,&Self) -> Option<Self>;
-    fn derive<Em : Embed,Fun : Debug>(Expr<Em::Sort,Self,Self,Fun>,&mut Em) -> Self;
+    fn derive_app<Em : Embed>(Function<Em::Sort,Em::Fun>,Vec<Self>,&mut Em) -> Self;
+    fn derive_value(Value) -> Self;
     fn refine<Em : Embed,F : Fn(&Em::Var) -> Option<usize>>(&Em::Expr,&mut Vec<Self>,&mut Em,&F) -> Result<bool,Em::Error>;
     fn can_derive_const() -> bool;
     fn is_const(&self) -> Option<Value>;
@@ -65,15 +66,14 @@ impl<Attr : Attribute> AttributeDomain<Attr> {
                 Some(rv) => Ok(self.attrs[rv].clone())
             },
             Expr::Const(v) => {
-                let e : Expr<Em::Sort,Attr,Attr,()> = Expr::Const(v);
-                Ok(Attr::derive(e,em))
+                Ok(Attr::derive_value(v))
             },
             Expr::App(fun,args) => {
                 let mut nargs = Vec::with_capacity(args.len());
                 for arg in args {
                     nargs.push(self.expr_attribute(&arg,em,f)?);
                 }
-                Ok(Attr::derive(Expr::App(fun,nargs),em))
+                Ok(Attr::derive_app(fun,nargs,em))
             },
             _ => Ok(Attr::full())
         }
@@ -239,274 +239,274 @@ impl Attribute for Const {
             _ => Ok(true)
         }
     }
-    fn derive<Em : Embed,Fun : Debug>(e: Expr<Em::Sort,Const,Const,Fun>,_: &mut Em) -> Const {
-        match e {
-            Expr::Var(val)   => val,
-            Expr::Const(val) => Const::IsConst(val),
-            Expr::App(fun,args) => match fun {
-                Function::Eq(_,_) => if args.len()==0 {
+    fn derive_value(val: Value) -> Const {
+        Const::IsConst(val)
+    }
+    fn derive_app<Em : Embed>(fun: Function<Em::Sort,Em::Fun>,
+                              args: Vec<Const>,
+                              _: &mut Em) -> Const {
+        match fun {
+            Function::Eq(_,_) => if args.len()==0 {
+                Const::IsConst(Value::Bool(true))
+            } else {
+                match args[0] {
+                    Const::IsConst(ref v) => {
+                        for el in args[1..].iter() {
+                            match *el {
+                                Const::IsConst(ref nv) => if v!=nv { return Const::IsConst(Value::Bool(false)) },
+                                Const::NotConst => return Const::NotConst
+                            }
+                        }
+                        Const::IsConst(Value::Bool(true))
+                    },
+                    Const::NotConst => Const::NotConst
+                }
+            },
+            Function::Not => match args[0] {
+                Const::IsConst(Value::Bool(x)) => Const::IsConst(Value::Bool(!x)),
+                _ => Const::NotConst
+            },
+            Function::And(_) => {
+                let mut all_true = true;
+                for arg in args.iter() {
+                    match arg {
+                        &Const::IsConst(Value::Bool(x)) => if !x {
+                            return Const::IsConst(Value::Bool(false))
+                        },
+                        _ => { all_true = false; }
+                    }
+                }
+                if all_true {
                     Const::IsConst(Value::Bool(true))
                 } else {
-                    match args[0] {
-                        Const::IsConst(ref v) => {
-                            for el in args[1..].iter() {
-                                match *el {
-                                    Const::IsConst(ref nv) => if v!=nv { return Const::IsConst(Value::Bool(false)) },
-                                    Const::NotConst => return Const::NotConst
-                                }
-                            }
-                            Const::IsConst(Value::Bool(true))
-                        },
-                        Const::NotConst => Const::NotConst
-                    }
-                },
-                Function::Not => match args[0] {
-                    Const::IsConst(Value::Bool(x)) => Const::IsConst(Value::Bool(!x)),
-                    _ => Const::NotConst
-                },
-                Function::And(_) => {
-                    let mut all_true = true;
-                    for arg in args.iter() {
-                        match arg {
-                            &Const::IsConst(Value::Bool(x)) => if !x {
-                                return Const::IsConst(Value::Bool(false))
-                            },
-                            _ => { all_true = false; }
-                        }
-                    }
-                    if all_true {
-                        Const::IsConst(Value::Bool(true))
-                    } else {
-                        Const::NotConst
-                    }
-                },
-                Function::Or(_) => {
-                    let mut all_false = true;
-                    for arg in args.iter() {
-                        match arg {
-                            &Const::IsConst(Value::Bool(x)) => if x {
-                                return Const::IsConst(Value::Bool(true))
-                            },
-                            _ => { all_false = false; }
-                        }
-                    }
-                    if all_false {
-                        Const::IsConst(Value::Bool(false))
-                    } else {
-                        Const::NotConst
-                    }
-                },
-                Function::XOr(_) => {
-                    let mut val = false;
-                    for arg in args.iter() {
-                        match arg {
-                            &Const::IsConst(Value::Bool(x)) => {
-                                val = val^x;
-                            },
-                            _ => return Const::NotConst
-                        }
-                    }
-                    Const::IsConst(Value::Bool(val))
-                },
-                Function::ITE(_) => match args[0] {
-                    Const::IsConst(Value::Bool(c)) => if c {
-                        args[1].clone()
-                    } else {
-                        args[2].clone()
-                    },
-                    _ => match args[1] {
-                        Const::IsConst(ref v1) => match args[2] {
-                            Const::IsConst(ref v2) => if v1==v2 {
-                                Const::IsConst(v1.clone())
-                            } else {
-                                Const::NotConst
-                            },
-                            _ => Const::NotConst
-                        },
-                        _ => Const::NotConst
-                    }
-                },
-                Function::BV(bw,BVOp::Ord(signed,op)) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            if signed {
-                                let s_lhs = bv_signed_value(bw,lhs);
-                                let s_rhs = bv_signed_value(bw,rhs);
-                                let res = match op {
-                                    OrdOp::Ge => s_lhs>=s_rhs,
-                                    OrdOp::Gt => s_lhs> s_rhs,
-                                    OrdOp::Le => s_lhs<=s_rhs,
-                                    OrdOp::Lt => s_lhs< s_rhs
-                                };
-                                Const::IsConst(Value::Bool(res))
-                            } else {
-                                let res = match op {
-                                    OrdOp::Ge => lhs>=rhs,
-                                    OrdOp::Gt => lhs> rhs,
-                                    OrdOp::Le => lhs<=rhs,
-                                    OrdOp::Lt => lhs< rhs
-                                };
-                                Const::IsConst(Value::Bool(res))
-                            }
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::Arith(ArithOp::Add)) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let res = lhs+rhs;
-                            let limit = BigUint::from(1 as u8).shl(bw);
-                            let nres = if res >= limit {
-                                res-limit
-                            } else {
-                                res
-                            };
-                            Const::IsConst(Value::BitVec(bw,nres))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::Arith(ArithOp::Sub)) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let res = match lhs.checked_sub(rhs) {
-                                Some(r) => r,
-                                None => lhs+BigUint::from(1 as u8).shl(bw)-rhs
-                            };
-                            Const::IsConst(Value::BitVec(bw,res))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::Arith(ArithOp::Mult)) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let limit = BigUint::from(1 as u8).shl(bw);
-                            let res = (lhs*rhs) % limit ;
-                            Const::IsConst(Value::BitVec(bw,res))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::Div(true)) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let rl = bv_signed_value(bw,lhs);
-                            let rr = bv_signed_value(bw,rhs);
-                            let res = bv_from_signed_value(bw,&(rl/rr));
-                            Const::IsConst(Value::BitVec(bw,res))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::SHL) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let mask = BigUint::from(1 as u8).shl(bw)-(1 as u8);
-                            let amount = match rhs.to_usize() {
-                                None => bw,
-                                Some(r) => if r>bw { bw } else { r }
-                            };
-                            let shifted = lhs.shl(amount);
-                            let res = shifted&mask;
-                            Const::IsConst(Value::BitVec(bw,res))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::ASHR) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let mask = BigUint::from(1 as u8).shl(bw-1);
-                            let sgn  = lhs & mask.clone();
-                            let amount = match rhs.to_usize() {
-                                None => bw,
-                                Some(r) => if r>bw { bw } else { r }
-                            };
-                            let shifted = lhs.shr(amount);
-                            let res = if sgn==mask {
-                                let ones : BigUint = BigUint::from(1 as u8).shl(amount)-(1 as u8); 
-                                shifted | ones.shl(bw-amount)
-                            } else {
-                                shifted
-                            };
-                            Const::IsConst(Value::BitVec(bw,res))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::LSHR) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let amount = match rhs.to_usize() {
-                                None => bw,
-                                Some(r) => if r>bw { bw } else { r }
-                            };
-                            let res = lhs.shr(amount);
-                            Const::IsConst(Value::BitVec(bw,res))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::XOr) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let res = lhs^rhs;
-                            Const::IsConst(Value::BitVec(bw,res))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::And) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let res = lhs&rhs;
-                            Const::IsConst(Value::BitVec(bw,res))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::Or) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                            let res = lhs|rhs;
-                            Const::IsConst(Value::BitVec(bw,res))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::Extract(start,len)) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref x)) => {
-                        let x1 = x.shr(start);
-                        let mask = BigUint::from(1 as u8).shl(len)-(1 as u8);
-                        Const::IsConst(Value::BitVec(bw,x1 & mask))
-                    },
-                    _ => Const::NotConst
-                },
-                Function::BV(bw,BVOp::Concat) => match args[0] {
-                    Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
-                        Const::IsConst(Value::BitVec(bwr,ref rhs)) => {
-                            Const::IsConst(Value::BitVec(bw,lhs.shl(bwr) | rhs))
-                        },
-                        _ => Const::NotConst
-                    },
-                    _ => Const::NotConst
-                },
-                _ => panic!("Derive function: {:?}",fun)
+                    Const::NotConst
+                }
             },
-            _ => panic!("Derive: {:?}",e)
+            Function::Or(_) => {
+                let mut all_false = true;
+                for arg in args.iter() {
+                    match arg {
+                        &Const::IsConst(Value::Bool(x)) => if x {
+                            return Const::IsConst(Value::Bool(true))
+                        },
+                        _ => { all_false = false; }
+                    }
+                }
+                if all_false {
+                    Const::IsConst(Value::Bool(false))
+                } else {
+                    Const::NotConst
+                }
+            },
+            Function::XOr(_) => {
+                let mut val = false;
+                for arg in args.iter() {
+                    match arg {
+                        &Const::IsConst(Value::Bool(x)) => {
+                            val = val^x;
+                        },
+                        _ => return Const::NotConst
+                    }
+                }
+                Const::IsConst(Value::Bool(val))
+            },
+            Function::ITE(_) => match args[0] {
+                Const::IsConst(Value::Bool(c)) => if c {
+                    args[1].clone()
+                } else {
+                    args[2].clone()
+                },
+                _ => match args[1] {
+                    Const::IsConst(ref v1) => match args[2] {
+                        Const::IsConst(ref v2) => if v1==v2 {
+                            Const::IsConst(v1.clone())
+                        } else {
+                            Const::NotConst
+                        },
+                        _ => Const::NotConst
+                    },
+                    _ => Const::NotConst
+                }
+            },
+            Function::BV(bw,BVOp::Ord(signed,op)) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        if signed {
+                            let s_lhs = bv_signed_value(bw,lhs);
+                            let s_rhs = bv_signed_value(bw,rhs);
+                            let res = match op {
+                                OrdOp::Ge => s_lhs>=s_rhs,
+                                OrdOp::Gt => s_lhs> s_rhs,
+                                OrdOp::Le => s_lhs<=s_rhs,
+                                OrdOp::Lt => s_lhs< s_rhs
+                            };
+                            Const::IsConst(Value::Bool(res))
+                        } else {
+                            let res = match op {
+                                OrdOp::Ge => lhs>=rhs,
+                                OrdOp::Gt => lhs> rhs,
+                                OrdOp::Le => lhs<=rhs,
+                                OrdOp::Lt => lhs< rhs
+                            };
+                            Const::IsConst(Value::Bool(res))
+                        }
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::Arith(ArithOp::Add)) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        let res = lhs+rhs;
+                        let limit = BigUint::from(1 as u8).shl(bw);
+                        let nres = if res >= limit {
+                            res-limit
+                        } else {
+                            res
+                        };
+                        Const::IsConst(Value::BitVec(bw,nres))
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::Arith(ArithOp::Sub)) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        let res = match lhs.checked_sub(rhs) {
+                            Some(r) => r,
+                            None => lhs+BigUint::from(1 as u8).shl(bw)-rhs
+                        };
+                        Const::IsConst(Value::BitVec(bw,res))
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::Arith(ArithOp::Mult)) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        let limit = BigUint::from(1 as u8).shl(bw);
+                        let res = (lhs*rhs) % limit ;
+                        Const::IsConst(Value::BitVec(bw,res))
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::Div(true)) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        let rl = bv_signed_value(bw,lhs);
+                        let rr = bv_signed_value(bw,rhs);
+                        let res = bv_from_signed_value(bw,&(rl/rr));
+                        Const::IsConst(Value::BitVec(bw,res))
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::SHL) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        let mask = BigUint::from(1 as u8).shl(bw)-(1 as u8);
+                        let amount = match rhs.to_usize() {
+                            None => bw,
+                                Some(r) => if r>bw { bw } else { r }
+                        };
+                        let shifted = lhs.shl(amount);
+                        let res = shifted&mask;
+                        Const::IsConst(Value::BitVec(bw,res))
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::ASHR) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        let mask = BigUint::from(1 as u8).shl(bw-1);
+                        let sgn  = lhs & mask.clone();
+                        let amount = match rhs.to_usize() {
+                            None => bw,
+                            Some(r) => if r>bw { bw } else { r }
+                        };
+                        let shifted = lhs.shr(amount);
+                        let res = if sgn==mask {
+                            let ones : BigUint = BigUint::from(1 as u8).shl(amount)-(1 as u8); 
+                            shifted | ones.shl(bw-amount)
+                        } else {
+                            shifted
+                        };
+                        Const::IsConst(Value::BitVec(bw,res))
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::LSHR) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        let amount = match rhs.to_usize() {
+                            None => bw,
+                            Some(r) => if r>bw { bw } else { r }
+                        };
+                        let res = lhs.shr(amount);
+                        Const::IsConst(Value::BitVec(bw,res))
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::XOr) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        let res = lhs^rhs;
+                        Const::IsConst(Value::BitVec(bw,res))
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::And) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        let res = lhs&rhs;
+                        Const::IsConst(Value::BitVec(bw,res))
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::Or) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(_,ref rhs)) => {
+                        let res = lhs|rhs;
+                        Const::IsConst(Value::BitVec(bw,res))
+                    },
+                    _ => Const::NotConst
+                },
+                    _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::Extract(start,len)) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref x)) => {
+                    let x1 = x.shr(start);
+                    let mask = BigUint::from(1 as u8).shl(len)-(1 as u8);
+                    Const::IsConst(Value::BitVec(bw,x1 & mask))
+                },
+                _ => Const::NotConst
+            },
+            Function::BV(bw,BVOp::Concat) => match args[0] {
+                Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
+                    Const::IsConst(Value::BitVec(bwr,ref rhs)) => {
+                        Const::IsConst(Value::BitVec(bw,lhs.shl(bwr) | rhs))
+                    },
+                    _ => Const::NotConst
+                },
+                _ => Const::NotConst
+            },
+            _ => panic!("Derive function: {:?}",fun)
         }
     }
     fn can_derive_const() -> bool { true }
