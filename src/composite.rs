@@ -3,7 +3,6 @@ use types;
 use types::{SortKind,Value};
 use embed::{Embed,DeriveConst,DeriveValues};
 use domain::{Domain};
-use unique::{Uniquer,UniqueRef};
 use std::cmp::{Ordering,max,min};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -46,12 +45,26 @@ pub trait Composite : Sized + Eq + Hash + Clone {
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone,Debug)]
 pub struct CompVar(pub usize);
 
-#[derive(PartialEq,Eq,Hash,Clone,Debug)]
-pub struct CompExpr<C : Composite>(pub UniqueRef<expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>>);
+#[derive(Hash,Clone,Debug)]
+pub struct CompExpr<C : Composite>(pub Rc<expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>>,PhantomData<C>);
+
+impl<C : Composite> CompExpr<C> {
+    pub fn new(e: expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>) -> Self {
+        CompExpr(Rc::new(e),PhantomData)
+    }
+}
+
+impl<C : Composite> PartialEq for CompExpr<C> {
+    fn eq(&self,oth: &Self) -> bool {
+        Rc::ptr_eq(&self.0,&oth.0) ||
+            self.0==oth.0
+    }
+}
+
+impl<C : Composite> Eq for CompExpr<C> {}
 
 pub struct Comp<'a,C : Composite + 'a> {
     pub referenced: &'a C,
-    pub exprs: &'a mut Uniquer<expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>>
 }
 
 pub struct CompDom<'a,C : Composite + 'a,Dom : 'a+Domain<C>> {
@@ -80,7 +93,7 @@ impl<'a,C : Composite + Debug> Embed for Comp<'a,C> {
     }
     fn embed(&mut self,e: expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>)
              -> Result<CompExpr<C>,()> {
-        Ok(CompExpr(self.exprs.get(e)))
+        Ok(CompExpr(Rc::new(e),PhantomData))
     }
     fn unbed(&mut self,e: &CompExpr<C>)
              -> Result<expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>,()> {
@@ -2964,7 +2977,7 @@ impl<Em : Embed> Debug for Transformation<Em> {
 
 impl<C : Composite> fmt::Display for CompExpr<C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(self.0.get(),f)
+        fmt::Display::fmt(&*self.0,f)
     }
 }
 
