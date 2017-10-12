@@ -324,6 +324,7 @@ impl<R : Read,W : Write> Parser for Pipe<R,W> {
 
 }
 
+#[cfg(feature="test-z3")]
 #[test]
 fn test_z3() {
     let mut solver = Pipe::new_process("z3",&["-smt2","-in"])
