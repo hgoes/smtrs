@@ -11,5 +11,6 @@ pub mod types;
 pub mod expr;
 pub mod backend;
 pub mod lazy;
+pub mod simplify;
 #[cfg(test)]
 mod test;
