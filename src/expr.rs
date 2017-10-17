@@ -4,15 +4,15 @@ use std::fmt::{Debug,Display,Formatter,Error};
 
 #[derive(Debug,PartialEq,Eq,Hash,Clone)]
 pub struct NVar<S> {
-    id : usize,
-    sort : S
+    pub id : usize,
+    pub sort : S
 }
 
 #[derive(Debug,PartialEq,Eq,Hash,Clone)]
 pub struct NFun<S> {
-    id : usize,
-    sort : S,
-    arg_sorts : Vec<S>
+    pub id : usize,
+    pub sort : S,
+    pub arg_sorts : Vec<S>
 }
 
 #[derive(Debug,PartialEq,Eq,Hash,Clone)]

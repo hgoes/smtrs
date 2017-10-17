@@ -127,7 +127,7 @@ impl<B : Embed> Embed for Simplify<B> {
                     } else {
                         match self.0.unbed(&args[1])? {
                             Expr::Const(Value::Bool(c1)) => match self.0.unbed(&args[2])? {
-                                Expr::Const(Value::Bool(c2)) => if c1 {
+                                Expr::Const(Value::Bool(_)) => if c1 {
                                     // c2 must be false
                                     return Ok(args[0].clone())
                                 } else {
@@ -217,8 +217,8 @@ impl<B : Backend> Backend for Simplify<B> {
     fn pop(&mut self) -> Result<(),Self::Error> {
         self.0.pop()
     }
-    fn declare_var(&mut self,srt: Self::Sort) -> Result<Self::Var,Self::Error> {
-        self.0.declare_var(srt)
+    fn declare_var(&mut self,srt: Self::Sort,name: Option<String>) -> Result<Self::Var,Self::Error> {
+        self.0.declare_var(srt,name)
     }
     fn define_var(&mut self,e: Self::Expr) -> Result<Self::Var,Self::Error> {
         self.0.define_var(e)
