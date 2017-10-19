@@ -20,11 +20,14 @@ use std::usize;
 use std::fmt;
 use std::marker::PhantomData;
 
-pub trait Composite : Sized + Eq + Hash + Clone {
-
+/// Objects with this traits can provide sorts for variables.
+pub trait HasSorts {
     fn num_elem(&self) -> usize;
     fn elem_sort<Em : Embed>(&self,usize,&mut Em)
                              -> Result<Em::Sort,Em::Error>;
+}
+
+pub trait Composite : HasSorts + Sized + Eq + Hash + Clone {
 
     fn combine<'a,Em,FComb,FL,FR>(OptRef<'a,Self>,OptRef<'a,Self>,
                                   Transf<Em>,Transf<Em>,
@@ -45,30 +48,36 @@ pub trait Composite : Sized + Eq + Hash + Clone {
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone,Debug)]
 pub struct CompVar(pub usize);
 
-#[derive(Hash,Clone,Debug)]
-pub struct CompExpr<C : Composite>(pub Rc<expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>>,PhantomData<C>);
+#[derive(Hash,Debug)]
+pub struct CompExpr<C : HasSorts>(pub Rc<expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>>,PhantomData<C>);
 
-impl<C : Composite> CompExpr<C> {
+impl<C : HasSorts> CompExpr<C> {
     pub fn new(e: expr::Expr<types::Sort,CompVar,CompExpr<C>,expr::NoVar>) -> Self {
         CompExpr(Rc::new(e),PhantomData)
     }
 }
 
-impl<C : Composite> PartialEq for CompExpr<C> {
+impl<C : HasSorts> PartialEq for CompExpr<C> {
     fn eq(&self,oth: &Self) -> bool {
         Rc::ptr_eq(&self.0,&oth.0) ||
             self.0==oth.0
     }
 }
 
-impl<C : Composite> Eq for CompExpr<C> {}
+impl<C : HasSorts> Eq for CompExpr<C> {}
 
-pub struct Comp<'a,C : Composite + 'a> {
-    pub referenced: &'a C,
+impl<C : HasSorts> Clone for CompExpr<C> {
+    fn clone(&self) -> Self {
+        CompExpr(self.0.clone(),PhantomData)
+    }
+}
+
+pub struct Comp<C : HasSorts> {
+    pub referenced: C,
 }
 
 pub struct CompDom<'a,C : Composite + 'a,Dom : 'a+Domain<C>> {
-    pub comp: Comp<'a,C>,
+    pub comp: Comp<&'a C>,
     pub domain: &'a Dom
 }
 
@@ -78,7 +87,7 @@ impl fmt::Display for CompVar {
     }
 }
 
-impl<'a,C : Composite + Debug> Embed for Comp<'a,C> {
+impl<C : HasSorts + Debug> Embed for Comp<C> {
     type Sort = types::Sort;
     type Var = CompVar;
     type Expr = CompExpr<C>;
@@ -100,7 +109,8 @@ impl<'a,C : Composite + Debug> Embed for Comp<'a,C> {
         Ok((*e.0).clone())
     }
     fn type_of_var(&mut self,var: &CompVar) -> Result<types::Sort,()> {
-        self.referenced.elem_sort(var.0,self)
+        let mut ncomp = Comp { referenced: &self.referenced };
+        self.referenced.elem_sort(var.0,&mut ncomp)
     }
     fn type_of_fun(&mut self,_:&expr::NoVar) -> Result<types::Sort,()> {
         panic!("Composite expressions don't have functions")
@@ -113,12 +123,12 @@ impl<'a,C : Composite + Debug> Embed for Comp<'a,C> {
     }
 }
 
-impl<'a,C : Composite+Debug,Dom : Domain<C>> Embed for CompDom<'a,C,Dom> {
-    type Sort = <Comp<'a,C> as Embed>::Sort;
-    type Var = <Comp<'a,C> as Embed>::Var;
-    type Expr = <Comp<'a,C> as Embed>::Expr;
-    type Fun = <Comp<'a,C> as Embed>::Fun;
-    type Error = <Comp<'a,C> as Embed>::Error;
+impl<'a,C : 'a+Composite+Debug,Dom : Domain<C>> Embed for CompDom<'a,C,Dom> {
+    type Sort = <Comp<&'a C> as Embed>::Sort;
+    type Var = <Comp<&'a C> as Embed>::Var;
+    type Expr = <Comp<&'a C> as Embed>::Expr;
+    type Fun = <Comp<&'a C> as Embed>::Fun;
+    type Error = <Comp<&'a C> as Embed>::Error;
     fn embed_sort(&mut self,tp: SortKind<Self::Sort>)
                   -> Result<Self::Sort,Self::Error> {
         self.comp.embed_sort(tp)
@@ -127,7 +137,7 @@ impl<'a,C : Composite+Debug,Dom : Domain<C>> Embed for CompDom<'a,C,Dom> {
         self.comp.unbed_sort(tp)
     }
     fn embed(&mut self,e: expr::Expr<Self::Sort,Self::Var,Self::Expr,Self::Fun>)
-             -> Result<CompExpr<C>,Self::Error> {
+             -> Result<CompExpr<&'a C>,Self::Error> {
         self.comp.embed(e)
     }
     fn unbed(&mut self,e: &Self::Expr)
@@ -148,13 +158,13 @@ impl<'a,C : Composite+Debug,Dom : Domain<C>> Embed for CompDom<'a,C,Dom> {
     }
 }
 
-impl<'a,C : Composite+Debug,Dom : Domain<C>> DeriveConst for CompDom<'a,C,Dom> {
+impl<'a,C : 'a+Composite+Debug,Dom : Domain<C>> DeriveConst for CompDom<'a,C,Dom> {
     fn derive_const(&mut self,e: &Self::Expr) -> Result<Option<Value>,Self::Error> {
         self.domain.is_const(e,&mut self.comp,&|v:&CompVar| Some(v.0))
     }
 }
 
-impl<'a,C : Composite+Debug,Dom : Domain<C>> DeriveValues for CompDom<'a,C,Dom> {
+impl<'a,C : 'a+Composite+Debug,Dom : Domain<C>> DeriveValues for CompDom<'a,C,Dom> {
     type ValueIterator = Dom::ValueIterator;
     fn derive_values(&mut self,e: &Self::Expr) -> Result<Option<Self::ValueIterator>,Self::Error> {
         self.domain.values(e,&mut self.comp,&|v:&CompVar| Some(v.0))
@@ -164,13 +174,16 @@ impl<'a,C : Composite+Debug,Dom : Domain<C>> DeriveValues for CompDom<'a,C,Dom> 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone,Debug)]
 pub struct Singleton(pub types::Sort);
 
-impl Composite for Singleton {
+impl HasSorts for Singleton {
     fn num_elem(&self) -> usize { 1 }
     fn elem_sort<Em : Embed>(&self,pos:usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         debug_assert_eq!(pos,0);
         self.0.embed(em)
     }
+}
+
+impl Composite for Singleton {
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
                                   inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
                                   comb: &FComb,_: &FL,_: &FR,
@@ -194,13 +207,16 @@ pub struct SingletonBool {}
 
 pub static BOOL_SINGLETON : SingletonBool = SingletonBool {};
 
-impl Composite for SingletonBool {
+impl HasSorts for SingletonBool {
     fn num_elem(&self) -> usize { 1 }
     fn elem_sort<Em : Embed>(&self,pos:usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         debug_assert_eq!(pos,0);
         em.tp_bool()
     }
+}
+
+impl Composite for SingletonBool {
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,_: OptRef<'a,Self>,
                                   inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
                                   comb: &FComb,_: &FL,_: &FR,
@@ -218,13 +234,16 @@ impl Composite for SingletonBool {
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Clone,Copy,Debug)]
 pub struct SingletonBitVec(pub usize);
 
-impl Composite for SingletonBitVec {
+impl HasSorts for SingletonBitVec {
     fn num_elem(&self) -> usize { 1 }
     fn elem_sort<Em : Embed>(&self,pos:usize,em: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         debug_assert_eq!(pos,0);
         em.tp_bitvec(self.0)
     }
+}
+
+impl Composite for SingletonBitVec {
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
                                   inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
                                   comb: &FComb,_: &FL,_: &FR,
@@ -243,7 +262,7 @@ impl Composite for SingletonBitVec {
     }
 }
 
-impl<T : Composite> Composite for Vec<T> {
+impl<T : HasSorts> HasSorts for Vec<T> {
     fn num_elem(&self) -> usize {
         let mut acc = 0;
         for el in self.iter() {
@@ -263,6 +282,9 @@ impl<T : Composite> Composite for Vec<T> {
         }
         panic!("Invalid index {}",n)
     }
+}
+
+impl<T : Composite> Composite for Vec<T> {
     fn combine<'a,Em,FComb,FL,FR>(mut lhs: OptRef<'a,Self>,mut rhs: OptRef<'a,Self>,
                                   inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
                                   comb: &FComb,only_l: &FL,only_r: &FR,
@@ -514,7 +536,7 @@ impl<'a,T : 'a> OptRef<'a,Choice<T>> {
     }
 }
 
-impl<T : Composite + Ord> Composite for Choice<T> {
+impl<T : HasSorts + Ord> HasSorts for Choice<T> {
     fn num_elem(&self) -> usize {
         let mut acc = 0;
         for el in self.0.iter() {
@@ -538,6 +560,9 @@ impl<T : Composite + Ord> Composite for Choice<T> {
         }
         panic!("Invalid index {}",n)
     }
+}
+
+impl<T : Composite + Ord> Composite for Choice<T> {
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
                                   inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
                                   comb: &FComb,only_l: &FL,only_r: &FR,
@@ -686,7 +711,7 @@ impl<T : Composite + Ord> Composite for Choice<T> {
     }
 }
 
-impl<K : Ord + Clone + Hash,T : Composite> Composite for BTreeMap<K,T> {
+impl<K : Ord + Clone + Hash,T : HasSorts> HasSorts for BTreeMap<K,T> {
     fn num_elem(&self) -> usize {
         let mut acc = 0;
         for v in self.values() {
@@ -706,6 +731,9 @@ impl<K : Ord + Clone + Hash,T : Composite> Composite for BTreeMap<K,T> {
         }
         panic!("Invalid index: {}",n)
     }
+}
+
+impl<K : Ord + Clone + Hash,T : Composite> Composite for BTreeMap<K,T> {
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
                                   inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
                                   comb: &FComb,only_l: &FL,only_r: &FR,
@@ -821,7 +849,7 @@ impl<K : Ord + Clone + Hash,T : Composite> Composite for BTreeMap<K,T> {
     }
 }
 
-impl<T : Composite> Composite for Option<T> {
+impl<T : HasSorts> HasSorts for Option<T> {
     fn num_elem(&self) -> usize {
         match *self {
             None => 0,
@@ -835,6 +863,9 @@ impl<T : Composite> Composite for Option<T> {
             Some(ref c) => c.elem_sort(n,em)
         }
     }
+}
+
+impl<T : Composite> Composite for Option<T> {
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
                                   inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
                                   comb: &FComb,only_l: &FL,only_r: &FR,
@@ -897,12 +928,12 @@ impl<T : Composite> Composite for Option<T> {
 }
 
 #[derive(PartialEq,Eq,Hash,Clone)]
-pub struct Array<Idx : Composite,T : Composite> {
+pub struct Array<Idx,T> {
     index: Idx,
     element: T
 }
 
-impl<Idx : Composite + Eq,T : Composite> Composite for Array<Idx,T> {
+impl<Idx : HasSorts + Eq,T : HasSorts> HasSorts for Array<Idx,T> {
     fn num_elem(&self) -> usize {
         self.element.num_elem()
     }
@@ -916,6 +947,9 @@ impl<Idx : Composite + Eq,T : Composite> Composite for Array<Idx,T> {
         }
         em.embed_sort(SortKind::Array(idx_arr,srt))
     }
+}
+
+impl<Idx : Composite + Eq,T : Composite> Composite for Array<Idx,T> {
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
                                   inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
                                   comb: &FComb,only_l: &FL,only_r: &FR,
@@ -947,12 +981,15 @@ impl<Idx : Composite + Eq,T : Composite> Composite for Array<Idx,T> {
     // FIXME: Forall invariants
 }
 
-impl Composite for () {
+impl HasSorts for () {
     fn num_elem(&self) -> usize { 0 }
     fn elem_sort<Em : Embed>(&self,n: usize,_: &mut Em)
                              -> Result<Em::Sort,Em::Error> {
         panic!("Invalid index: {}",n)
     }
+}
+
+impl Composite for () {
     fn combine<'a,Em,FComb,FL,FR>(_: OptRef<'a,Self>,_: OptRef<'a,Self>,
                                   _: Transf<Em>,_: Transf<Em>,
                                   _: &FComb,_: &FL,_: &FR,
@@ -967,7 +1004,7 @@ impl Composite for () {
     }
 }
 
-impl<A : Composite,B : Composite> Composite for (A,B) {
+impl<A : HasSorts,B : HasSorts> HasSorts for (A,B) {
     fn num_elem(&self) -> usize {
         self.0.num_elem() + self.1.num_elem()
     }
@@ -980,6 +1017,9 @@ impl<A : Composite,B : Composite> Composite for (A,B) {
             self.0.elem_sort(n,em)
         }
     }
+}
+
+impl<A : Composite,B : Composite> Composite for (A,B) {
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
                                   inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
                                   comb: &FComb,only_l: &FL,only_r: &FR,
@@ -1076,6 +1116,24 @@ pub fn tuple<'a,'b,A,B,Em>(el_a: OptRef<'a,A>,el_b: OptRef<'a,B>,
     let res = OptRef::Owned((el_a.as_obj(),el_b.as_obj()));
     let outp = Transformation::concat(&[inp_a,inp_b]);
     (res,outp)
+}
+
+impl<A : HasSorts,B : HasSorts,C : HasSorts> HasSorts for (A,B,C) {
+    fn num_elem(&self) -> usize {
+        self.0.num_elem() + self.1.num_elem() + self.2.num_elem()
+    }
+    fn elem_sort<Em : Embed>(&self,n: usize,em: &mut Em)
+                             -> Result<Em::Sort,Em::Error> {
+        let sz0 = self.0.num_elem();
+        if n<sz0 {
+            return self.0.elem_sort(n,em)
+        }
+        let sz1 = sz0 + self.1.num_elem();
+        if n<sz1 {
+            return self.1.elem_sort(n-sz0,em)
+        }
+        self.2.elem_sort(n-sz1,em)
+    }
 }
 
 pub enum OptRef<'a,T : 'a> {
@@ -1999,12 +2057,15 @@ pub fn get_array_elem<'a,Idx,T,Em>(arr: OptRef<'a,Array<Idx,T>>,
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
 pub struct Data<T>(pub T);
 
-impl<T : Eq + Hash + Clone> Composite for Data<T> {
+impl<T> HasSorts for Data<T> {
     fn num_elem(&self) -> usize { 0 }
     fn elem_sort<Em : Embed>(&self,_:usize,_:&mut Em)
                              -> Result<Em::Sort,Em::Error> {
         panic!("Cannot get sort of Data")
     }
+}
+
+impl<T : Eq + Hash + Clone> Composite for Data<T> {
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
                                   _: Transf<Em>,_: Transf<Em>,
                                   _: &FComb,_: &FL,_: &FR,
@@ -2091,7 +2152,7 @@ pub struct BitVecVectorStack<T> {
     pub elements: Vec<T>
 }
 
-impl<T : Composite + Clone> Composite for BitVecVectorStack<T> {
+impl<T : HasSorts> HasSorts for BitVecVectorStack<T> {
     fn num_elem(&self) -> usize {
         self.elements.num_elem()+1
     }
@@ -2103,6 +2164,9 @@ impl<T : Composite + Clone> Composite for BitVecVectorStack<T> {
             self.elements.elem_sort(pos-1,em)
         }
     }
+}
+
+impl<T : Composite + Clone> Composite for BitVecVectorStack<T> {
     fn combine<'a,Em,FComb,FL,FR>(x: OptRef<'a,Self>,y: OptRef<'a,Self>,
                                   inp_x: Transf<Em>,inp_y: Transf<Em>,
                                   comb: &FComb,only_l: &FL,only_r: &FR,em: &mut Em)
@@ -2511,7 +2575,7 @@ impl<K : Ord+Hash+Clone,V : Composite> Assoc<K,V> {
     }
 }
 
-impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
+impl<K,V : HasSorts> HasSorts for Assoc<K,V> {
     fn num_elem(&self) -> usize {
         let mut acc = 0;
         for el in self.0.iter() {
@@ -2532,6 +2596,9 @@ impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
         }
         panic!("Invalid index")
     }
+}
+
+impl<K : Ord + Hash + Clone,V : Composite + Clone> Composite for Assoc<K,V> {
     fn combine<'a,Em,FComb,FL,FR>(lhs: OptRef<'a,Self>,rhs: OptRef<'a,Self>,
                                   inp_lhs: Transf<Em>,inp_rhs: Transf<Em>,
                                   comb: &FComb,only_l: &FL,only_r: &FR,em: &mut Em)
@@ -4392,7 +4459,7 @@ impl<It1,It2,Ctx,F> Clone for SeqPure<It1,It2,Ctx,F>
     }
 }
 
-impl<C : Composite> CompExpr<C> {
+impl<C : HasSorts> CompExpr<C> {
     pub fn translate<Em : Embed,F>(&self,f: &mut F,em: &mut Em) -> Result<Em::Expr,Em::Error>
         where F : FnMut(usize,&mut Em) -> Result<Em::Expr,Em::Error> {
         match *self.0 {
@@ -4981,5 +5048,18 @@ pub fn comp_eq<C,Em>(lhs: &C,lhs_inp: Transf<Em>,
         }
     } else {
         Ok(None)
+    }
+}
+
+impl<'a,T : 'a+HasSorts> HasSorts for &'a T {
+    fn num_elem(&self) -> usize {
+        T::num_elem(*self)
+    }
+    fn elem_sort<Em: Embed>(
+        &self, 
+        n: usize, 
+        em: &mut Em
+    ) -> Result<Em::Sort, Em::Error> {
+        T::elem_sort(*self,n,em)
     }
 }
