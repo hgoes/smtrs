@@ -397,7 +397,7 @@ impl Attribute for Const {
                 Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                     Const::IsConst(Value::BitVec(_,ref rhs)) => {
                         let res = lhs+rhs;
-                        let limit = BigUint::from(1 as u8).shl(bw);
+                        let limit = BigUint::from(1u8).shl(bw);
                         let nres = if res >= limit {
                             res-limit
                         } else {
@@ -414,7 +414,7 @@ impl Attribute for Const {
                     Const::IsConst(Value::BitVec(_,ref rhs)) => {
                         let res = match lhs.checked_sub(rhs) {
                             Some(r) => r,
-                            None => lhs+BigUint::from(1 as u8).shl(bw)-rhs
+                            None => lhs+BigUint::from(1u8).shl(bw)-rhs
                         };
                         Const::IsConst(Value::BitVec(bw,res))
                     },
@@ -425,7 +425,7 @@ impl Attribute for Const {
             Function::BV(bw,BVOp::Arith(ArithOp::Mult)) => match args[0] {
                 Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                     Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                        let limit = BigUint::from(1 as u8).shl(bw);
+                        let limit = BigUint::from(1u8).shl(bw);
                         let res = (lhs*rhs) % limit ;
                         Const::IsConst(Value::BitVec(bw,res))
                     },
@@ -448,7 +448,7 @@ impl Attribute for Const {
             Function::BV(bw,BVOp::SHL) => match args[0] {
                 Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                     Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                        let mask = BigUint::from(1 as u8).shl(bw)-(1 as u8);
+                        let mask = BigUint::from(1u8).shl(bw)-1u8;
                         let amount = match rhs.to_usize() {
                             None => bw,
                                 Some(r) => if r>bw { bw } else { r }
@@ -464,7 +464,7 @@ impl Attribute for Const {
             Function::BV(bw,BVOp::ASHR) => match args[0] {
                 Const::IsConst(Value::BitVec(_,ref lhs)) => match args[1] {
                     Const::IsConst(Value::BitVec(_,ref rhs)) => {
-                        let mask = BigUint::from(1 as u8).shl(bw-1);
+                        let mask = BigUint::from(1u8).shl(bw-1);
                         let sgn  = lhs & mask.clone();
                         let amount = match rhs.to_usize() {
                             None => bw,
@@ -472,7 +472,7 @@ impl Attribute for Const {
                         };
                         let shifted = lhs.shr(amount);
                         let res = if sgn==mask {
-                            let ones : BigUint = BigUint::from(1 as u8).shl(amount)-(1 as u8); 
+                            let ones : BigUint = BigUint::from(1u8).shl(amount)-1u8; 
                             shifted | ones.shl(bw-amount)
                         } else {
                             shifted
@@ -530,7 +530,7 @@ impl Attribute for Const {
             Function::BV(bw,BVOp::Extract(start,len)) => match args[0] {
                 Const::IsConst(Value::BitVec(_,ref x)) => {
                     let x1 = x.shr(start);
-                    let mask = BigUint::from(1 as u8).shl(len)-(1 as u8);
+                    let mask = BigUint::from(1u8).shl(len)-(1u8);
                     Const::IsConst(Value::BitVec(bw,x1 & mask))
                 },
                 _ => Const::NotConst

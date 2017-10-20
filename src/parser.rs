@@ -1209,7 +1209,7 @@ fn test_parser_() -> Result<(),()> {
     assert_eq!(parse_expr(b"123",&mut pos,&mut simp,None),
                PResult::Done(e1,&b""[..]));
 
-    let e2 = simp.embed(Expr::Const(Value::BitVec(32,BigUint::from(36232 as u32))))?;
+    let e2 = simp.embed(Expr::Const(Value::BitVec(32,BigUint::from(36232u32))))?;
     assert_eq!(parse_expr(b"#x00008D88",&mut pos,&mut simp,None),
                PResult::Done(e2.clone(),&b""[..]));
     assert_eq!(parse_expr(b"( _  bv36232 32  )",&mut pos,&mut simp,None),

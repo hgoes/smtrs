@@ -4,12 +4,19 @@ use num_bigint::{BigInt,BigUint};
 use num_rational::Ratio;
 use std::fmt::Debug;
 
+/// An embedding can create expressions and analyze them.
 pub trait Embed : Sized {
+    /// The type of expressions
     type Sort : Clone + Eq + Debug;
+    /// Embedded variables
     type Var : Clone + Eq + Debug;
+    /// Embedded expressions
     type Expr : Clone + Eq + Debug;
+    /// User defined functions
     type Fun : Clone + Eq + Debug;
+    /// The kind of errors the embedding can generate
     type Error : Debug;
+    /// Create an expression sort
     fn embed_sort(&mut self,SortKind<Self::Sort>)
                   -> Result<Self::Sort,Self::Error>;
     fn unbed_sort(&mut self,&Self::Sort)
@@ -31,7 +38,6 @@ pub trait Embed : Sized {
         let e = self.unbed(e)?;
         e.sort(self)
     }
-    
     fn tp_bool(&mut self) -> Result<Self::Sort,Self::Error> {
         self.embed_sort(SortKind::Bool)
     }
