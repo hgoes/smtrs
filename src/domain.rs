@@ -9,7 +9,7 @@ use num_bigint::BigUint;
 use std::ops::{Shl,Shr};
 use num_traits::{CheckedSub,ToPrimitive};
 
-pub trait Domain<T : Composite> : Sized {
+pub trait Domain<T : Composite> : 'static+Sized {
     type ValueIterator : Iterator<Item=Value>+Clone;
     fn full(&T) -> Self;
     fn is_full(&self) -> bool;
@@ -23,6 +23,9 @@ pub trait Domain<T : Composite> : Sized {
     fn derive<Em : Embed,F>(&self,&[Em::Expr],&mut Em,&F)
                             -> Result<Self,Em::Error>
         where F : Fn(&Em::Var) -> Option<usize>;
+    fn derives<'a,Em : Embed,F>(&[Em::Expr],&mut Em,&'a F)
+                                -> Result<Self,Em::Error>
+        where F : Fn(&Em::Var) -> Option<(&'a Self,usize)>;
     fn is_const<Em : Embed,F>(&self,&Em::Expr,&mut Em,&F)
                               -> Result<Option<Value>,Em::Error>
         where F : Fn(&Em::Var) -> Option<usize> {
@@ -36,7 +39,7 @@ pub trait Domain<T : Composite> : Sized {
     fn forget_var(&mut self,usize) -> ();
 }
 
-pub trait Attribute : Sized + Clone {
+pub trait Attribute : 'static+Sized + Clone {
     type ValueIterator : Iterator<Item=Value>+Clone;
     fn full() -> Self;
     fn is_full(&self) -> bool;
@@ -72,6 +75,30 @@ impl<Attr : Attribute> AttributeDomain<Attr> {
                 let mut nargs = Vec::with_capacity(args.len());
                 for arg in args {
                     nargs.push(self.expr_attribute(&arg,em,f)?);
+                }
+                Ok(Attr::derive_app(fun,nargs,em))
+            },
+            _ => Ok(Attr::full())
+        }
+    }
+    fn expr_attribute_many<'a,Em : Embed,F>(e: &Em::Expr,
+                                            em: &mut Em,
+                                            select: &'a F)
+                                            -> Result<Attr,Em::Error>
+        where F : Fn(&Em::Var) -> Option<(&'a Self,usize)> {
+
+        match em.unbed(e)? {
+            Expr::Var(ref v) => match select(v) {
+                None => Ok(Attr::full()),
+                Some((dom,rv)) => Ok(dom.attrs[rv].clone())
+            },
+            Expr::Const(v) => {
+                Ok(Attr::derive_value(v))
+            },
+            Expr::App(fun,args) => {
+                let mut nargs = Vec::with_capacity(args.len());
+                for arg in args {
+                    nargs.push(Self::expr_attribute_many(&arg,em,select)?);
                 }
                 Ok(Attr::derive_app(fun,nargs,em))
             },
@@ -123,6 +150,17 @@ impl<Attr : Attribute,T : Composite> Domain<T> for AttributeDomain<Attr> {
         let mut ndom = Vec::with_capacity(exprs.len());
         for e in exprs.iter() {
             ndom.push(self.expr_attribute(e,em,f)?);
+        }
+        Ok(AttributeDomain { attrs: ndom })
+    }
+    fn derives<'a,Em : Embed,F>(exprs: &[Em::Expr],
+                                em: &mut Em,
+                                select: &'a F)
+                                -> Result<Self,Em::Error>
+        where F : Fn(&Em::Var) -> Option<(&'a Self,usize)> {
+        let mut ndom = Vec::with_capacity(exprs.len());
+        for e in exprs.iter() {
+            ndom.push(Self::expr_attribute_many(e,em,select)?);
         }
         Ok(AttributeDomain { attrs: ndom })
     }
@@ -536,6 +574,11 @@ impl<T : Composite> Domain<T> for () {
         where F : Fn(&Em::Var) -> Option<usize> {
         Ok(())
     }
+    fn derives<'a,Em : Embed,F>(_:&[Em::Expr],_:&mut Em,_:&'a F)
+                                -> Result<Self,Em::Error>
+        where F : Fn(&Em::Var) -> Option<(&'a Self,usize)> {
+        Ok(())
+    }
     fn forget_var(&mut self,_:usize) -> () {}
 }
 
@@ -706,6 +749,19 @@ impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
         where F : Fn(&Em::Var) -> Option<usize> {
         let ndom1 = self.0.derive(exprs,em,f)?;
         let ndom2 = self.1.derive(exprs,em,f)?;
+        Ok((ndom1,ndom2))
+    }
+    fn derives<'a,Em : Embed,F>(exprs: &[Em::Expr],em: &mut Em,select: &'a F)
+                                -> Result<Self,Em::Error>
+        where F : Fn(&Em::Var) -> Option<(&'a Self,usize)> {
+        let ndom1 = D1::derives(exprs,em,&|v| match select(v) {
+            None => None,
+            Some((dom,off)) => Some((&dom.0,off))
+        })?;
+        let ndom2 = D2::derives(exprs,em,&|v| match select(v) {
+            None => None,
+            Some((dom,off)) => Some((&dom.1,off))
+        })?;
         Ok((ndom1,ndom2))
     }
     fn forget_var(&mut self,var: usize) -> () {
