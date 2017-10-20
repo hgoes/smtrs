@@ -5086,3 +5086,59 @@ impl<'a,T : 'a+HasSorts> HasSorts for &'a T {
         T::elem_sort(*self,n,em)
     }
 }
+
+pub struct SemanticCache<'a,T : 'a+Semantic> {
+    obj: &'a T,
+    meanings: Vec<T::Meaning>
+}
+
+impl<'a,T : 'a+Semantic> SemanticCache<'a,T> {
+    pub fn new(obj: &'a T,size_hint: Option<usize>) -> Self {
+        let mut meanings = match size_hint {
+            None => Vec::new(),
+            Some(sz) => Vec::with_capacity(sz)
+        };
+        match obj.first_meaning() {
+            None => {},
+            Some((mut ctx,mut m)) => {
+                meanings.push(m.clone());
+                while obj.next_meaning(&mut ctx,&mut m) {
+                    meanings.push(m.clone())
+                }
+            }
+        }
+        SemanticCache {
+            obj: obj,
+            meanings: meanings
+        }
+    }
+}
+
+impl<'a,T : 'a+Semantic> Semantic for SemanticCache<'a,T> {
+    type MeaningCtx = usize;
+    type Meaning = T::Meaning;
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        if self.meanings.len()>0 {
+            Some((1,self.meanings[0].clone()))
+        } else {
+            None
+        }
+    }
+    fn next_meaning(&self,ctx: &mut Self::MeaningCtx,m: &mut Self::Meaning)
+                    -> bool {
+        if *ctx<self.meanings.len() {
+            *m = self.meanings[*ctx].clone();
+            *ctx += 1;
+            true
+        } else {
+            false
+        }
+    }
+    fn meaning(&self,idx: usize) -> Self::Meaning {
+        self.meanings[idx].clone()
+    }
+    fn fmt_meaning<F : fmt::Write>(&self,m: &Self::Meaning,f: &mut F)
+                                   -> Result<(),fmt::Error> {
+        self.obj.fmt_meaning(m,f)
+    }
+}
