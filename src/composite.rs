@@ -4501,6 +4501,23 @@ impl<'a,T : Semantic> Semantics<'a,T> {
         Semantics { obj: obj,
                     meaning: None }
     }
+    pub fn next_ref<'b>(&'b mut self) -> Option<&'b T::Meaning> {
+        self.meaning = match self.meaning {
+            None => match self.obj.first_meaning() {
+                None => return None,
+                Some(r) => Some(r)
+            },
+            Some((ref mut ctx,ref mut m)) => if self.obj.next_meaning(ctx,m) {
+                return Some(m)
+            } else {
+                return None
+            }
+        };
+        match self.meaning {
+            Some((_,ref m)) => Some(m),
+            None => unreachable!()
+        }
+    }
 }
 
 impl<'a,T : Semantic> Iterator for Semantics<'a,T> {
