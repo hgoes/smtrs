@@ -4482,7 +4482,7 @@ impl<C : HasSorts> CompExpr<C> {
     }
 }
 
-pub trait Semantic : Composite {
+pub trait Semantic {
     type Meaning : Ord+Hash+Debug+Clone;
     type MeaningCtx;
     fn meaning(&self,usize) -> Self::Meaning;
@@ -4548,7 +4548,7 @@ pub struct VecMeaning<M> {
     pub meaning: M,
 }
 
-impl<T : Semantic> Semantic for Vec<T> {
+impl<T : Semantic+HasSorts> Semantic for Vec<T> {
     type Meaning = VecMeaning<T::Meaning>;
     type MeaningCtx = T::MeaningCtx;
     fn meaning(&self,n: usize) -> Self::Meaning {
@@ -4594,7 +4594,6 @@ impl<T : Semantic> Semantic for Vec<T> {
     }
 }
 
-#[derive(Clone)]
 pub struct AssocMeaning<K,T : Semantic> {
     pub key: K,
     pub meaning: T::Meaning
@@ -4644,7 +4643,14 @@ impl<K : Debug,T : Semantic> Debug for AssocMeaning<K,T> {
     }
 }
 
-impl<K : Ord+Hash+Debug+Clone,T : Semantic> Semantic for Assoc<K,T> {
+impl<K : Clone,T : Semantic> Clone for AssocMeaning<K,T> {
+    fn clone(&self) -> Self {
+        AssocMeaning { key: self.key.clone(),
+                       meaning: self.meaning.clone() }
+    }
+}
+
+impl<K : Ord+Hash+Debug+Clone,T : Semantic+HasSorts> Semantic for Assoc<K,T> {
     type Meaning = AssocMeaning<K,T>;
     type MeaningCtx = (usize,T::MeaningCtx);
     fn meaning(&self,n: usize) -> Self::Meaning {
@@ -4702,7 +4708,7 @@ pub enum ChoiceMeaning<M> {
     Item(usize,M)
 }
 
-impl<T : Ord+Semantic+Debug> Semantic for Choice<T> {
+impl<T : Ord+Semantic+Debug+HasSorts> Semantic for Choice<T> {
     type Meaning = ChoiceMeaning<T::Meaning>;
     type MeaningCtx = Option<T::MeaningCtx>;
     fn meaning(&self,n: usize) -> Self::Meaning {
@@ -4782,7 +4788,7 @@ pub enum TupleMeaning<T,U> {
 }
 
 impl<T,U> Semantic for (T,U)
-    where T : Semantic, U : Semantic {
+    where T : Semantic+HasSorts, U : Semantic {
     type Meaning = TupleMeaning<T::Meaning,U::Meaning>;
     type MeaningCtx = TupleMeaning<T::MeaningCtx,U::MeaningCtx>;
     fn meaning(&self,n: usize) -> Self::Meaning {
@@ -4931,7 +4937,7 @@ pub enum BitVecVectorStackMeaning<M> {
 }
 
 impl<T> Semantic for BitVecVectorStack<T>
-    where T : Semantic {
+    where T : Semantic+HasSorts {
     type Meaning = BitVecVectorStackMeaning<T::Meaning>;
     type MeaningCtx = Option<T::MeaningCtx>;
     fn meaning(&self,n: usize) -> Self::Meaning {
