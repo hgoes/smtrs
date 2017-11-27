@@ -480,6 +480,32 @@ pub trait Embed : Sized {
 
         self.embed(Expr::App(Function::Select(idx_tp,el_tp),idx))
     }
+    fn store(&mut self,
+             arr: Self::Expr,
+             mut idx: Vec<Self::Expr>,
+             el: Self::Expr) -> Result<Self::Expr,Self::Error> {
+
+        let arr_tp = self.type_of(&arr)?;
+        let (idx_tp,el_tp) = match self.unbed_sort(&arr_tp)? {
+            SortKind::Array(tps,tp) => (tps,tp),
+            _ => panic!("select argument isn't an array")
+        };
+
+        debug_assert!(idx_tp.len()==idx.len());
+        debug_assert!(idx.iter().zip(idx_tp.iter()).all(
+            |(i,tp)| { match self.type_of(i) {
+                Err(_) => false,
+                Ok(tp2) => *tp==tp2
+            }
+            }));
+        debug_assert!(match self.type_of(&el) {
+            Err(_) => false,
+            Ok(tp) => el_tp==tp
+        });
+
+        idx.push(el);
+        self.embed(Expr::App(Function::Store(idx_tp,el_tp),idx))
+    }
 }
 
 pub trait DeriveConst : Embed {
