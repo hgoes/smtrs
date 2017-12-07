@@ -9,7 +9,7 @@ use num_bigint::BigUint;
 use std::ops::{Shl,Shr};
 use num_traits::{CheckedSub,ToPrimitive};
 
-pub trait Domain<T : Composite> : 'static+Sized {
+pub trait Domain<T: HasSorts> : 'static+Sized {
     type ValueIterator : Iterator<Item=Value>+Clone;
     fn full(&T) -> Self;
     fn is_full(&self) -> bool;
@@ -107,7 +107,7 @@ impl<Attr : Attribute> AttributeDomain<Attr> {
     }
 }
 
-impl<Attr : Attribute,T : Composite> Domain<T> for AttributeDomain<Attr> {
+impl<Attr: Attribute,T: HasSorts> Domain<T> for AttributeDomain<Attr> {
     type ValueIterator = Attr::ValueIterator;
     fn full(obj: &T) -> AttributeDomain<Attr> {
         let sz = obj.num_elem();
@@ -563,7 +563,7 @@ impl Attribute for Const {
     }
 }
 
-impl<T : Composite> Domain<T> for () {
+impl<T: HasSorts> Domain<T> for () {
     type ValueIterator = Empty<Value>;
     fn full(_:&T) -> () { () }
     fn is_full(&self) -> bool { true }
@@ -693,7 +693,7 @@ impl<V : Ord,It1 : Iterator<Item=V>,It2 : Iterator<Item=V>> Iterator for Union2<
     }
 }
 
-impl<T : Composite,D1 : Domain<T>,D2 : Domain<T>> Domain<T> for (D1,D2) {
+impl<T: HasSorts,D1: Domain<T>,D2: Domain<T>> Domain<T> for (D1,D2) {
     type ValueIterator = OptIntersection2<Value,D1::ValueIterator,D2::ValueIterator>;
     fn full(obj: &T) -> (D1,D2) {
         let d1 = D1::full(obj);
