@@ -2,7 +2,7 @@ use composite::*;
 
 use std::cmp::{Ordering,max};
 
-#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord)]
+#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct Choice<T>(Vec<(usize,T)>);
 
 pub struct ChoiceEl<T>(usize,PhantomData<T>);
@@ -27,7 +27,25 @@ impl<T> Clone for ChoiceEl<T> {
     }
 }
 
-impl<T: Ord> Choice<T> {
+impl<T: Ord+HasSorts> Choice<T> {
+    pub fn empty<Em: Embed>(_: &mut Vec<Em::Expr>,
+                            _: &mut Em)
+                            -> Result<Self,Em::Error> {
+        Ok(Choice(Vec::new()))
+    }
+    pub fn singleton<Em: Embed>(el: T,
+                                el_cont: &[Em::Expr],
+                                res: &mut Vec<Em::Expr>,
+                                em: &mut Em)
+                                -> Result<Self,Em::Error> {
+        let cond = em.const_bool(true)?;
+        res.reserve(1+el_cont.len());
+        res.push(cond);
+        res.extend_from_slice(el_cont);
+        let mut els = Vec::with_capacity(1);
+        els.push((el.num_elem(),el));
+        Ok(Choice(els))
+    }
     pub fn offset(&self,i: usize) -> usize {
         if i==0 {
             0
@@ -59,6 +77,111 @@ impl<T: Ord> Choice<T> {
                   pos: 0,
                   arr: arr }
     }
+    pub fn sym_eq<'a,Em: Embed,
+                  P1: Path<'a,Em,To=Self>,
+                  P2: Path<'a,Em,To=Self>>(
+        pl: &P1,
+        froml: &P1::From,
+        arrl: &[Em::Expr],
+        pr: &P2,
+        fromr: &P2::From,
+        arrr: &[Em::Expr],
+        em: &mut Em
+    ) -> Result<Option<Em::Expr>,Em::Error> {
+        let lhs = pl.get(froml);
+        let rhs = pr.get(fromr);
+        let mut lpos = 0;
+        let mut rpos = 0;
+        let mut loff = 0;
+        let mut roff = 0;
+        let mut disj = Vec::new();
+
+        while lpos<lhs.0.len() && rpos<rhs.0.len() {
+            let (nloff,ref lobj) = lhs.0[lpos];
+            let (nroff,ref robj) = rhs.0[rpos];
+            match lobj.cmp(robj) {
+                Ordering::Equal => {
+                    let lcond = pl.read(froml,loff,arrl,em)?;
+                    let rcond = pr.read(fromr,roff,arrr,em)?;
+                    let sz = lobj.num_elem();
+                    let mut conj = Vec::with_capacity(sz+2);
+                    conj.push(lcond);
+                    conj.push(rcond);
+                    for i in 0..sz {
+                        let l = pl.read(froml,loff+1+i,arrl,em)?;
+                        let r = pr.read(fromr,roff+1+i,arrr,em)?;
+                        let eq = em.eq(l,r)?;
+                        conj.push(eq);
+                    }
+                    let all = em.and(conj)?;
+                    disj.push(all);
+                    lpos+=1;
+                    rpos+=1;
+                },
+                Ordering::Less => {
+                    lpos+=1;
+                },
+                Ordering::Greater => {
+                    rpos+=1;
+                }
+            }
+            loff = nloff;
+            roff = nroff;
+        }
+        if disj.len()==0 {
+            Ok(None)
+        } else {
+            let res = em.or(disj)?;
+            Ok(Some(res))
+        }
+    }
+    pub fn compare_using<'a,Em: Embed,
+                         P1: Path<'a,Em,To=Self>,
+                         P2: Path<'a,Em,To=Self>,
+                         Cmp>(
+        pl: &P1,
+        froml: &P1::From,
+        arrl: &[Em::Expr],
+        pr: &P2,
+        fromr: &P2::From,
+        arrr: &[Em::Expr],
+        cmp: Cmp,
+        em: &mut Em
+    ) -> Result<Option<Em::Expr>,Em::Error>
+        where Cmp: Fn(&Then<P1,ChoiceEl<T>>,&P1::From,&[Em::Expr],
+                      &Then<P2,ChoiceEl<T>>,&P2::From,&[Em::Expr],
+                      &mut Em) -> Result<Option<Em::Expr>,Em::Error> {
+
+        let lhs = pl.get(froml);
+        let rhs = pr.get(fromr);
+        let mut disj = Vec::new();
+
+        for lpos in 0..lhs.0.len() {
+            let lpath = pl.clone().then(Choice::element(lpos));
+            let loff = lhs.offset(lpos);
+
+            for rpos in 0..rhs.0.len() {
+                let rpath = pr.clone().then(Choice::element(rpos));
+                let roff = rhs.offset(rpos);
+
+                if let Some(cond) = cmp(&lpath,froml,arrl,
+                                        &rpath,fromr,arrr,
+                                        em)? {
+
+                    let lcond = pl.read(froml,loff,arrl,em)?;
+                    let rcond = pr.read(fromr,roff,arrr,em)?;
+                    let conj = em.and(vec![lcond,rcond,cond])?;
+                    disj.push(conj);
+                }
+            }
+        }
+        if disj.len()==0 {
+            Ok(None)
+        } else {
+            let res = em.or(disj)?;
+            Ok(Some(res))
+        }
+    }
 }
 
 impl<T: HasSorts> HasSorts for Choice<T> {
@@ -82,8 +205,8 @@ impl<T: HasSorts> HasSorts for Choice<T> {
     }
 }
 
-impl<T: Ord+Composite> Composite for Choice<T> {
-    fn combine<'a,Em,PL,PR,FComb,FL,FR>(
+impl<'a,T: Ord+Composite<'a>> Composite<'a> for Choice<T> {
+    fn combine<Em,PL,PR,FComb,FL,FR>(
         pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
         pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,
