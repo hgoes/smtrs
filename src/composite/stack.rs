@@ -34,11 +34,11 @@ pub struct BitVecVectorStackIndex<P,T,It: Iterator,Em: Embed> {
     phantom: PhantomData<T>
 }
 
-impl<T: Composite> BitVecVectorStack<T> {
+impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
     pub fn elements() -> BitVecVectorStackElements<T> {
         BitVecVectorStackElements(PhantomData)
     }
-    fn top_iter<'a,Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+    fn top_iter<Em: DeriveValues,P: Path<'a,Em,To=Self>>(
         path: &P,
         from: &P::From,
         arr:  &[Em::Expr],
@@ -60,7 +60,7 @@ impl<T: Composite> BitVecVectorStack<T> {
         };
         Ok(IndexIterator::new(top,it))
     }
-    pub fn top<'a,Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+    pub fn top<Em: DeriveValues,P: Path<'a,Em,To=Self>>(
         path:  P,
         from:  &P::From,
         arr:   &[Em::Expr],
@@ -72,7 +72,7 @@ impl<T: Composite> BitVecVectorStack<T> {
                                     path: path,
                                     phantom: PhantomData })
     }
-    pub fn push<'a,Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+    pub fn push<Em: DeriveValues,P: Path<'a,Em,To=Self>>(
         path:  &P,
         from:  &mut P::From,
         arr:   &mut Vec<Em::Expr>,
@@ -109,8 +109,8 @@ impl<T: Composite> BitVecVectorStack<T> {
                     el_path.write_slice(from,0,old_len,&mut nelc,arr,em)?;
                 }
             } else {
-                CompVec::push(from,arr,
-                              &path.clone().then(BitVecVectorStack::elements()),
+                CompVec::push(&path.clone().then(BitVecVectorStack::elements()),
+                              from,arr,
                               el.clone(),
                               &mut elc.clone(),
                               em)?;
@@ -130,7 +130,7 @@ impl<T: Composite> BitVecVectorStack<T> {
         path.write(from,0,new_top,arr,em)?;
         Ok(())
     }
-    pub fn pop<'a,Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+    pub fn pop<Em: DeriveValues,P: Path<'a,Em,To=Self>>(
         path:  &P,
         from:  &mut P::From,
         arr:   &mut Vec<Em::Expr>,
@@ -216,9 +216,9 @@ impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for BitVecVectorStackElements<T> {
 
 }
 
-impl<T: Composite> Composite for BitVecVectorStack<T> {
+impl<'a,T: Composite<'a>> Composite<'a> for BitVecVectorStack<T> {
 
-    fn combine<'a,Em,PL,PR,FComb,FL,FR>(
+    fn combine<Em,PL,PR,FComb,FL,FR>(
         pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
         pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,
@@ -258,7 +258,7 @@ impl<T: Composite> Composite for BitVecVectorStack<T> {
         }
     }
 
-    fn invariant<'a,Em,P>(path: &P,from: &P::From,arr: &[Em::Expr],
+    fn invariant<Em,P>(path: &P,from: &P::From,arr: &[Em::Expr],
                           res: &mut Vec<Em::Expr>,
                           em: &mut Em)
                           -> Result<(),Em::Error>
@@ -332,7 +332,7 @@ impl<It,Em> CondIterator<Em> for IndexIterator<It,Em>
 
 impl<'a,Em,T,P,It> CondIterator<Em> for BitVecVectorStackIndex<P,T,It,Em>
     where Em: Embed,
-          T: 'a+Composite,
+          T: 'a+Composite<'a>,
           P: Path<'a,Em,To=BitVecVectorStack<T>>,
           It: Iterator<Item=Value> {
     type Item = Then<Then<P,BitVecVectorStackElements<T>>,

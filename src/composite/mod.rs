@@ -10,6 +10,8 @@ pub mod map;
 pub mod choice;
 pub mod singleton;
 pub mod stack;
+pub mod tuple;
+pub mod option;
 
 /// Objects with this traits can provide sorts for variables.
 pub trait HasSorts {
@@ -18,9 +20,9 @@ pub trait HasSorts {
                             -> Result<Em::Sort,Em::Error>;
 }
 
-pub trait Composite: HasSorts + Sized + Eq + Hash + Clone {
+pub trait Composite<'a>: HasSorts + Sized + Eq + Hash + Clone {
 
-    fn combine<'a,Em,PL,PR,FComb,FL,FR>(
+    fn combine<Em,PL,PR,FComb,FL,FR>(
         &PL,&PL::From,&[Em::Expr],
         &PR,&PR::From,&[Em::Expr],
         &FComb,&FL,&FR,
@@ -35,10 +37,10 @@ pub trait Composite: HasSorts + Sized + Eq + Hash + Clone {
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>;
 
-    fn invariant<'a,Em,P>(&P,&P::From,&[Em::Expr],
-                          &mut Vec<Em::Expr>,
-                          &mut Em)
-                          -> Result<(),Em::Error>
+    fn invariant<Em,P>(&P,&P::From,&[Em::Expr],
+                       &mut Vec<Em::Expr>,
+                       &mut Em)
+                       -> Result<(),Em::Error>
         where Em: Embed,
               P: Path<'a,Em,To=Self> {
         Ok(())
@@ -52,7 +54,7 @@ pub fn ite<'a,T,PL,PR,Em>(
     res: &mut Vec<Em::Expr>,
     em: &mut Em
 ) -> Result<Option<T>,Em::Error>
-    where T: Composite,
+    where T: Composite<'a>,
           PL: Path<'a,Em,To=T>,
           PR: Path<'a,Em,To=T>,
           Em: Embed {
@@ -64,7 +66,7 @@ pub fn ite<'a,T,PL,PR,Em>(
                res,em)
 }
 
-pub trait Path<'a,Em: Embed> : Sized+Clone {
+pub trait Path<'a,Em: Embed>: Sized+Clone {
     type From : 'a;
     type To : 'a;
     fn get<'b>(&self,&'b Self::From) -> &'b Self::To where 'a: 'b;
@@ -73,11 +75,31 @@ pub trait Path<'a,Em: Embed> : Sized+Clone {
             -> Result<Em::Expr,Em::Error>;
     fn read_slice<'b>(&self,&Self::From,usize,usize,&'b [Em::Expr])
                       -> Option<&'b [Em::Expr]>;
+    fn read_into(&self,
+                 from: &Self::From,
+                 pos: usize,
+                 len: usize,
+                 src: &[Em::Expr],
+                 trg: &mut Vec<Em::Expr>,
+                 em: &mut Em) -> Result<(),Em::Error> {
+        match self.read_slice(from,pos,len,src) {
+            Some(sl) => {
+                trg.extend_from_slice(sl);
+            },
+            None => {
+                for n in pos..pos+len {
+                    let e = self.read(from,n,src,em)?;
+                    trg.push(e);
+                }
+            }
+        }
+        Ok(())
+    }
     fn write(&self,&Self::From,usize,Em::Expr,&mut Vec<Em::Expr>,&mut Em)
              -> Result<(),Em::Error>;
     fn write_slice(&self,&mut Self::From,usize,usize,&mut Vec<Em::Expr>,&mut Vec<Em::Expr>,&mut Em)
                    -> Result<(),Em::Error>;
-    fn then<T: PathEl<'a,Em>>(self,then: T) -> Then<Self,T> {
+    fn then<T: PathEl<'a,Em,From=Self::To>>(self,then: T) -> Then<Self,T> {
         Then { first: self,
                then: then }
     }
@@ -87,6 +109,12 @@ pub struct Id<T>(PhantomData<T>);
 
 impl<T> Clone for Id<T> {
     fn clone(&self) -> Self {
+        Id(PhantomData)
+    }
+}
+
+impl<T> Id<T> {
+    pub fn new() -> Self {
         Id(PhantomData)
     }
 }

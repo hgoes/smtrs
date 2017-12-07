@@ -3,8 +3,9 @@ use composite::*;
 use embed::{Embed};
 use std::marker::PhantomData;
 use std::cmp::{min,max};
+use std::ops::Index;
 
-#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord)]
+#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct CompVec<T>(Vec<(usize,T)>);
 
 pub struct CompVecP<T>(usize,PhantomData<T>);
@@ -48,8 +49,8 @@ impl<T: HasSorts> HasSorts for CompVec<T> {
     }
 }
 
-impl<T: Composite> Composite for CompVec<T> {
-    fn combine<'a,Em,PL,PR,FComb,FL,FR>(
+impl<'a,T: Composite<'a>> Composite<'a> for CompVec<T> {
+    fn combine<Em,PL,PR,FComb,FL,FR>(
         pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
         pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,
@@ -114,6 +115,10 @@ impl<T: Composite> Composite for CompVec<T> {
 }
 
 impl<T: HasSorts> CompVec<T> {
+    pub fn new<Em: Embed>(_: &mut Vec<Em::Expr>,_: &mut Em)
+                          -> Result<Self,Em::Error> {
+        Ok(CompVec(Vec::new()))
+    }
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -128,9 +133,9 @@ impl<T: HasSorts> CompVec<T> {
         CompVecP(idx,PhantomData)
     }
     pub fn push<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
+        path: &P,
         from: &mut P::From,
         from_cont: &mut Vec<Em::Expr>,
-        path: &P,
         elem: T,
         cont: &mut Vec<Em::Expr>,
         em: &mut Em
@@ -209,7 +214,7 @@ impl<T: HasSorts> CompVec<T> {
                 return Ok(n)
             }
         }
-        Self::push(from,arr,path,el,el_cont,em)?;
+        Self::push(path,from,arr,el,el_cont,em)?;
         Ok(size)
     }
 }
@@ -339,5 +344,12 @@ impl<T : Semantic+HasSorts> Semantic for CompVec<T> {
             }
         }
         false
+    }
+}
+
+impl<T> Index<usize> for CompVec<T> {
+    type Output = T;
+    fn index(&self,index: usize) -> &T {
+        &self.0[index].1
     }
 }

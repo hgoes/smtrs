@@ -3,7 +3,7 @@ use composite::*;
 use std::cmp::{Ordering,max};
 use std::hash::Hasher;
 
-#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord)]
+#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct Assoc<K,V>(Vec<(usize,K,V)>);
 
 pub struct AssocP<K,V>(usize,PhantomData<(K,V)>);
@@ -97,8 +97,8 @@ impl<K: Ord+Hash,V: HasSorts> HasSorts for Assoc<K,V> {
     }
 }
 
-impl<K: Ord+Hash+Clone,V: Composite> Composite for Assoc<K,V> {
-    fn combine<'a,Em,PL,PR,FComb,FL,FR>(
+impl<'a,K: Ord+Hash+Clone,V: Composite<'a>> Composite<'a> for Assoc<K,V> {
+    fn combine<Em,PL,PR,FComb,FL,FR>(
         pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
         pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,
