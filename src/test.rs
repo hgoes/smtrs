@@ -2,7 +2,6 @@ use expr::{Expr};
 use types::{Sort,SortKind};
 use embed::Embed;
 use parser::Parser;
-use composite::Transformation;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::str;
@@ -89,19 +88,4 @@ impl Parser for Simple<u64> {
     fn parse_fun(&mut self,_: &[u8]) -> Result<(),()> {
         Err(())
     }
-}
-
-/// Transformation tests
-#[test]
-fn test_transformation() {
-    let mut em : Simple<usize> = Simple::new();
-    let tr1 = Transformation::concat(&[Transformation::const_bool(true,&mut em).unwrap(),
-                                       Transformation::const_bool(false,&mut em).unwrap()]);
-    let ctrue = em.const_bool(true).unwrap();
-    let cfalse = em.const_bool(false).unwrap();
-
-    let ivec = [cfalse.clone(),ctrue.clone()];
-
-    let res = tr1.get_all(&ivec,&mut em).unwrap();
-    assert_eq!(res,vec![ctrue,cfalse]);
 }
