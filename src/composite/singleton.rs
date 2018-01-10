@@ -208,3 +208,45 @@ impl<D : Eq+Clone+Hash> Semantic for Data<D> {
         false
     }
 }
+
+#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
+pub struct SingletonBitVec(usize);
+
+impl HasSorts for SingletonBitVec {
+    fn num_elem(&self) -> usize { 1 }
+    fn elem_sort<Em: Embed>(&self,pos: usize,em: &mut Em)
+                            -> Result<Em::Sort,Em::Error> {
+        debug_assert_eq!(pos,0);
+        em.tp_bitvec(self.0)
+    }
+}
+
+impl<'a> Composite<'a> for SingletonBitVec {
+    fn combine<Em,PL,PR,FComb,FL,FR>(
+        pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
+        pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
+        comb: &FComb,_: &FL,_: &FR,
+        res: &mut Vec<Em::Expr>,
+        em: &mut Em)
+        -> Result<Option<Self>,Em::Error>
+        where
+        Em: Embed,
+        PL: Path<'a,Em,To=Self>,
+        PR: Path<'a,Em,To=Self>,
+        FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+        FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+        FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+
+        if pl.get(froml).0 != pr.get(fromr).0 {
+            return Ok(None)
+        }
+
+        let lhs = pl.read(froml,0,arrl,em)?;
+        let rhs = pr.read(fromr,0,arrr,em)?;
+
+        let ne = comb(lhs,rhs,em)?;
+
+        res.push(ne);
+        Ok(Some(pl.get(froml).clone()))
+    }
+}
