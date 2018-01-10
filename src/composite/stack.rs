@@ -9,7 +9,7 @@ use num_bigint::{BigInt,BigUint};
 use num_traits::ToPrimitive;
 use std::ops::Range;
 
-#[derive(Hash,Clone,PartialEq,Eq)]
+#[derive(Hash,Clone,PartialEq,Eq,Debug)]
 pub struct BitVecVectorStack<T> {
     bitwidth: usize,
     elements: CompVec<T>
@@ -363,6 +363,55 @@ impl<It: Iterator<Item=Value>> Iterator for IndexValue<It> {
                 None => None,
                 Some(i) => Some(Value::BitVec(bw,BigUint::from(i)))
             }
+        }
+    }
+}
+
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
+pub enum BitVecVectorStackMeaning<M> {
+    Top,
+    Elem(VecMeaning<M>)
+}
+
+impl<T> Semantic for BitVecVectorStack<T>
+    where T : Semantic+HasSorts {
+    type Meaning = BitVecVectorStackMeaning<T::Meaning>;
+    type MeaningCtx = Option<T::MeaningCtx>;
+    fn meaning(&self,n: usize) -> Self::Meaning {
+        if n==0 {
+            BitVecVectorStackMeaning::Top
+        } else {
+            BitVecVectorStackMeaning::Elem(self.elements.meaning(n-1))
+        }
+    }
+    fn fmt_meaning<F: fmt::Write>(&self,m: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+        match m {
+            &BitVecVectorStackMeaning::Top => write!(fmt,"top"),
+            &BitVecVectorStackMeaning::Elem(ref nm) => {
+                self.elements.fmt_meaning(nm,fmt)
+            }
+        }
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        Some((None,BitVecVectorStackMeaning::Top))
+    }
+    fn next_meaning(&self,ctx: &mut Self::MeaningCtx,
+                    m: &mut Self::Meaning) -> bool {
+        match m {
+            &mut BitVecVectorStackMeaning::Top => {
+                if let Some((nctx,nm)) = self.elements.first_meaning() {
+                    *ctx = Some(nctx);
+                    *m   = BitVecVectorStackMeaning::Elem(nm);
+                    true
+                } else {
+                    false
+                }
+            },
+            &mut BitVecVectorStackMeaning::Elem(ref mut cm)
+                => match ctx {
+                    &mut Some(ref mut cctx) => self.elements.next_meaning(cctx,cm),
+                    &mut None => unreachable!()
+                }
         }
     }
 }

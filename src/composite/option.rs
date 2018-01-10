@@ -146,3 +146,33 @@ impl<'a,T: Composite<'a>> Composite<'a> for Option<T> {
         }
     }
 }
+
+impl<T : Semantic> Semantic for Option<T> {
+    type Meaning = T::Meaning;
+    type MeaningCtx = T::MeaningCtx;
+    fn meaning(&self,n: usize) -> Self::Meaning {
+        match self {
+            &None => panic!("meaning called for None"),
+            &Some(ref obj) => obj.meaning(n)
+        }
+    }
+    fn fmt_meaning<F : fmt::Write>(&self,m: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+        match self {
+            &None => panic!("fmt_meaning called for None"),
+            &Some(ref obj) => obj.fmt_meaning(m,fmt)
+        }
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        match self {
+            &None => None,
+            &Some(ref obj) => obj.first_meaning()
+        }
+    }
+    fn next_meaning(&self,ctx: &mut Self::MeaningCtx,
+                    m: &mut Self::Meaning) -> bool {
+        match self {
+            &None => false,
+            &Some(ref obj) => obj.next_meaning(ctx,m)
+        }
+    }
+}

@@ -167,3 +167,78 @@ impl<'a,A: Composite<'a>,B: Composite<'a>> Composite<'a> for (A,B) {
         B::invariant(&p2,from,src,res,em)
     }
 }
+
+#[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
+pub enum TupleMeaning<T,U> {
+    Fst(T),
+    Snd(U)
+}
+
+impl<T,U> Semantic for (T,U)
+    where T : Semantic+HasSorts, U : Semantic {
+    type Meaning = TupleMeaning<T::Meaning,U::Meaning>;
+    type MeaningCtx = TupleMeaning<T::MeaningCtx,U::MeaningCtx>;
+    fn meaning(&self,n: usize) -> Self::Meaning {
+        let sz_0 = self.0.num_elem();
+        if n<sz_0 {
+            TupleMeaning::Fst(self.0.meaning(n))
+        } else {
+            TupleMeaning::Snd(self.1.meaning(n-sz_0))
+        }
+    }
+    fn fmt_meaning<F : fmt::Write>(&self,m: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+        match m {
+            &TupleMeaning::Fst(ref nm) => {
+                write!(fmt,"0.")?;
+                self.0.fmt_meaning(nm,fmt)
+            },
+            &TupleMeaning::Snd(ref nm) => {
+                write!(fmt,"1.")?;
+                self.1.fmt_meaning(nm,fmt)
+            }
+        }
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        match self.0.first_meaning() {
+            Some((ctx,m)) => Some((TupleMeaning::Fst(ctx),
+                                   TupleMeaning::Fst(m))),
+            None => match self.1.first_meaning() {
+                Some((ctx,m)) => Some((TupleMeaning::Snd(ctx),
+                                       TupleMeaning::Snd(m))),
+                None => None
+            }
+        }
+    }
+    fn next_meaning(&self,
+                    ctx: &mut Self::MeaningCtx,
+                    m: &mut Self::Meaning) -> bool {
+        let nm = match m {
+            &mut TupleMeaning::Fst(ref mut cm) => {
+                let (nm,nctx) = match ctx {
+                    &mut TupleMeaning::Fst(ref mut cctx)
+                        => if self.0.next_meaning(cctx,cm) {
+                            return true
+                        } else {
+                            match self.1.first_meaning() {
+                                None => return false,
+                                Some((nctx,nm)) => {
+                                    (TupleMeaning::Snd(nm),
+                                     TupleMeaning::Snd(nctx))
+                                }
+                            }
+                        },
+                    _ => unreachable!()
+                };
+                *ctx = nctx;
+                nm
+            },
+            &mut TupleMeaning::Snd(ref mut cm) => match ctx {
+                &mut TupleMeaning::Snd(ref mut cctx)
+                    => return self.1.next_meaning(cctx,cm),
+                _ => unreachable!()
+            }
+        };
+        *m = nm;
+        true
+    }
+}
