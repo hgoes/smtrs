@@ -20,6 +20,9 @@ impl<K,V> Clone for AssocP<K,V> {
 }
 
 impl<K: Ord,V: HasSorts> Assoc<K,V> {
+    pub fn empty<Em: Embed>(_: &mut Vec<Em::Expr>,_: &mut Em) -> Result<Self,Em::Error> {
+        Ok(Assoc(Vec::new()))
+    }
     pub fn offset(&self,i: usize) -> usize {
         if i==0 {
             0
@@ -72,6 +75,46 @@ impl<K: Ord,V: HasSorts> Assoc<K,V> {
                 };
                 assoc.write_slice(assoc_from,off,0,el_cont,assoc_cont,em)
             }
+        }
+    }
+    pub fn lookup_or_insert<'a,Em: Embed,P: Path<'a,Em,To=Self>,
+                            F: FnOnce(&mut Vec<Em::Expr>,&mut Em) -> Result<V,Em::Error>
+                            >(
+        path: P,
+        from: &mut P::From,
+        arr:  &mut Vec<Em::Expr>,
+        key: K,
+        create: F,
+        em: &mut Em
+    ) -> Result<Then<P,AssocP<K,V>>,Em::Error> {
+        match path.get(from).0.binary_search_by(|&(_,ref k,_)| key.cmp(k)) {
+            Ok(idx) => Ok(Then { first: path,
+                                 then: AssocP(idx,PhantomData) }),
+            Err(idx) => {
+                let mut inp = Vec::new();
+                let el = create(&mut inp,em)?;
+                debug_assert_eq!(el.num_elem(),inp.len());
+                let len = inp.len();
+                let off = {
+                    let assoc = path.get_mut(from);
+                    let off = assoc.offset(idx);
+                    assoc.0.insert(idx,(off+len,key,el));
+                    for i in idx+1..assoc.0.len() {
+                        assoc.0[i].0+=len;
+                    }
+                    off
+                };
+                path.write_slice(from,off,0,&mut inp,arr,em)?;
+                Ok(Then { first: path,
+                          then: AssocP(idx,PhantomData) })
+            }
+        }
+    }
+    pub fn is_single(&self) -> Option<&(usize,K,V)> {
+        if self.0.len()==1 {
+            Some(&self.0[0])
+        } else {
+            None
         }
     }
 }
