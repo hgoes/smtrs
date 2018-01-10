@@ -46,6 +46,45 @@ impl<T: Ord+HasSorts> Choice<T> {
         els.push((el.num_elem(),el));
         Ok(Choice(els))
     }
+    pub fn insert<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
+        path: &P,
+        from: &mut P::From,
+        cont: &mut Vec<Em::Expr>,
+        el: T,
+        el_cont: &mut Vec<Em::Expr>,
+        cond: Em::Expr,
+        em: &mut Em) -> Result<(),Em::Error> {
+        match path.get_mut(from).0.binary_search_by(|&(_,ref oth)| { oth.cmp(&el) }) {
+            Ok(i) => {
+                // Entry already exists, overwrite it
+                let off = if i==0 { 0 } else { path.get(from).0[i-1].0 };
+                let old_len = path.get(from).0[i].0 - off;
+                let new_len = el_cont.len();
+                path.write(from,off,cond,cont,em)?;
+                path.write_slice(from,off+1,old_len-1,el_cont,cont,em)?;
+                if new_len != old_len {
+                    let ch = path.get_mut(from);
+                    for j in i..ch.0.len() {
+                        ch.0[j].0 = ch.0[j].0 + old_len - new_len;
+                    }
+                }
+            },
+            Err(i) => {
+                let off = if i==0 { 0 } else { path.get(from).0[i-1].0 };
+                let len = el_cont.len();
+                el_cont.insert(0,cond);
+                path.write_slice(from,off,0,el_cont,cont,em)?;
+                path.get_mut(from).0.insert(i,(off+len,el));
+                if len!=0 {
+                    let ch = path.get_mut(from);
+                    for j in i+1..ch.0.len() {
+                        ch.0[j].0 += len+1;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
     pub fn offset(&self,i: usize) -> usize {
         if i==0 {
             0
