@@ -310,7 +310,7 @@ impl<'a,T: Ord+Composite<'a>> Composite<'a> for Choice<T> {
     }
 }
 
-impl<'a,T: 'a+Ord+HasSorts,Em: Embed> PathEl<'a,Em> for ChoiceEl<T> {
+impl<'a,T: 'a+Ord+HasSorts> SimplePathEl<'a> for ChoiceEl<T> {
     type From = Choice<T>;
     type To   = T;
     fn get<'b>(&self,ch: &'b Self::From) -> &'b Self::To where 'a: 'b {
@@ -319,6 +319,9 @@ impl<'a,T: 'a+Ord+HasSorts,Em: Embed> PathEl<'a,Em> for ChoiceEl<T> {
     fn get_mut<'b>(&self,ch: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
         &mut ch.0[self.0].1
     }
+}
+
+impl<'a,T: 'a+Ord+HasSorts,Em: Embed> PathEl<'a,Em> for ChoiceEl<T> {
     fn read<Prev: Path<'a,Em,To=Self::From>>(
         &self,
         prev: &Prev,

@@ -35,7 +35,7 @@ impl<T> Clone for SomeP<T> {
     }
 }
 
-impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for SomeP<T> {
+impl<'a,T: 'a> SimplePathEl<'a> for SomeP<T> {
     type From = Option<T>;
     type To   = T;
     fn get<'b>(&self,from: &'b Self::From) -> &'b Self::To where 'a: 'b {
@@ -44,6 +44,9 @@ impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for SomeP<T> {
     fn get_mut<'b>(&self,from: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
         from.as_mut().expect("get_mut called on None")
     }
+}
+
+impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for SomeP<T> {
     fn read<Prev: Path<'a,Em,To=Self::From>>(
         &self,
         prev: &Prev,from: &Prev::From,

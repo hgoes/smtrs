@@ -200,7 +200,7 @@ impl<'a,K: Ord+Hash+Clone,V: Composite<'a>> Composite<'a> for Assoc<K,V> {
     }
 }
 
-impl<'a,K: 'a+Ord,V: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for AssocP<K,V> {
+impl<'a,K: 'a+Ord,V: 'a+HasSorts> SimplePathEl<'a> for AssocP<K,V> {
     type From = Assoc<K,V>;
     type To   = V;
     fn get<'b>(&self,assoc: &'b Self::From) -> &'b Self::To where 'a: 'b {
@@ -209,6 +209,9 @@ impl<'a,K: 'a+Ord,V: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for AssocP<K,V> {
     fn get_mut<'b>(&self,assoc: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
         &mut assoc.0[self.0].2
     }
+}
+
+impl<'a,K: 'a+Ord,V: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for AssocP<K,V> {
     fn read<Prev: Path<'a,Em,To=Self::From>>(
         &self,
         prev: &Prev,

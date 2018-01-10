@@ -19,7 +19,7 @@ impl<A,B> Clone for Element2Of2<A,B> {
     fn clone(&self) -> Self { Element2Of2(PhantomData) }
 }
 
-impl<'a,Em: Embed,A: 'a,B: 'a> PathEl<'a,Em> for Element1Of2<A,B> {
+impl<'a,A: 'a,B: 'a> SimplePathEl<'a> for Element1Of2<A,B> {
     type From = (A,B);
     type To = A;
     fn get<'b>(&self,from: &'b Self::From) -> &'b Self::To where 'a: 'b {
@@ -28,6 +28,9 @@ impl<'a,Em: Embed,A: 'a,B: 'a> PathEl<'a,Em> for Element1Of2<A,B> {
     fn get_mut<'b>(&self,from: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
         &mut from.0
     }
+}
+
+impl<'a,Em: Embed,A: 'a,B: 'a> PathEl<'a,Em> for Element1Of2<A,B> {
     fn read<Prev: Path<'a,Em,To=Self::From>>(
         &self,
         prev: &Prev,from: &Prev::From,
@@ -55,7 +58,7 @@ impl<'a,Em: Embed,A: 'a,B: 'a> PathEl<'a,Em> for Element1Of2<A,B> {
     }
 }
 
-impl<'a,Em: Embed,A: 'a+HasSorts,B: 'a> PathEl<'a,Em> for Element2Of2<A,B> {
+impl<'a,A: 'a+HasSorts,B: 'a> SimplePathEl<'a> for Element2Of2<A,B> {
     type From = (A,B);
     type To = B;
     fn get<'b>(&self,from: &'b Self::From) -> &'b Self::To where 'a: 'b {
@@ -64,6 +67,9 @@ impl<'a,Em: Embed,A: 'a+HasSorts,B: 'a> PathEl<'a,Em> for Element2Of2<A,B> {
     fn get_mut<'b>(&self,from: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
         &mut from.1
     }
+}
+
+impl<'a,Em: Embed,A: 'a+HasSorts,B: 'a> PathEl<'a,Em> for Element2Of2<A,B> {
     fn read<Prev: Path<'a,Em,To=Self::From>>(
         &self,
         prev: &Prev,from: &Prev::From,

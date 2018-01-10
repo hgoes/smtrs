@@ -219,7 +219,7 @@ impl<T: HasSorts> CompVec<T> {
     }
 }
 
-impl<'a,T: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for CompVecP<T> {
+impl<'a,T: 'a+HasSorts> SimplePathEl<'a> for CompVecP<T> {
     type From = CompVec<T>;
     type To = T;
     fn get<'b>(&self,arr: &'b Self::From) -> &'b Self::To where 'a: 'b {
@@ -228,6 +228,9 @@ impl<'a,T: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for CompVecP<T> {
     fn get_mut<'b>(&self,arr: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
         &mut arr.0[self.0].1
     }
+}
+
+impl<'a,T: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for CompVecP<T> {
     fn read<Prev: Path<'a,Em,To=Self::From>>(
         &self,
         prev: &Prev,

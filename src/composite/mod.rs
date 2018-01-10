@@ -66,11 +66,18 @@ pub fn ite<'a,T,PL,PR,Em>(
                res,em)
 }
 
-pub trait Path<'a,Em: Embed>: Sized+Clone {
-    type From : 'a;
-    type To : 'a;
+pub trait SimplePath<'a>: Sized {
+    type From: 'a;
+    type To: 'a;
     fn get<'b>(&self,&'b Self::From) -> &'b Self::To where 'a: 'b;
     fn get_mut<'b>(&self,&'b mut Self::From) -> &'b mut Self::To where 'a: 'b;
+    fn then<T>(self,then: T) -> Then<Self,T> {
+        Then { first: self,
+               then: then }
+    }
+}
+
+pub trait Path<'a,Em: Embed>: SimplePath<'a>+Clone {
     fn read(&self,&Self::From,usize,&[Em::Expr],&mut Em)
             -> Result<Em::Expr,Em::Error>;
     fn read_slice<'b>(&self,&Self::From,usize,usize,&'b [Em::Expr])
@@ -99,9 +106,38 @@ pub trait Path<'a,Em: Embed>: Sized+Clone {
              -> Result<(),Em::Error>;
     fn write_slice(&self,&mut Self::From,usize,usize,&mut Vec<Em::Expr>,&mut Vec<Em::Expr>,&mut Em)
                    -> Result<(),Em::Error>;
-    fn then<T: PathEl<'a,Em,From=Self::To>>(self,then: T) -> Then<Self,T> {
-        Then { first: self,
-               then: then }
+    fn set(&self,
+           from: &mut Self::From,
+           from_cont: &mut Vec<Em::Expr>,
+           new: Self::To,
+           new_cont: &mut Vec<Em::Expr>,
+           em: &mut Em) -> Result<(),Em::Error>
+        where Self::To: HasSorts {
+        let old_len = self.get(from).num_elem();
+        *self.get_mut(from) = new;
+        self.write_slice(from,0,old_len,new_cont,from_cont,em)
+    }
+    fn set_cond(&self,
+                from: &mut Self::From,
+                from_cont: &mut Vec<Em::Expr>,
+                new: Self::To,
+                new_cont: &mut Vec<Em::Expr>,
+                cond: &Em::Expr,
+                em: &mut Em) -> Result<bool,Em::Error>
+        where Self::To : Composite<'a> {
+
+        let mut res_inp = Vec::new();
+        match ite(cond,self,from,&from_cont[..],
+                  &Id(PhantomData),&new,&new_cont[..],
+                  &mut res_inp,em)? {
+            None => Ok(false),
+            Some(res) => {
+                let old_len = self.get(from).num_elem();
+                *self.get_mut(from) = res;
+                self.write_slice(from,0,old_len,&mut res_inp,from_cont,em)?;
+                Ok(true)
+            }
+        }
     }
 }
 
@@ -119,7 +155,7 @@ impl<T> Id<T> {
     }
 }
 
-impl<'a,T: 'a,Em: Embed> Path<'a,Em> for Id<T> {
+impl<'a,T: 'a> SimplePath<'a> for Id<T> {
     type From = T;
     type To = T;
     fn get<'b>(&self,from: &'b Self::From) -> &'b Self::To where 'a: 'b {
@@ -128,6 +164,9 @@ impl<'a,T: 'a,Em: Embed> Path<'a,Em> for Id<T> {
     fn get_mut<'b>(&self,from: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
         from
     }
+}
+
+impl<'a,T: 'a,Em: Embed> Path<'a,Em> for Id<T> {
     fn read(&self,_: &Self::From,pos: usize,arr: &[Em::Expr],_: &mut Em)
             -> Result<Em::Expr,Em::Error> {
         Ok(arr[pos].clone())
@@ -189,13 +228,14 @@ impl<'a,T: 'a,Em: Embed> Path<'a,Em> for Id<T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone,PartialEq,Eq)]
 pub struct Then<P1,P2> {
     first: P1,
     then: P2
 }
 
-impl<'a,Em: Embed,P1: Path<'a,Em>,P2: PathEl<'a,Em,From=P1::To>> Path<'a,Em> for Then<P1,P2> {
+impl<'a,P1: SimplePath<'a>,P2: SimplePathEl<'a,From=P1::To>
+     > SimplePath<'a> for Then<P1,P2> {
     type From = P1::From;
     type To = P2::To;
     fn get<'b>(&self,from: &'b Self::From) -> &'b Self::To where 'a: 'b {
@@ -204,6 +244,10 @@ impl<'a,Em: Embed,P1: Path<'a,Em>,P2: PathEl<'a,Em,From=P1::To>> Path<'a,Em> for
     fn get_mut<'b>(&self,from: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
         self.then.get_mut(self.first.get_mut(from))
     }
+}
+
+impl<'a,Em: Embed,P1: Path<'a,Em>,P2: PathEl<'a,Em,From=P1::To>
+     > Path<'a,Em> for Then<P1,P2> {
     fn read(&self,from: &Self::From,pos: usize,arr: &[Em::Expr],em: &mut Em)
             -> Result<Em::Expr,Em::Error> {
         self.then.read(&self.first,from,pos,arr,em)
@@ -230,11 +274,19 @@ impl<'a,Em: Embed,P1: Path<'a,Em>,P2: PathEl<'a,Em,From=P1::To>> Path<'a,Em> for
     }
 }
 
-pub trait PathEl<'a,Em: Embed>: Sized+Clone {
+pub trait SimplePathEl<'a> {
     type From: 'a;
     type To: 'a;
     fn get<'b>(&self,&'b Self::From) -> &'b Self::To where 'a: 'b;
     fn get_mut<'b>(&self,&'b mut Self::From) -> &'b mut Self::To where 'a: 'b;
+    fn path(self) -> Then<Id<Self::From>,Self>
+        where Self: Sized {
+        Then { first: Id(PhantomData),
+               then: self }
+    }
+}
+
+pub trait PathEl<'a,Em: Embed>: SimplePathEl<'a>+Clone {
     fn read<Prev: Path<'a,Em,To=Self::From>>
         (&self,&Prev,&Prev::From,usize,&[Em::Expr],&mut Em)
          -> Result<Em::Expr,Em::Error>;
@@ -249,10 +301,6 @@ pub trait PathEl<'a,Em: Embed>: Sized+Clone {
     fn write_slice<Prev: Path<'a,Em,To=Self::From>>(
         &self,&Prev,&mut Prev::From,usize,usize,&mut Vec<Em::Expr>,&mut Vec<Em::Expr>,&mut Em)
         -> Result<(),Em::Error>;
-    fn path(self) -> Then<Id<Self::From>,Self> {
-        Then { first: Id(PhantomData),
-               then: self }
-    }
 }
 
 pub trait CondIterator<Em: Embed>: Sized {

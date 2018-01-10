@@ -174,7 +174,7 @@ impl<T : HasSorts> HasSorts for BitVecVectorStack<T> {
     }
 }
 
-impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for BitVecVectorStackElements<T> {
+impl<'a,T: 'a> SimplePathEl<'a> for BitVecVectorStackElements<T> {
     type From = BitVecVectorStack<T>;
     type To   = CompVec<T>;
     fn get<'b>(&self,from: &'b Self::From) -> &'b Self::To where 'a: 'b {
@@ -183,6 +183,9 @@ impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for BitVecVectorStackElements<T> {
     fn get_mut<'b>(&self,from: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
         &mut from.elements
     }
+}
+
+impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for BitVecVectorStackElements<T> {
     fn read<Prev: Path<'a,Em,To=Self::From>>(
         &self,prev: &Prev,from: &Prev::From,pos: usize,arr: &[Em::Expr],em: &mut Em)
         -> Result<Em::Expr,Em::Error> {
