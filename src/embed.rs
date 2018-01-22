@@ -71,21 +71,24 @@ pub trait Embed : Sized {
     fn var(&mut self,var: Self::Var) -> Result<Self::Expr,Self::Error> {
         self.embed(Expr::Var(var))
     }
+    fn value(&mut self,val: Value) -> Result<Self::Expr,Self::Error> {
+        self.embed(Expr::Const(val))
+    }
     fn const_bool(&mut self,val: bool)
                   -> Result<Self::Expr,Self::Error> {
-        self.embed(Expr::Const(Value::Bool(val)))
+        self.value(Value::Bool(val))
     }
     fn const_int(&mut self,val: BigInt)
                   -> Result<Self::Expr,Self::Error> {
-        self.embed(Expr::Const(Value::Int(val)))
+        self.value(Value::Int(val))
     }
     fn const_real(&mut self,val: Ratio<BigInt>)
                   -> Result<Self::Expr,Self::Error> {
-        self.embed(Expr::Const(Value::Real(val)))
+        self.value(Value::Real(val))
     }
     fn const_bitvec(&mut self,bw: usize,val: BigUint)
                     -> Result<Self::Expr,Self::Error> {
-        self.embed(Expr::Const(Value::BitVec(bw,val)))
+        self.value(Value::BitVec(bw,val))
     }
     fn eq(&mut self,e1: Self::Expr,e2: Self::Expr)
           -> Result<Self::Expr,Self::Error> {
