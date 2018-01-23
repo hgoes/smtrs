@@ -1,9 +1,15 @@
 use composite::*;
 
-use embed::{Embed};
+use embed::{Embed,DeriveValues};
+use types::{Value,SortKind};
+use expr::Expr;
 use std::marker::PhantomData;
 use std::cmp::{min,max};
 use std::ops::Index;
+use std::ops::Range;
+use std::iter::Peekable;
+use num_bigint::{BigInt,BigUint};
+use num_traits::ToPrimitive;
 
 #[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct CompVec<T>(Vec<(usize,T)>);
@@ -114,6 +120,12 @@ impl<'a,T: Composite<'a>> Composite<'a> for CompVec<T> {
     }
 }
 
+pub type IndexedIter<Em: DeriveValues>
+    = IndexIterator<IndexValue<Em::ValueIterator>,Em>;
+
+pub type DynVecAccess<'a,T,P,Em: DeriveValues>
+    = VecAccess<'a,T,P,IndexedIter<Em>>;
+
 impl<T: HasSorts> CompVec<T> {
     pub fn new<Em: Embed>(_: &mut Vec<Em::Expr>,_: &mut Em)
                           -> Result<Self,Em::Error> {
@@ -192,6 +204,25 @@ impl<T: HasSorts> CompVec<T> {
         VecAccess { path: path,
                     it: it,
                     phantom: PhantomData }
+    }
+    pub fn access_dyn_iter<'a,Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+        path: &'a P,
+        from: &P::From,
+        idx:  Em::Expr,
+        em:   &mut Em
+    ) -> Result<IndexedIter<Em>,Em::Error> {
+        let len  = path.get(from).len();
+        let vals = IndexValue::new(&idx,len,em)?;
+        Ok(IndexIterator::new(idx,vals))
+    }
+    pub fn access_dyn<'a,Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+        path: &'a P,
+        from: &P::From,
+        idx: Em::Expr,
+        em: &mut Em
+    ) -> Result<DynVecAccess<'a,T,P,Em>,Em::Error> {
+        let it = Self::access_dyn_iter(path,from,idx,em)?;
+        Ok(Self::access(path,it))
     }
     pub fn alloc<'a,Em: Embed,P: Path<'a,Em,To=Self>,F>(
         path:    &P,
@@ -354,5 +385,113 @@ impl<T> Index<usize> for CompVec<T> {
     type Output = T;
     fn index(&self,index: usize) -> &T {
         &self.0[index].1
+    }
+}
+
+pub enum IndexValue<It> {
+    Limited(It),
+    Unlimited(usize,Range<usize>)
+}
+
+impl<It> IndexValue<It> {
+    pub fn new<Em: DeriveValues<ValueIterator=It>>(
+        expr: &Em::Expr,
+        max: usize,
+        em: &mut Em)
+        -> Result<Self,Em::Error>
+    where It: Clone+Iterator<Item=Value> {
+        match em.derive_values(&expr)? {
+            None => {
+                let tp = em.type_of(&expr)?;
+                match em.is_bitvec(&tp)? {
+                    None => panic!("Index value from non-bitvec expression"),
+                    Some(bw) => {
+                        let rng = if max==0 { 1..0 } else { 0..max-1 };
+                        Ok(IndexValue::Unlimited(bw,rng))
+                    }
+                }
+            },
+            Some(it) => Ok(IndexValue::Limited(it))
+        }
+    }
+}
+
+impl<It: Iterator<Item=Value>> Iterator for IndexValue<It> {
+    type Item = Value;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            &mut IndexValue::Limited(ref mut it) => it.next(),
+            &mut IndexValue::Unlimited(bw,ref mut it) => match it.next() {
+                None => None,
+                Some(i) => Some(Value::BitVec(bw,BigUint::from(i)))
+            }
+        }
+    }
+}
+
+pub struct IndexIterator<It: Iterator,Em: Embed> {
+    expr: Em::Expr,
+    first: bool,
+    values: Peekable<It>
+}
+
+impl<It,Em> IndexIterator<It,Em>
+    where It: Iterator<Item=Value>,
+          Em: Embed {
+    pub fn new(expr: Em::Expr,it: It) -> Self {
+        IndexIterator { expr: expr,
+                        first: true,
+                        values: it.peekable() }
+    }
+}
+
+impl<It,Em> CondIterator<Em> for IndexIterator<It,Em>
+    where It: Iterator<Item=Value>,
+          Em: Embed {
+    type Item = usize;
+    fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        conds.truncate(cond_pos);
+        match self.values.next() {
+            None => Ok(None),
+            Some(val) => {
+                let idx = value_as_index(&val);
+                if self.first {
+                    self.first = false;
+                    match self.values.peek() {
+                        None => return Ok(Some(idx)),
+                        Some(_) => {}
+                    }
+                }
+                let val_expr = em.embed(Expr::Const(val))?;
+                let cond = em.eq(self.expr.clone(),val_expr)?;
+                conds.push(cond);
+                Ok(Some(idx))
+            }
+        }
+    }
+}
+
+pub fn value_as_index(val: &Value) -> usize {
+    match *val {
+        Value::Bool(x) => if x { 1 } else { 0 },
+        Value::Int(ref x) => match x.to_usize() {
+            Some(rx) => rx,
+            None => panic!("Index overflow")
+        },
+        Value::BitVec(_,ref x) => match x.to_usize() {
+            Some(rx) => rx,
+            None => panic!("Index overflow")
+        },
+        _ => panic!("Value {:?} cannot be used as index",*val)
+    }
+}
+
+pub fn index_as_value<T>(tp: &SortKind<T>,idx: usize) -> Value {
+    match *tp {
+        SortKind::Bool => Value::Bool(idx!=0),
+        SortKind::Int => Value::Int(BigInt::from(idx)),
+        SortKind::BitVec(bw) => Value::BitVec(bw,BigUint::from(idx)),
+        _ => panic!("Cannot make value from index")
     }
 }

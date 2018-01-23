@@ -1,13 +1,8 @@
 use composite::*;
 use composite::vec::*;
-use types::{Value,SortKind};
-use expr::Expr;
+use types::Value;
 use embed::DeriveValues;
-
-use std::iter::Peekable;
-use num_bigint::{BigInt,BigUint};
-use num_traits::ToPrimitive;
-use std::ops::Range;
+use num_bigint::BigUint;
 
 #[derive(Hash,Clone,PartialEq,Eq,Debug)]
 pub struct BitVecVectorStack<T> {
@@ -16,17 +11,6 @@ pub struct BitVecVectorStack<T> {
 }
 
 pub struct BitVecVectorStackElements<T>(PhantomData<T>);
-
-pub enum IndexValue<It> {
-    Limited(It),
-    Unlimited(usize,Range<usize>)
-}
-
-pub struct IndexIterator<It: Iterator,Em: Embed> {
-    expr: Em::Expr,
-    first: bool,
-    values: Peekable<It>
-}
 
 pub struct BitVecVectorStackIndex<P,T,It: Iterator,Em: Embed> {
     index: IndexIterator<It,Em>,
@@ -45,19 +29,8 @@ impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
         em:   &mut Em
     ) -> Result<IndexIterator<IndexValue<Em::ValueIterator>,Em>,Em::Error> {
         let top = path.read(from,0,arr,em)?;
-        let it = match em.derive_values(&top)? {
-            Some(vals) => IndexValue::Limited(vals),
-            None => {
-                let st = path.get(from);
-                let n_elem = st.elements.len();
-                let rng = if n_elem==0 {
-                    1..0
-                } else {
-                    0..n_elem-1
-                };
-                IndexValue::Unlimited(st.bitwidth,rng)
-            }
-        };
+        let len = path.get(from).elements.len();
+        let it = IndexValue::new(&top,len,em)?;
         Ok(IndexIterator::new(top,it))
     }
     pub fn top<Em: DeriveValues,P: Path<'a,Em,To=Self>>(
@@ -272,67 +245,6 @@ impl<'a,T: Composite<'a>> Composite<'a> for BitVecVectorStack<T> {
     }
 }
 
-pub fn value_as_index(val: &Value) -> usize {
-    match *val {
-        Value::Bool(x) => if x { 1 } else { 0 },
-        Value::Int(ref x) => match x.to_usize() {
-            Some(rx) => rx,
-            None => panic!("Index overflow")
-        },
-        Value::BitVec(_,ref x) => match x.to_usize() {
-            Some(rx) => rx,
-            None => panic!("Index overflow")
-        },
-        _ => panic!("Value {:?} cannot be used as index",*val)
-    }
-}
-
-pub fn index_as_value<T>(tp: &SortKind<T>,idx: usize) -> Value {
-    match *tp {
-        SortKind::Bool => Value::Bool(idx!=0),
-        SortKind::Int => Value::Int(BigInt::from(idx)),
-        SortKind::BitVec(bw) => Value::BitVec(bw,BigUint::from(idx)),
-        _ => panic!("Cannot make value from index")
-    }
-}
-
-impl<It,Em> IndexIterator<It,Em>
-    where It: Iterator<Item=Value>,
-          Em: Embed {
-    pub fn new(expr: Em::Expr,it: It) -> Self {
-        IndexIterator { expr: expr,
-                        first: true,
-                        values: it.peekable() }
-    }
-}
-
-impl<It,Em> CondIterator<Em> for IndexIterator<It,Em>
-    where It: Iterator<Item=Value>,
-          Em: Embed {
-    type Item = usize;
-    fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,em: &mut Em)
-            -> Result<Option<Self::Item>,Em::Error> {
-        conds.truncate(cond_pos);
-        match self.values.next() {
-            None => Ok(None),
-            Some(val) => {
-                let idx = value_as_index(&val);
-                if self.first {
-                    self.first = false;
-                    match self.values.peek() {
-                        None => return Ok(Some(idx)),
-                        Some(_) => {}
-                    }
-                }
-                let val_expr = em.embed(Expr::Const(val))?;
-                let cond = em.eq(self.expr.clone(),val_expr)?;
-                conds.push(cond);
-                Ok(Some(idx))
-            }
-        }
-    }
-}
-
 impl<'a,Em,T,P,It> CondIterator<Em> for BitVecVectorStackIndex<P,T,It,Em>
     where Em: Embed,
           T: 'a+Composite<'a>,
@@ -349,19 +261,6 @@ impl<'a,Em,T,P,It> CondIterator<Em> for BitVecVectorStackIndex<P,T,It,Em>
                     .then(BitVecVectorStack::elements())
                     .then(CompVec::element(idx));
                 Ok(Some(npath))
-            }
-        }
-    }
-}
-
-impl<It: Iterator<Item=Value>> Iterator for IndexValue<It> {
-    type Item = Value;
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            &mut IndexValue::Limited(ref mut it) => it.next(),
-            &mut IndexValue::Unlimited(bw,ref mut it) => match it.next() {
-                None => None,
-                Some(i) => Some(Value::BitVec(bw,BigUint::from(i)))
             }
         }
     }
