@@ -307,6 +307,40 @@ pub trait CondIterator<Em: Embed>: Sized {
     type Item;
     fn next(&mut self,&mut Vec<Em::Expr>,usize,&mut Em)
             -> Result<Option<Self::Item>,Em::Error>;
+    fn then<I,F: FnMut(Self::Item,&mut Em) -> Result<I,Em::Error>>(
+        self,other: I,f: F
+    ) -> ThenIter<Self,I,F> {
+        ThenIter {
+            f: f,
+            it1: self,
+            it2: None
+        }
+    }
+}
+
+pub struct ThenIter<It1,It2,F> {
+    f:   F,
+    it1: It1,
+    it2: Option<(It2,usize)>
+}
+
+impl<Em: Embed,It1: CondIterator<Em>,It2: CondIterator<Em>,F> CondIterator<Em> for ThenIter<It1,It2,F>
+    where F: FnMut(It1::Item,&mut Em) -> Result<It2,Em::Error> {
+    type Item = It2::Item;
+    fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,em: &mut Em)
+            -> Result<Option<Self::Item>,Em::Error> {
+        loop {
+            if let Some((ref mut it2,ref mut cond_pos2)) = self.it2 {
+                if let Some(res) = it2.next(conds,*cond_pos2,em)? {
+                    return Ok(Some(res))
+                }
+            }
+            match self.it1.next(conds,cond_pos,em)? {
+                None => return Ok(None),
+                Some(el) => self.it2 = Some(((self.f)(el,em)?,conds.len()))
+            }
+        }
+    }
 }
 
 pub trait Semantic {
