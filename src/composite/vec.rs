@@ -16,8 +16,8 @@ pub struct CompVec<T>(Vec<(usize,T)>);
 
 pub struct CompVecP<T>(usize,PhantomData<T>);
 
-pub struct VecAccess<'a,T,P: 'a,It> {
-    path:    &'a P,
+pub struct VecAccess<T,P,It> {
+    path:    P,
     it:      It,
     phantom: PhantomData<T>
 }
@@ -123,8 +123,8 @@ impl<'a,T: Composite<'a>> Composite<'a> for CompVec<T> {
 pub type IndexedIter<Em: DeriveValues>
     = IndexIterator<IndexValue<Em::ValueIterator>,Em>;
 
-pub type DynVecAccess<'a,T,P,Em: DeriveValues>
-    = VecAccess<'a,T,P,IndexedIter<Em>>;
+pub type DynVecAccess<T,P,Em: DeriveValues>
+    = VecAccess<T,P,IndexedIter<Em>>;
 
 impl<T: HasSorts> CompVec<T> {
     pub fn new<Em: Embed>(_: &mut Vec<Em::Expr>,_: &mut Em)
@@ -198,15 +198,15 @@ impl<T: HasSorts> CompVec<T> {
         path.write_slice(from,off,0,cont,from_cont,em)
     }
     pub fn access<'a,Em: Embed,P: Path<'a,Em,To=Self>,It: CondIterator<Em,Item=usize>>(
-        path: &'a P,
+        path: P,
         it: It
-    ) -> VecAccess<'a,T,P,It> where T: 'a {
+    ) -> VecAccess<T,P,It> where T: 'a {
         VecAccess { path: path,
                     it: it,
                     phantom: PhantomData }
     }
     pub fn access_dyn_iter<'a,Em: DeriveValues,P: Path<'a,Em,To=Self>>(
-        path: &'a P,
+        path: &P,
         from: &P::From,
         idx:  Em::Expr,
         em:   &mut Em
@@ -216,12 +216,12 @@ impl<T: HasSorts> CompVec<T> {
         Ok(IndexIterator::new(idx,vals))
     }
     pub fn access_dyn<'a,Em: DeriveValues,P: Path<'a,Em,To=Self>>(
-        path: &'a P,
+        path: P,
         from: &P::From,
         idx: Em::Expr,
         em: &mut Em
-    ) -> Result<DynVecAccess<'a,T,P,Em>,Em::Error> {
-        let it = Self::access_dyn_iter(path,from,idx,em)?;
+    ) -> Result<DynVecAccess<T,P,Em>,Em::Error> {
+        let it = Self::access_dyn_iter(&path,from,idx,em)?;
         Ok(Self::access(path,it))
     }
     pub fn alloc<'a,Em: Embed,P: Path<'a,Em,To=Self>,F>(
@@ -320,8 +320,8 @@ impl<'a,T: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for CompVecP<T> {
     }
 }
 
-impl<'a,Em: Embed,T: 'a+HasSorts,P: 'a+Path<'a,Em,To=CompVec<T>>,
-     It: CondIterator<Em,Item=usize>> CondIterator<Em> for VecAccess<'a,T,P,It> {
+impl<'a,Em: Embed,T: 'a+HasSorts,P: Path<'a,Em,To=CompVec<T>>,
+     It: CondIterator<Em,Item=usize>> CondIterator<Em> for VecAccess<T,P,It> {
     type Item = Then<P,CompVecP<T>>;
     fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
