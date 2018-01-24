@@ -308,7 +308,7 @@ pub trait CondIterator<Em: Embed>: Sized {
     fn next(&mut self,&mut Vec<Em::Expr>,usize,&mut Em)
             -> Result<Option<Self::Item>,Em::Error>;
     fn then<I,F: FnMut(Self::Item,&mut Em) -> Result<I,Em::Error>>(
-        self,other: I,f: F
+        self,f: F
     ) -> ThenIter<Self,I,F> {
         ThenIter {
             f: f,
