@@ -419,6 +419,18 @@ impl<'a,T: 'a+Ord+HasSorts,Em: Embed> PathEl<'a,Em> for ChoiceEl<T> {
     }
 }
 
+impl<'a,Em: Embed,T: HasSorts+Ord,P: Path<'a,Em,To=Choice<T>>> Iterator for Choices<'a,Em,T,P> {
+    type Item = Then<P,ChoiceEl<T>>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos >= self.choice.0.len() {
+            return None
+        }
+        let npath = self.path.clone().then(Choice::element(self.pos));
+        self.pos+=1;
+        Some(npath)
+    }
+}
+
 impl<'a,Em: Embed,T: 'a+Ord+HasSorts,P: 'a+Path<'a,Em,To=Choice<T>>> CondIterator<Em> for Choices<'a,Em,T,P> {
     type Item = Then<P,ChoiceEl<T>>;
     fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,em: &mut Em)
