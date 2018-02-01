@@ -28,6 +28,12 @@ pub struct VecMeaning<M> {
     pub meaning: M,
 }
 
+pub struct Elements<P,T> {
+    path: P,
+    indices: Range<usize>,
+    phantom: PhantomData<T>
+}
+
 impl<T> Clone for CompVecP<T> {
     fn clone(&self) -> Self {
         CompVecP(self.0,PhantomData)
@@ -143,6 +149,16 @@ impl<T: HasSorts> CompVec<T> {
     }
     pub fn element(idx: usize) -> CompVecP<T> {
         CompVecP(idx,PhantomData)
+    }
+    pub fn elements<'a,P: SimplePath<'a,To=Self>>(path: P,from: &P::From)
+                                                  -> Elements<P,T> {
+        let rng = match path.get(from).len() {
+            0 => 1..0,
+            n => 0..n-1
+        };
+        Elements { path: path,
+                   indices: rng,
+                   phantom: PhantomData }
     }
     pub fn push<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
         path: &P,
@@ -335,7 +351,7 @@ impl<'a,Em: Embed,T: 'a+HasSorts,P: Path<'a,Em,To=CompVec<T>>,
     }
 }
 
-impl<T : Semantic+HasSorts> Semantic for CompVec<T> {
+impl<T: Semantic+HasSorts> Semantic for CompVec<T> {
     type Meaning = VecMeaning<T::Meaning>;
     type MeaningCtx = T::MeaningCtx;
     fn meaning(&self,n: usize) -> Self::Meaning {
@@ -493,5 +509,17 @@ pub fn index_as_value<T>(tp: &SortKind<T>,idx: usize) -> Value {
         SortKind::Int => Value::Int(BigInt::from(idx)),
         SortKind::BitVec(bw) => Value::BitVec(bw,BigUint::from(idx)),
         _ => panic!("Cannot make value from index")
+    }
+}
+
+impl<'a,
+     T: 'a+HasSorts,
+     P: SimplePath<'a,To=CompVec<T>>+Clone> Iterator for Elements<P,T> {
+    type Item = Then<P,CompVecP<T>>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.indices.next() {
+            None => None,
+            Some(idx) => Some(self.path.clone().then(CompVec::element(idx)))
+        }
     }
 }

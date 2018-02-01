@@ -1,6 +1,7 @@
 use composite::*;
 
 use std::cmp::{Ordering,max};
+use std::ops::Range;
 
 #[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct Choice<T>(Vec<(usize,T)>);
@@ -19,6 +20,12 @@ pub struct Choices<'a,Em: Embed,T: 'a,P: 'a+Path<'a,Em,To=Choice<T>>> where Em::
 pub enum ChoiceMeaning<M> {
     Selector(usize),
     Item(usize,M)
+}
+
+pub struct Elements<P,T> {
+    path: P,
+    indices: Range<usize>,
+    phantom: PhantomData<T>
 }
 
 impl<T> Clone for ChoiceEl<T> {
@@ -94,6 +101,18 @@ impl<T: Ord+HasSorts> Choice<T> {
     }
     pub fn element(i: usize) -> ChoiceEl<T> {
         ChoiceEl(i,PhantomData)
+    }
+    pub fn elements<'a,P: SimplePath<'a,To=Self>>(path: P,from: &P::From)
+                                                  -> Elements<P,T> {
+        let rng = match path.get(from).0.len() {
+            0 => 1..0,
+            n => 0..n-1
+        };
+        Elements {
+            path: path,
+            indices: rng,
+            phantom: PhantomData
+        }
     }
     pub fn is_selected<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
         path: &Then<P,ChoiceEl<T>>,
@@ -515,5 +534,17 @@ impl<T : Ord+Semantic+Debug+HasSorts> Semantic for Choice<T> {
         };
         *m = nm;
         true
+    }
+}
+
+impl<'a,
+     T: 'a+HasSorts+Ord,
+     P: SimplePath<'a,To=Choice<T>>+Clone> Iterator for Elements<P,T> {
+    type Item = Then<P,ChoiceEl<T>>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.indices.next() {
+            None => None,
+            Some(idx) => Some(self.path.clone().then(Choice::element(idx)))
+        }
     }
 }
