@@ -25,6 +25,14 @@ pub fn set_some<'a,Em: Embed,T: HasSorts+Clone,
     path.write_slice(from,0,old_sz,arr,&mut buf,em)
 }
 
+pub fn option<'a,T,P: SimplePath<'a,To=Option<T>>>(path: P,from: &P::From)
+                                                   -> Option<Then<P,SomeP<T>>> {
+    match path.get(from) {
+        &None => None,
+        &Some(_) => Some(path.then(some()))
+    }
+}
+
 pub fn some<T>() -> SomeP<T> {
     SomeP(PhantomData)
 }
