@@ -137,6 +137,10 @@ impl<T: HasSorts> CompVec<T> {
                           -> Result<Self,Em::Error> {
         Ok(CompVec(Vec::new()))
     }
+    pub fn with_capacity<Em: Embed>(sz: usize,_: &mut Vec<Em::Expr>,_: &mut Em)
+                                    -> Result<Self,Em::Error> {
+        Ok(CompVec(Vec::with_capacity(sz)))
+    }
     pub fn len(&self) -> usize {
         self.0.len()
     }
