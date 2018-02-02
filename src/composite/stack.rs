@@ -12,11 +12,14 @@ pub struct BitVecVectorStack<T> {
 
 pub struct BitVecVectorStackElements<T>(PhantomData<T>);
 
-pub struct BitVecVectorStackIndex<P,T,It: Iterator,Em: Embed> {
-    index: IndexIterator<It,Em>,
+pub struct BitVecVectorStackAccess<T,P,It> {
     path: P,
+    index: It,
     phantom: PhantomData<T>
 }
+
+pub type DynBitVecVectorStackAccess<T,P,Em: DeriveValues>
+    = BitVecVectorStackAccess<T,P,IndexedIter<Em>>;
 
 impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
     pub fn elements() -> BitVecVectorStackElements<T> {
@@ -27,7 +30,7 @@ impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
         from: &P::From,
         arr:  &[Em::Expr],
         em:   &mut Em
-    ) -> Result<IndexIterator<IndexValue<Em::ValueIterator>,Em>,Em::Error> {
+    ) -> Result<IndexedIter<Em>,Em::Error> {
         let top = path.read(from,0,arr,em)?;
         let len = path.get(from).elements.len();
         let it = IndexValue::new(&top,len,em)?;
@@ -38,12 +41,12 @@ impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
         from:  &P::From,
         arr:   &[Em::Expr],
         em:    &mut Em
-    ) -> Result<BitVecVectorStackIndex<P,T,IndexValue<Em::ValueIterator>,Em>,
+    ) -> Result<DynBitVecVectorStackAccess<T,P,Em>,
                 Em::Error> {
         let it = Self::top_iter(&path,from,arr,em)?;
-        Ok(BitVecVectorStackIndex { index: it,
-                                    path: path,
-                                    phantom: PhantomData })
+        Ok(BitVecVectorStackAccess { path: path,
+                                     index: it,
+                                     phantom: PhantomData })
     }
     pub fn push<Em: DeriveValues,P: Path<'a,Em,To=Self>>(
         path:  &P,
@@ -189,7 +192,6 @@ impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for BitVecVectorStackElements<T> {
 
         prev.write_slice(from,pos+1,old_len,src,trg,em)
     }
-
 }
 
 impl<'a,T: Composite<'a>> Composite<'a> for BitVecVectorStack<T> {
@@ -245,11 +247,11 @@ impl<'a,T: Composite<'a>> Composite<'a> for BitVecVectorStack<T> {
     }
 }
 
-impl<'a,Em,T,P,It> CondIterator<Em> for BitVecVectorStackIndex<P,T,It,Em>
+impl<'a,Em,T,P,It> CondIterator<Em> for BitVecVectorStackAccess<T,P,It>
     where Em: Embed,
           T: 'a+Composite<'a>,
           P: Path<'a,Em,To=BitVecVectorStack<T>>,
-          It: Iterator<Item=Value> {
+          It: CondIterator<Em,Item=usize> {
     type Item = Then<Then<P,BitVecVectorStackElements<T>>,
                      CompVecP<T>>;
     fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,em: &mut Em)
