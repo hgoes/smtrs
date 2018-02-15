@@ -230,8 +230,8 @@ impl<'a,T: 'a,Em: Embed> Path<'a,Em> for Id<T> {
 
 #[derive(Clone,PartialEq,Eq)]
 pub struct Then<P1,P2> {
-    first: P1,
-    then: P2
+    pub first: P1,
+    pub then: P2
 }
 
 impl<'a,P1: SimplePath<'a>,P2: SimplePathEl<'a,From=P1::To>
@@ -304,7 +304,7 @@ pub trait PathEl<'a,Em: Embed>: SimplePathEl<'a>+Clone {
 }
 
 pub trait CondIterator<Em: Embed>: Sized {
-    type Item;
+     type Item;
     fn next(&mut self,&mut Vec<Em::Expr>,usize,&mut Em)
             -> Result<Option<Self::Item>,Em::Error>;
     fn then<I,F: FnMut(Self::Item,&mut Em) -> Result<I,Em::Error>>(
@@ -417,5 +417,76 @@ impl<'a,T : Semantic> MeaningOf<'a,T> {
 impl<'a,T : Semantic> fmt::Display for MeaningOf<'a,T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.obj.fmt_meaning(self.meaning,f)
+    }
+}
+
+/// Helper path to implement offset calculations.
+pub struct Offset<T>(usize,PhantomData<T>);
+
+impl<T> Offset<T> {
+    pub fn new(off: usize) -> Self {
+        Offset(off,PhantomData)
+    }
+}
+
+impl<T> Clone for Offset<T> {
+    fn clone(&self) -> Self {
+        Offset(self.0,PhantomData)
+    }
+}
+
+impl<'a,T: 'a> SimplePathEl<'a> for Offset<T> {
+    type From = T;
+    type To   = T;
+    fn get<'b>(&self,from: &'b Self::From) -> &'b Self::To where 'a: 'b {
+        from
+    }
+    fn get_mut<'b>(&self,from: &'b mut Self::From) -> &'b mut Self::To
+        where 'a: 'b {
+        from
+    }
+}
+
+impl<'a,T: 'a,Em: Embed> PathEl<'a,Em> for Offset<T> {
+    fn read<Prev: Path<'a,Em,To=Self::From>>(
+        &self,
+        prev: &Prev,
+        from: &Prev::From,
+        pos: usize,
+        arr: &[Em::Expr],
+        em: &mut Em)
+        -> Result<Em::Expr,Em::Error> {
+        prev.read(from,pos+self.0,arr,em)
+    }
+    fn read_slice<'b,Prev: Path<'a,Em,To=Self::From>>(
+        &self,
+        prev: &Prev,
+        from: &Prev::From,
+        pos: usize,
+        len: usize,
+        arr: &'b [Em::Expr])
+        -> Option<&'b [Em::Expr]> {
+        prev.read_slice(from,pos+self.0,len,arr)
+    }
+    fn write<Prev: Path<'a,Em,To=Self::From>>(
+        &self,
+        prev: &Prev,
+        from: &Prev::From,
+        pos:  usize,
+        expr: Em::Expr,
+        arr:  &mut Vec<Em::Expr>,
+        em:   &mut Em) -> Result<(),Em::Error> {
+        prev.write(from,pos,expr,arr,em)
+    }
+    fn write_slice<Prev: Path<'a,Em,To=Self::From>>(
+        &self,
+        prev: &Prev,
+        from: &mut Prev::From,
+        pos: usize,
+        len: usize,
+        src: &mut Vec<Em::Expr>,
+        trg: &mut Vec<Em::Expr>,
+        em: &mut Em) -> Result<(),Em::Error> {
+        prev.write_slice(from,pos+self.0,len,src,trg,em)
     }
 }

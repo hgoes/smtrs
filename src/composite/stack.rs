@@ -22,6 +22,25 @@ pub type DynBitVecVectorStackAccess<T,P,Em: DeriveValues>
     = BitVecVectorStackAccess<T,P,IndexedIter<Em>>;
 
 impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
+    pub fn empty<Em: Embed>(bw: usize,res: &mut Vec<Em::Expr>,em: &mut Em)
+                            -> Result<Self,Em::Error> {
+        let top = em.const_bitvec(bw,BigUint::from(0u8))?;
+        res.push(top);
+        let vec = CompVec::new(res,em)?;
+        Ok(BitVecVectorStack { bitwidth: bw,
+                               elements: vec })
+    }
+    pub fn singleton<Em,FEl>(bw: usize,el: FEl,res: &mut Vec<Em::Expr>,em: &mut Em)
+                             -> Result<Self,Em::Error>
+        where
+        Em: Embed,
+        FEl: FnOnce(&mut Vec<Em::Expr>,&mut Em) -> Result<T,Em::Error> {
+        let top = em.const_bitvec(bw,BigUint::from(1u8))?;
+        res.push(top);
+        let vec = CompVec::singleton(el,res,em)?;
+        Ok(BitVecVectorStack { bitwidth: bw,
+                               elements: vec })
+    }
     pub fn elements() -> BitVecVectorStackElements<T> {
         BitVecVectorStackElements(PhantomData)
     }

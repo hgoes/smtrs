@@ -14,7 +14,7 @@ use num_traits::ToPrimitive;
 #[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct CompVec<T>(Vec<(usize,T)>);
 
-pub struct CompVecP<T>(usize,PhantomData<T>);
+pub struct CompVecP<T>(pub usize,PhantomData<T>);
 
 pub struct VecAccess<T,P,It> {
     path:    P,
@@ -137,9 +137,39 @@ impl<T: HasSorts> CompVec<T> {
                           -> Result<Self,Em::Error> {
         Ok(CompVec(Vec::new()))
     }
+    pub fn singleton<Em,FEl>(el: FEl,res: &mut Vec<Em::Expr>,em: &mut Em)
+                             -> Result<Self,Em::Error>
+        where
+        Em: Embed,
+        FEl: FnOnce(&mut Vec<Em::Expr>,&mut Em) -> Result<T,Em::Error> {
+        let rel = el(res,em)?;
+        let sz = rel.num_elem();
+        Ok(CompVec(vec![(sz,rel)]))
+    }
     pub fn with_capacity<Em: Embed>(sz: usize,_: &mut Vec<Em::Expr>,_: &mut Em)
                                     -> Result<Self,Em::Error> {
         Ok(CompVec(Vec::with_capacity(sz)))
+    }
+    pub fn construct<Em: Embed,It: Iterator,F>(
+        it: It,
+        f: F,
+        res: &mut Vec<Em::Expr>,
+        em: &mut Em
+    ) -> Result<Self,Em::Error>
+        where
+        F: Fn(It::Item,&mut Vec<Em::Expr>,&mut Em) -> Result<T,Em::Error> {
+        let mut vec = match it.size_hint().1 {
+            None => Vec::new(),
+            Some(sz) => Vec::with_capacity(sz)
+        };
+        let mut off = 0;
+        for el in it {
+            let rel = f(el,res,em)?;
+            let sz = rel.num_elem();
+            off+=sz;
+            vec.push((off,rel));
+        }
+        Ok(CompVec(vec))
     }
     pub fn len(&self) -> usize {
         self.0.len()
@@ -252,7 +282,7 @@ impl<T: HasSorts> CompVec<T> {
         el_cont: &mut Vec<Em::Expr>,
         is_free: &F,
         em:      &mut Em
-    ) -> Result<usize,Em::Error>
+    ) -> Result<CompVecP<T>,Em::Error>
         where F: Fn(&Then<P,CompVecP<T>>,
                     &P::From,
                     &[Em::Expr],
@@ -262,11 +292,11 @@ impl<T: HasSorts> CompVec<T> {
             if is_free(&path.clone().then(Self::element(n)),
                        from,&arr[..],em)? {
                 Self::insert(from,arr,path,n,el,el_cont,em)?;
-                return Ok(n)
+                return Ok(Self::element(n))
             }
         }
         Self::push(path,from,arr,el,el_cont,em)?;
-        Ok(size)
+        Ok(Self::element(size))
     }
 }
 

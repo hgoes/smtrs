@@ -8,12 +8,11 @@ pub struct Choice<T>(Vec<(usize,T)>);
 
 pub struct ChoiceEl<T>(usize,PhantomData<T>);
 
-pub struct Choices<'a,Em: Embed,T: 'a,P: 'a+Path<'a,Em,To=Choice<T>>> where Em::Expr: 'a {
-    path: &'a P,
-    from: &'a P::From,
-    choice: &'a Choice<T>,
+pub struct Choices<P,T,E> {
+    path: P,
+    choices: Vec<E>,
     pos: usize,
-    arr: &'a [Em::Expr]
+    phantom: PhantomData<T>
 }
 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
@@ -40,18 +39,41 @@ impl<T: Ord+HasSorts> Choice<T> {
                             -> Result<Self,Em::Error> {
         Ok(Choice(Vec::new()))
     }
-    pub fn singleton<Em: Embed>(el: T,
-                                el_cont: &[Em::Expr],
-                                res: &mut Vec<Em::Expr>,
-                                em: &mut Em)
-                                -> Result<Self,Em::Error> {
+    pub fn singleton<Em,FEl>(el: FEl,
+                             res: &mut Vec<Em::Expr>,
+                             em: &mut Em)
+                             -> Result<Self,Em::Error>
+        where
+        Em: Embed,
+        FEl: FnOnce(&mut Vec<Em::Expr>,&mut Em) -> Result<T,Em::Error> {
+
         let cond = em.const_bool(true)?;
-        res.reserve(1+el_cont.len());
         res.push(cond);
-        res.extend_from_slice(el_cont);
-        let mut els = Vec::with_capacity(1);
-        els.push((el.num_elem(),el));
-        Ok(Choice(els))
+
+        let rel = el(res,em)?;
+        let sz = rel.num_elem();
+        
+        Ok(Choice(vec![(sz,rel)]))
+    }
+    pub fn add(&mut self,el: T) {
+        let sz = el.num_elem();
+        match self.0.binary_search_by(|&(_,ref oth)| oth.cmp(&el)) {
+            Ok(i) => {
+                let off = if i==0 { 0 } else { self.0[i-1].0 };
+                let old_len = self.0[i].0 - off;
+                self.0[i].1 = el;
+                for j in i..self.0.len() {
+                    self.0[j].0 = self.0[j].0 + sz - old_len;
+                }
+            },
+            Err(i) => {
+                let off = if i==0 { 0 } else { self.0[i-1].0 };
+                for j in i..self.0.len() {
+                    self.0[j].0+=sz+1;
+                }
+                self.0.insert(i,(off,el));
+            }
+        }
     }
     pub fn insert<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
         path: &P,
@@ -72,7 +94,7 @@ impl<T: Ord+HasSorts> Choice<T> {
                 if new_len != old_len {
                     let ch = path.get_mut(from);
                     for j in i..ch.0.len() {
-                        ch.0[j].0 = ch.0[j].0 + old_len - new_len;
+                        ch.0[j].0 = ch.0[j].0 + new_len - old_len;
                     }
                 }
             },
@@ -125,15 +147,107 @@ impl<T: Ord+HasSorts> Choice<T> {
         path.first.read(from,off,cont,em)
     }
     pub fn choices<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
-        path: &'a P,
-        from: &'a P::From,
-        arr:  &'a [Em::Expr]
-    ) -> Choices<'a,Em,T,P> {
-        Choices { path: path,
-                  from: from,
-                  choice: path.get(from),
-                  pos: 0,
-                  arr: arr }
+        path: P,
+        from: &P::From,
+        arr:  &[Em::Expr],
+        em:   &mut Em
+    ) -> Result<Choices<P,T,Em::Expr>,Em::Error> {
+        let ch = &path.get(from).0;
+        let sz = ch.len();
+        let mut rvec = Vec::with_capacity(sz);
+        for i in 0..sz {
+            let off = if i==0 { 0 } else { ch[i-1].0 };
+            rvec.push(path.read(from,off,arr,em)?);
+        }
+        Ok(Choices { path: path,
+                     choices: rvec,
+                     pos: 0,
+                     phantom: PhantomData })
+    }
+    pub fn find<'a,Em: Embed,P: Path<'a,Em,To=Self>,F>(
+        path: P,
+        from: &P::From,
+        arr:  &[Em::Expr],
+        f:    F,
+        em:   &mut Em
+    ) -> Result<Option<Then<P,ChoiceEl<T>>>,Em::Error>
+        where F: Fn(&Then<P,ChoiceEl<T>>,&P::From,&[Em::Expr],&mut Em)
+                    -> Result<bool,Em::Error> {
+        let sz = path.get(from).0.len();
+        let mut npath = path.then(Self::element(0));
+        for i in 0..sz {
+            npath.then.0 = i;
+            if f(&npath,from,arr,em)? {
+                return Ok(Some(npath))
+            }
+        }
+        Ok(None)
+    }
+    pub fn set_chosen<'a,Em: Embed,
+                      P: Path<'a,Em,To=Self>>(
+        path:    &P,
+        from:    &mut P::From,
+        arr:     &mut Vec<Em::Expr>,
+        el:      T,
+        el_cont: &mut Vec<Em::Expr>,
+        cond:    Em::Expr,
+        em:      &mut Em
+    ) -> Result<(),Em::Error>
+        where T: Composite<'a> {
+        let limit = path.get(from).0.len();
+        let mut pos = 0;
+        while pos<limit {
+            let off = if pos==0 { 0 } else { path.get(from).0[pos-1].0 };
+            let cmp_res = el.cmp(&path.get(from).0[pos].1);
+            if cmp_res==Ordering::Greater {
+                let old_cond = path.read(from,off,arr,em)?;
+                let ncond = em.not(cond.clone())?;
+                let new_cond = em.and(vec![old_cond,ncond])?;
+                path.write(from,off,new_cond,arr,em)?;
+                pos+=1;
+            } else {
+                let nsz: isize = if cmp_res==Ordering::Less {
+                    el_cont.insert(0,cond.clone());
+                    let sz = el_cont.len();
+                    path.write_slice(from,off,0,el_cont,arr,em)?;
+                    path.get_mut(from).0.insert(pos,(off+sz+1,el));
+                    sz as isize
+                } else {
+                    let old_sz = path.get(from).0[pos].0 - off - 1;
+                    let mut nel_cont = Vec::new();
+                    let nel = ite(&cond,
+                                  &Id::new(),&el,el_cont,
+                                  &path.clone().then(Self::element(pos)),from,arr,
+                                  &mut nel_cont,em)?.expect("Cannot merge");
+                    let sz = nel_cont.len();
+                    let old_cond = path.read(from,off,arr,em)?;
+                    let new_cond = em.or(vec![old_cond,
+                                              cond.clone()])?;
+                    path.write(from,off,new_cond,arr,em)?;
+                    path.write_slice(from,off+1,old_sz,&mut nel_cont,arr,em)?;
+                    path.get_mut(from).0[pos].1 = nel;
+                    (sz as isize) - (old_sz as isize)
+                };
+                pos+=1;
+                while pos<limit {
+                    let old_off = path.get(from).0[pos].0;
+                    let new_off = ((old_off as isize)+nsz) as usize;
+                    path.get_mut(from).0[pos].0 = new_off;
+                    let old_cond = path.read(from,new_off,arr,em)?;
+                    let ncond = em.not(cond.clone())?;
+                    let new_cond = em.and(vec![old_cond,ncond])?;
+                    path.write(from,new_off,new_cond,arr,em)?;
+                    pos+=1;
+                }
+                return Ok(())
+            }
+        }
+        let off = if limit==0 { 0 } else { path.get(from).0[limit-1].0 };
+        el_cont.insert(0,cond);
+        let sz = el_cont.len();
+        path.write_slice(from,off,0,el_cont,arr,em)?;
+        path.get_mut(from).0.push((off+sz,el));
+        Ok(())
     }
     pub fn sym_eq<'a,Em: Embed,
                   P1: Path<'a,Em,To=Self>,
@@ -438,28 +552,15 @@ impl<'a,T: 'a+Ord+HasSorts,Em: Embed> PathEl<'a,Em> for ChoiceEl<T> {
     }
 }
 
-impl<'a,Em: Embed,T: HasSorts+Ord,P: Path<'a,Em,To=Choice<T>>> Iterator for Choices<'a,Em,T,P> {
-    type Item = Then<P,ChoiceEl<T>>;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pos >= self.choice.0.len() {
-            return None
-        }
-        let npath = self.path.clone().then(Choice::element(self.pos));
-        self.pos+=1;
-        Some(npath)
-    }
-}
-
-impl<'a,Em: Embed,T: 'a+Ord+HasSorts,P: 'a+Path<'a,Em,To=Choice<T>>> CondIterator<Em> for Choices<'a,Em,T,P> {
+impl<'a,Em: Embed,T: 'a+Ord+HasSorts,P: 'a+Path<'a,Em,To=Choice<T>>> CondIterator<Em> for Choices<P,T,Em::Expr> {
     type Item = Then<P,ChoiceEl<T>>;
     fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
-        if self.pos >= self.choice.0.len() {
+        if self.pos >= self.choices.len() {
             return Ok(None)
         }
-        let off = self.choice.offset(self.pos);
         conds.truncate(cond_pos);
-        let cond = self.path.read(self.from,off,self.arr,em)?;
+        let cond = self.choices[self.pos].clone();
         conds.push(cond);
         let npath = self.path.clone().then(Choice::element(self.pos));
         self.pos+=1;

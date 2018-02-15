@@ -210,7 +210,7 @@ impl<D : Eq+Clone+Hash> Semantic for Data<D> {
 }
 
 #[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
-pub struct SingletonBitVec(usize);
+pub struct SingletonBitVec(pub usize);
 
 impl HasSorts for SingletonBitVec {
     fn num_elem(&self) -> usize { 1 }

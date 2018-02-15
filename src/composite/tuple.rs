@@ -3,6 +3,18 @@ use composite::*;
 pub struct Element1Of2<A,B>(PhantomData<(A,B)>);
 pub struct Element2Of2<A,B>(PhantomData<(A,B)>);
 
+pub fn tuple<Em,F1,F2,X,Y>(f1: F1,f2: F2,res: &mut Vec<Em::Expr>,em: &mut Em)
+                           -> Result<(X,Y),Em::Error>
+    where
+    Em: Embed,
+    F1: FnOnce(&mut Vec<Em::Expr>,&mut Em) -> Result<X,Em::Error>,
+    F2: FnOnce(&mut Vec<Em::Expr>,&mut Em) -> Result<Y,Em::Error> {
+
+    let x = f1(res,em)?;
+    let y = f2(res,em)?;
+    Ok((x,y))
+}
+
 pub fn element1of2<A,B>() -> Element1Of2<A,B> {
     Element1Of2(PhantomData)
 }
