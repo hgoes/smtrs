@@ -3,7 +3,6 @@ use composite::*;
 use embed::{Embed,DeriveValues};
 use types::{Value,SortKind};
 use expr::Expr;
-use std::marker::PhantomData;
 use std::cmp::{min,max};
 use std::ops::Index;
 use std::ops::Range;
@@ -14,12 +13,12 @@ use num_traits::ToPrimitive;
 #[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct CompVec<T>(Vec<(usize,T)>);
 
-pub struct CompVecP<T>(pub usize,PhantomData<T>);
+#[derive(Clone)]
+pub struct CompVecP(pub usize);
 
-pub struct VecAccess<T,P,It> {
+pub struct VecAccess<P,It> {
     path:    P,
     it:      It,
-    phantom: PhantomData<T>
 }
 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
@@ -28,16 +27,9 @@ pub struct VecMeaning<M> {
     pub meaning: M,
 }
 
-pub struct Elements<P,T> {
+pub struct Elements<P> {
     path: P,
-    indices: Range<usize>,
-    phantom: PhantomData<T>
-}
-
-impl<T> Clone for CompVecP<T> {
-    fn clone(&self) -> Self {
-        CompVecP(self.0,PhantomData)
-    }
+    indices: Range<usize>
 }
 
 impl<T: HasSorts> HasSorts for CompVec<T> {
@@ -61,18 +53,19 @@ impl<T: HasSorts> HasSorts for CompVec<T> {
     }
 }
 
-impl<'a,T: Composite<'a>> Composite<'a> for CompVec<T> {
-    fn combine<Em,PL,PR,FComb,FL,FR>(
-        pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
-        pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
+impl<T: Composite> Composite for CompVec<T> {
+    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &FromL,arrl: &[Em::Expr],
+        pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,
         res: &mut Vec<Em::Expr>,
         em: &mut Em)
         -> Result<Option<Self>,Em::Error>
         where
+        Self: 'a,
         Em: Embed,
-        PL: Path<'a,Em,To=Self>,
-        PR: Path<'a,Em,To=Self>,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
         FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
@@ -87,8 +80,8 @@ impl<'a,T: Composite<'a>> Composite<'a> for CompVec<T> {
         let mut off = 0;
         
         for i in 0..shared {
-            match T::combine(&pl.clone().then(CompVec::element(i)),froml,arrl,
-                             &pr.clone().then(CompVec::element(i)),fromr,arrr,
+            match T::combine(&pl.clone().then(Self::element(i)),froml,arrl,
+                             &pr.clone().then(Self::element(i)),fromr,arrr,
                              comb,fl,fr,res,em)? {
                 None => return Ok(None),
                 Some(el) => {
@@ -99,7 +92,7 @@ impl<'a,T: Composite<'a>> Composite<'a> for CompVec<T> {
         }
         if vecl.0.len() > vecr.0.len() {
             for i in vecr.0.len()..vecl.0.len() {
-                let path = pl.clone().then(CompVec::element(i));
+                let path = pl.clone().then(Self::element(i));
                 let el = &vecl.0[i].1;
                 let len = el.num_elem();
                 off+=len;
@@ -111,7 +104,7 @@ impl<'a,T: Composite<'a>> Composite<'a> for CompVec<T> {
             }
         } else if vecl.0.len() < vecr.0.len() {
             for i in vecl.0.len()..vecr.0.len() {
-                let path = pr.clone().then(CompVec::element(i));
+                let path = pr.clone().then(Self::element(i));
                 let el = &vecr.0[i].1;
                 let len = el.num_elem();
                 off+=len;
@@ -129,8 +122,8 @@ impl<'a,T: Composite<'a>> Composite<'a> for CompVec<T> {
 pub type IndexedIter<Em: DeriveValues>
     = IndexIterator<IndexValue<Em::ValueIterator>,Em>;
 
-pub type DynVecAccess<T,P,Em: DeriveValues>
-    = VecAccess<T,P,IndexedIter<Em>>;
+pub type DynVecAccess<P,Em: DeriveValues>
+    = VecAccess<P,IndexedIter<Em>>;
 
 impl<T: HasSorts> CompVec<T> {
     pub fn new<Em: Embed>(_: &mut Vec<Em::Expr>,_: &mut Em)
@@ -181,27 +174,29 @@ impl<T: HasSorts> CompVec<T> {
             self.0[i-1].0
         }
     }
-    pub fn element(idx: usize) -> CompVecP<T> {
-        CompVecP(idx,PhantomData)
+    pub fn element(idx: usize) -> CompVecP {
+        CompVecP(idx)
     }
-    pub fn elements<'a,P: SimplePath<'a,To=Self>>(path: P,from: &P::From)
-                                                  -> Elements<P,T> {
+    pub fn elements<'a,From,P: SimplePath<'a,From,To=Self>>(
+        path: P,
+        from: &From) -> Elements<P>
+        where T: 'a {
         let rng = match path.get(from).len() {
             0 => 1..0,
             n => 0..n-1
         };
         Elements { path: path,
-                   indices: rng,
-                   phantom: PhantomData }
+                   indices: rng }
     }
-    pub fn push<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
+    pub fn push<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
         path: &P,
-        from: &mut P::From,
+        from: &mut From,
         from_cont: &mut Vec<Em::Expr>,
         elem: T,
         cont: &mut Vec<Em::Expr>,
         em: &mut Em
-    ) -> Result<(),Em::Error> {
+    ) -> Result<(),Em::Error>
+        where T: 'a {
         debug_assert_eq!(elem.num_elem(),cont.len());
         let old_len = {
             let vec = path.get_mut(from);
@@ -211,12 +206,13 @@ impl<T: HasSorts> CompVec<T> {
         };
         path.write_slice(from,old_len,0,cont,from_cont,em)
     }
-    pub fn pop<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
-        from: &mut P::From,
+    pub fn pop<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
+        from: &mut From,
         from_cont: &mut Vec<Em::Expr>,
         path: &P,
         em: &mut Em
-    ) -> Result<(),Em::Error> {
+    ) -> Result<(),Em::Error>
+        where T: 'a {
         let old_len = {
             let vec = path.get_mut(from);
             let res = vec.num_elem();
@@ -226,15 +222,16 @@ impl<T: HasSorts> CompVec<T> {
         let mut cont = Vec::new();
         path.write_slice(from,old_len,0,&mut cont,from_cont,em)
     }
-    pub fn insert<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
-        from: &mut P::From,
+    pub fn insert<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
+        from: &mut From,
         from_cont: &mut Vec<Em::Expr>,
         path: &P,
         at: usize,
         elem: T,
         cont: &mut Vec<Em::Expr>,
         em: &mut Em
-    ) -> Result<(),Em::Error> {
+    ) -> Result<(),Em::Error>
+        where T: 'a {
         debug_assert_eq!(elem.num_elem(),cont.len());
         let off = {
             let vec = path.get_mut(from);
@@ -247,44 +244,47 @@ impl<T: HasSorts> CompVec<T> {
         };
         path.write_slice(from,off,0,cont,from_cont,em)
     }
-    pub fn access<'a,Em: Embed,P: Path<'a,Em,To=Self>,It: CondIterator<Em,Item=usize>>(
+    pub fn access<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>,
+                  It: CondIterator<Em,Item=usize>>(
         path: P,
         it: It
-    ) -> VecAccess<T,P,It> where T: 'a {
+    ) -> VecAccess<P,It> where T: 'a {
         VecAccess { path: path,
-                    it: it,
-                    phantom: PhantomData }
+                    it: it }
     }
-    pub fn access_dyn_iter<'a,Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+    pub fn access_dyn_iter<'a,Em: DeriveValues,From,P: Path<'a,Em,From,To=Self>>(
         path: &P,
-        from: &P::From,
+        from: &From,
         idx:  Em::Expr,
         em:   &mut Em
-    ) -> Result<IndexedIter<Em>,Em::Error> {
+    ) -> Result<IndexedIter<Em>,Em::Error>
+        where T: 'a {
         let len  = path.get(from).len();
         let vals = IndexValue::new(&idx,len,em)?;
         Ok(IndexIterator::new(idx,vals))
     }
-    pub fn access_dyn<'a,Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+    pub fn access_dyn<'a,Em: DeriveValues,From,P: Path<'a,Em,From,To=Self>>(
         path: P,
-        from: &P::From,
+        from: &From,
         idx: Em::Expr,
         em: &mut Em
-    ) -> Result<DynVecAccess<T,P,Em>,Em::Error> {
+    ) -> Result<DynVecAccess<P,Em>,Em::Error>
+        where T: 'a {
         let it = Self::access_dyn_iter(&path,from,idx,em)?;
         Ok(Self::access(path,it))
     }
-    pub fn alloc<'a,Em: Embed,P: Path<'a,Em,To=Self>,F>(
+    pub fn alloc<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>,F>(
         path:    &P,
-        from:    &mut P::From,
+        from:    &mut From,
         arr:     &mut Vec<Em::Expr>,
         el:      T,
         el_cont: &mut Vec<Em::Expr>,
         is_free: &F,
         em:      &mut Em
-    ) -> Result<CompVecP<T>,Em::Error>
-        where F: Fn(&Then<P,CompVecP<T>>,
-                    &P::From,
+    ) -> Result<CompVecP,Em::Error>
+        where T: 'a,
+              F: Fn(&Then<P,CompVecP>,
+                    &From,
                     &[Em::Expr],
                     &mut Em) -> Result<bool,Em::Error> {
         let size = path.get(from).0.len();
@@ -300,22 +300,21 @@ impl<T: HasSorts> CompVec<T> {
     }
 }
 
-impl<'a,T: 'a+HasSorts> SimplePathEl<'a> for CompVecP<T> {
-    type From = CompVec<T>;
+impl<'a,T: 'a+HasSorts> SimplePathEl<'a,CompVec<T>> for CompVecP {
     type To = T;
-    fn get<'b>(&self,arr: &'b Self::From) -> &'b Self::To where 'a: 'b {
+    fn get<'b>(&self,arr: &'b CompVec<T>) -> &'b Self::To where 'a: 'b {
         &arr.0[self.0].1
     }
-    fn get_mut<'b>(&self,arr: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
+    fn get_mut<'b>(&self,arr: &'b mut CompVec<T>) -> &'b mut Self::To where 'a: 'b {
         &mut arr.0[self.0].1
     }
 }
 
-impl<'a,T: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for CompVecP<T> {
-    fn read<Prev: Path<'a,Em,To=Self::From>>(
+impl<'a,T: 'a+HasSorts,Em: Embed> PathEl<'a,Em,CompVec<T>> for CompVecP {
+    fn read<From,Prev: Path<'a,Em,From,To=CompVec<T>>>(
         &self,
         prev: &Prev,
-        from: &Prev::From,
+        from: &From,
         pos: usize,
         arr: &[Em::Expr],
         em: &mut Em)
@@ -325,25 +324,25 @@ impl<'a,T: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for CompVecP<T> {
         let off = vec.offset(self.0);
         prev.read(from,off+pos,arr,em)
     }
-    fn read_slice<'b,Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,pos: usize,len: usize,arr: &'b [Em::Expr])
+    fn read_slice<'b,From,Prev: Path<'a,Em,From,To=CompVec<T>>>(
+        &self,prev: &Prev,from: &From,pos: usize,len: usize,arr: &'b [Em::Expr])
         -> Option<&'b [Em::Expr]> {
         let vec = prev.get(from);
         let off = vec.offset(self.0);
         prev.read_slice(from,off+pos,len,arr)
     }
-    fn write<Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,pos: usize,expr: Em::Expr,
+    fn write<From,Prev: Path<'a,Em,From,To=CompVec<T>>>(
+        &self,prev: &Prev,from: &From,pos: usize,expr: Em::Expr,
         arr: &mut Vec<Em::Expr>,em: &mut Em)
         -> Result<(),Em::Error> {
         let vec = prev.get(from);
         let off = vec.offset(self.0);
         prev.write(from,off+pos,expr,arr,em)
     }
-    fn write_slice<Prev: Path<'a,Em,To=Self::From>>(
+    fn write_slice<From,Prev: Path<'a,Em,From,To=CompVec<T>>>(
         &self,
         prev: &Prev,
-        from: &mut Prev::From,
+        from: &mut From,
         pos: usize,
         old_len: usize,
         src: &mut Vec<Em::Expr>,
@@ -370,15 +369,18 @@ impl<'a,T: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for CompVecP<T> {
     }
 }
 
-impl<'a,Em: Embed,T: 'a+HasSorts,P: Path<'a,Em,To=CompVec<T>>,
-     It: CondIterator<Em,Item=usize>> CondIterator<Em> for VecAccess<T,P,It> {
-    type Item = Then<P,CompVecP<T>>;
+impl<'a,Em,P,It> CondIterator<Em> for VecAccess<P,It>
+    where Em: Embed,
+          P: Clone,
+          It: CondIterator<Em,Item=usize> {
+    type Item = Then<P,CompVecP>;
     fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
         match self.it.next(conds,cond_pos,em)? {
             None => Ok(None),
             Some(idx) => {
-                let npath = self.path.clone().then(CompVec::element(idx));
+                let npath = Then { first: self.path.clone(),
+                                   then: CompVecP(idx) };
                 Ok(Some(npath))
             }
         }
@@ -546,14 +548,13 @@ pub fn index_as_value<T>(tp: &SortKind<T>,idx: usize) -> Value {
     }
 }
 
-impl<'a,
-     T: 'a+HasSorts,
-     P: SimplePath<'a,To=CompVec<T>>+Clone> Iterator for Elements<P,T> {
-    type Item = Then<P,CompVecP<T>>;
+impl<P: Clone> Iterator for Elements<P> {
+    type Item = Then<P,CompVecP>;
     fn next(&mut self) -> Option<Self::Item> {
         match self.indices.next() {
             None => None,
-            Some(idx) => Some(self.path.clone().then(CompVec::element(idx)))
+            Some(idx) => Some(Then { first: self.path.clone(),
+                                     then: CompVecP(idx) })
         }
     }
 }

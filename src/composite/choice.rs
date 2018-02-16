@@ -6,13 +6,13 @@ use std::ops::Range;
 #[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct Choice<T>(Vec<(usize,T)>);
 
-pub struct ChoiceEl<T>(usize,PhantomData<T>);
+#[derive(Clone)]
+pub struct ChoiceEl(usize);
 
-pub struct Choices<P,T,E> {
+pub struct Choices<P,E> {
     path: P,
     choices: Vec<E>,
-    pos: usize,
-    phantom: PhantomData<T>
+    pos: usize
 }
 
 #[derive(PartialEq,Eq,PartialOrd,Ord,Hash,Debug,Clone)]
@@ -21,16 +21,9 @@ pub enum ChoiceMeaning<M> {
     Item(usize,M)
 }
 
-pub struct Elements<P,T> {
+pub struct Elements<P> {
     path: P,
-    indices: Range<usize>,
-    phantom: PhantomData<T>
-}
-
-impl<T> Clone for ChoiceEl<T> {
-    fn clone(&self) -> Self {
-        ChoiceEl(self.0,PhantomData)
-    }
+    indices: Range<usize>
 }
 
 impl<T: Ord+HasSorts> Choice<T> {
@@ -75,14 +68,15 @@ impl<T: Ord+HasSorts> Choice<T> {
             }
         }
     }
-    pub fn insert<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
+    pub fn insert<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
         path: &P,
-        from: &mut P::From,
+        from: &mut From,
         cont: &mut Vec<Em::Expr>,
         el: T,
         el_cont: &mut Vec<Em::Expr>,
         cond: Em::Expr,
-        em: &mut Em) -> Result<(),Em::Error> {
+        em: &mut Em) -> Result<(),Em::Error>
+        where Self: 'a {
         match path.get_mut(from).0.binary_search_by(|&(_,ref oth)| { oth.cmp(&el) }) {
             Ok(i) => {
                 // Entry already exists, overwrite it
@@ -121,37 +115,40 @@ impl<T: Ord+HasSorts> Choice<T> {
             self.0[i-1].0
         }
     }
-    pub fn element(i: usize) -> ChoiceEl<T> {
-        ChoiceEl(i,PhantomData)
+    pub fn element(i: usize) -> ChoiceEl {
+        ChoiceEl(i)
     }
-    pub fn elements<'a,P: SimplePath<'a,To=Self>>(path: P,from: &P::From)
-                                                  -> Elements<P,T> {
+    pub fn elements<'a,From,P: SimplePath<'a,From,To=Self>>(
+        path: P,
+        from: &From) -> Elements<P>
+        where Self: 'a {
         let rng = match path.get(from).0.len() {
             0 => 1..0,
             n => 0..n-1
         };
         Elements {
             path: path,
-            indices: rng,
-            phantom: PhantomData
+            indices: rng
         }
     }
-    pub fn is_selected<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
-        path: &Then<P,ChoiceEl<T>>,
-        from: &P::From,
+    pub fn is_selected<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
+        path: &Then<P,ChoiceEl>,
+        from: &From,
         cont: &[Em::Expr],
-        em: &mut Em) -> Result<Em::Expr,Em::Error> {
+        em: &mut Em) -> Result<Em::Expr,Em::Error>
+        where Self: 'a {
 
         let ch = path.first.get(from);
         let off = ch.offset(path.then.0);
         path.first.read(from,off,cont,em)
     }
-    pub fn choices<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
+    pub fn choices<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
         path: P,
-        from: &P::From,
+        from: &From,
         arr:  &[Em::Expr],
         em:   &mut Em
-    ) -> Result<Choices<P,T,Em::Expr>,Em::Error> {
+    ) -> Result<Choices<P,Em::Expr>,Em::Error>
+        where Self: 'a {
         let ch = &path.get(from).0;
         let sz = ch.len();
         let mut rvec = Vec::with_capacity(sz);
@@ -161,20 +158,21 @@ impl<T: Ord+HasSorts> Choice<T> {
         }
         Ok(Choices { path: path,
                      choices: rvec,
-                     pos: 0,
-                     phantom: PhantomData })
+                     pos: 0 })
     }
-    pub fn find<'a,Em: Embed,P: Path<'a,Em,To=Self>,F>(
+    pub fn find<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>,F>(
         path: P,
-        from: &P::From,
+        from: &From,
         arr:  &[Em::Expr],
         f:    F,
         em:   &mut Em
-    ) -> Result<Option<Then<P,ChoiceEl<T>>>,Em::Error>
-        where F: Fn(&Then<P,ChoiceEl<T>>,&P::From,&[Em::Expr],&mut Em)
-                    -> Result<bool,Em::Error> {
+    ) -> Result<Option<Then<P,ChoiceEl>>,Em::Error>
+        where F: Fn(&Then<P,ChoiceEl>,&From,&[Em::Expr],&mut Em)
+                    -> Result<bool,Em::Error>,
+              Self: 'a {
         let sz = path.get(from).0.len();
-        let mut npath = path.then(Self::element(0));
+        let mut npath = Then { first: path,
+                               then: ChoiceEl(0) };
         for i in 0..sz {
             npath.then.0 = i;
             if f(&npath,from,arr,em)? {
@@ -183,17 +181,18 @@ impl<T: Ord+HasSorts> Choice<T> {
         }
         Ok(None)
     }
-    pub fn set_chosen<'a,Em: Embed,
-                      P: Path<'a,Em,To=Self>>(
+    pub fn set_chosen<'a,Em: Embed,From,
+                      P: Path<'a,Em,From,To=Self>>(
         path:    &P,
-        from:    &mut P::From,
+        from:    &mut From,
         arr:     &mut Vec<Em::Expr>,
         el:      T,
         el_cont: &mut Vec<Em::Expr>,
         cond:    Em::Expr,
         em:      &mut Em
     ) -> Result<(),Em::Error>
-        where T: Composite<'a> {
+        where T: Composite,
+              Self: 'a {
         let limit = path.get(from).0.len();
         let mut pos = 0;
         while pos<limit {
@@ -250,16 +249,18 @@ impl<T: Ord+HasSorts> Choice<T> {
         Ok(())
     }
     pub fn sym_eq<'a,Em: Embed,
-                  P1: Path<'a,Em,To=Self>,
-                  P2: Path<'a,Em,To=Self>>(
+                  From1,From2,
+                  P1: Path<'a,Em,From1,To=Self>,
+                  P2: Path<'a,Em,From2,To=Self>>(
         pl: &P1,
-        froml: &P1::From,
+        froml: &From1,
         arrl: &[Em::Expr],
         pr: &P2,
-        fromr: &P2::From,
+        fromr: &From2,
         arrr: &[Em::Expr],
         em: &mut Em
-    ) -> Result<Option<Em::Expr>,Em::Error> {
+    ) -> Result<Option<Em::Expr>,Em::Error>
+        where Self: 'a {
         let lhs = pl.get(froml);
         let rhs = pr.get(fromr);
         let mut lpos = 0;
@@ -308,32 +309,36 @@ impl<T: Ord+HasSorts> Choice<T> {
         }
     }
     pub fn compare_using<'a,Em: Embed,
-                         P1: Path<'a,Em,To=Self>,
-                         P2: Path<'a,Em,To=Self>,
+                         From1,From2,
+                         P1: Path<'a,Em,From1,To=Self>,
+                         P2: Path<'a,Em,From2,To=Self>,
                          Cmp>(
         pl: &P1,
-        froml: &P1::From,
+        froml: &From1,
         arrl: &[Em::Expr],
         pr: &P2,
-        fromr: &P2::From,
+        fromr: &From2,
         arrr: &[Em::Expr],
         cmp: Cmp,
         em: &mut Em
     ) -> Result<Option<Em::Expr>,Em::Error>
-        where Cmp: Fn(&Then<P1,ChoiceEl<T>>,&P1::From,&[Em::Expr],
-                      &Then<P2,ChoiceEl<T>>,&P2::From,&[Em::Expr],
-                      &mut Em) -> Result<Option<Em::Expr>,Em::Error> {
+        where Cmp: Fn(&Then<P1,ChoiceEl>,&From1,&[Em::Expr],
+                      &Then<P2,ChoiceEl>,&From2,&[Em::Expr],
+                      &mut Em) -> Result<Option<Em::Expr>,Em::Error>,
+              Self: 'a {
 
         let lhs = pl.get(froml);
         let rhs = pr.get(fromr);
         let mut disj = Vec::new();
 
         for lpos in 0..lhs.0.len() {
-            let lpath = pl.clone().then(Choice::element(lpos));
+            let lpath = Then { first: pl.clone(),
+                               then: ChoiceEl(lpos) };
             let loff = lhs.offset(lpos);
 
             for rpos in 0..rhs.0.len() {
-                let rpath = pr.clone().then(Choice::element(rpos));
+                let rpath = Then { first: pr.clone(),
+                                   then: ChoiceEl(rpos) };
                 let roff = rhs.offset(rpos);
 
                 if let Some(cond) = cmp(&lpath,froml,arrl,
@@ -377,18 +382,19 @@ impl<T: HasSorts> HasSorts for Choice<T> {
     }
 }
 
-impl<'a,T: Ord+Composite<'a>> Composite<'a> for Choice<T> {
-    fn combine<Em,PL,PR,FComb,FL,FR>(
-        pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
-        pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
+impl<T: Ord+Composite> Composite for Choice<T> {
+    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &FromL,arrl: &[Em::Expr],
+        pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,
         res: &mut Vec<Em::Expr>,
         em: &mut Em)
         -> Result<Option<Self>,Em::Error>
         where
+        Self: 'a,
         Em: Embed,
-        PL: Path<'a,Em,To=Self>,
-        PR: Path<'a,Em,To=Self>,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
         FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
@@ -440,8 +446,10 @@ impl<'a,T: Ord+Composite<'a>> Composite<'a> for Choice<T> {
                     let sel_r = pr.read(fromr,off_r,arrr,em)?;
                     let nsel  = comb(sel_l,sel_r,em)?;
                     res.push(nsel);
-                    match T::combine(&pl.clone().then(Choice::element(pos_l)),froml,arrl,
-                                     &pr.clone().then(Choice::element(pos_r)),fromr,arrr,
+                    match T::combine(&Then { first: pl.clone(),
+                                             then: ChoiceEl(pos_l) },froml,arrl,
+                                     &Then { first: pr.clone(),
+                                             then: ChoiceEl(pos_r) },fromr,arrr,
                                      comb,fl,fr,res,em)? {
                         None => return Ok(None),
                         Some(el) => {
@@ -482,22 +490,21 @@ impl<'a,T: Ord+Composite<'a>> Composite<'a> for Choice<T> {
     }
 }
 
-impl<'a,T: 'a+Ord+HasSorts> SimplePathEl<'a> for ChoiceEl<T> {
-    type From = Choice<T>;
-    type To   = T;
-    fn get<'b>(&self,ch: &'b Self::From) -> &'b Self::To where 'a: 'b {
+impl<'a,T: 'a+Ord+HasSorts> SimplePathEl<'a,Choice<T>> for ChoiceEl {
+    type To = T;
+    fn get<'b>(&self,ch: &'b Choice<T>) -> &'b Self::To where 'a: 'b {
         &ch.0[self.0].1
     }
-    fn get_mut<'b>(&self,ch: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
+    fn get_mut<'b>(&self,ch: &'b mut Choice<T>) -> &'b mut Self::To where 'a: 'b {
         &mut ch.0[self.0].1
     }
 }
 
-impl<'a,T: 'a+Ord+HasSorts,Em: Embed> PathEl<'a,Em> for ChoiceEl<T> {
-    fn read<Prev: Path<'a,Em,To=Self::From>>(
+impl<'a,T: 'a+Ord+HasSorts,Em: Embed> PathEl<'a,Em,Choice<T>> for ChoiceEl {
+    fn read<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Choice<T>>>(
         &self,
         prev: &Prev,
-        from: &Prev::From,
+        from: &PrevFrom,
         pos: usize,
         arr: &[Em::Expr],
         em: &mut Em)
@@ -507,25 +514,25 @@ impl<'a,T: 'a+Ord+HasSorts,Em: Embed> PathEl<'a,Em> for ChoiceEl<T> {
         let off = ch.offset(self.0);
         prev.read(from,off+1+pos,arr,em)
     }
-    fn read_slice<'b,Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,pos: usize,len: usize,arr: &'b [Em::Expr])
+    fn read_slice<'b,PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Choice<T>>>(
+        &self,prev: &Prev,from: &PrevFrom,pos: usize,len: usize,arr: &'b [Em::Expr])
         -> Option<&'b [Em::Expr]> {
         let ch = prev.get(from);
         let off = ch.offset(self.0);
         prev.read_slice(from,off+pos+1,len,arr)
     }
-    fn write<Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,pos: usize,expr: Em::Expr,
+    fn write<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Choice<T>>>(
+        &self,prev: &Prev,from: &PrevFrom,pos: usize,expr: Em::Expr,
         arr: &mut Vec<Em::Expr>,em: &mut Em)
         -> Result<(),Em::Error> {
         let vec = prev.get(from);
         let off = vec.offset(self.0);
         prev.write(from,off+pos+1,expr,arr,em)
     }
-    fn write_slice<Prev: Path<'a,Em,To=Self::From>>(
+    fn write_slice<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Choice<T>>>(
         &self,
         prev: &Prev,
-        from: &mut Prev::From,
+        from: &mut PrevFrom,
         pos: usize,
         old_len: usize,
         src: &mut Vec<Em::Expr>,
@@ -552,9 +559,9 @@ impl<'a,T: 'a+Ord+HasSorts,Em: Embed> PathEl<'a,Em> for ChoiceEl<T> {
     }
 }
 
-impl<'a,Em: Embed,T: 'a+Ord+HasSorts,P: 'a+Path<'a,Em,To=Choice<T>>> CondIterator<Em> for Choices<P,T,Em::Expr> {
-    type Item = Then<P,ChoiceEl<T>>;
-    fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,em: &mut Em)
+impl<'a,P: Clone,Em: Embed> CondIterator<Em> for Choices<P,Em::Expr> {
+    type Item = Then<P,ChoiceEl>;
+    fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,_: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
         if self.pos >= self.choices.len() {
             return Ok(None)
@@ -562,7 +569,8 @@ impl<'a,Em: Embed,T: 'a+Ord+HasSorts,P: 'a+Path<'a,Em,To=Choice<T>>> CondIterato
         conds.truncate(cond_pos);
         let cond = self.choices[self.pos].clone();
         conds.push(cond);
-        let npath = self.path.clone().then(Choice::element(self.pos));
+        let npath = Then { first: self.path.clone(),
+                           then: ChoiceEl(self.pos) };
         self.pos+=1;
         Ok(Some(npath))
     }
@@ -638,14 +646,13 @@ impl<T : Ord+Semantic+Debug+HasSorts> Semantic for Choice<T> {
     }
 }
 
-impl<'a,
-     T: 'a+HasSorts+Ord,
-     P: SimplePath<'a,To=Choice<T>>+Clone> Iterator for Elements<P,T> {
-    type Item = Then<P,ChoiceEl<T>>;
+impl<'a,P: Clone> Iterator for Elements<P> {
+    type Item = Then<P,ChoiceEl>;
     fn next(&mut self) -> Option<Self::Item> {
         match self.indices.next() {
             None => None,
-            Some(idx) => Some(self.path.clone().then(Choice::element(idx)))
+            Some(idx) => Some(Then { first: self.path.clone(),
+                                     then: ChoiceEl(idx) })
         }
     }
 }

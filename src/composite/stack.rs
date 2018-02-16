@@ -1,6 +1,5 @@
 use composite::*;
 use composite::vec::*;
-use types::Value;
 use embed::DeriveValues;
 use num_bigint::BigUint;
 
@@ -10,18 +9,18 @@ pub struct BitVecVectorStack<T> {
     elements: CompVec<T>
 }
 
-pub struct BitVecVectorStackElements<T>(PhantomData<T>);
+#[derive(Clone)]
+pub struct BitVecVectorStackElements;
 
-pub struct BitVecVectorStackAccess<T,P,It> {
+pub struct BitVecVectorStackAccess<P,It> {
     path: P,
-    index: It,
-    phantom: PhantomData<T>
+    index: It
 }
 
-pub type DynBitVecVectorStackAccess<T,P,Em: DeriveValues>
-    = BitVecVectorStackAccess<T,P,IndexedIter<Em>>;
+pub type DynBitVecVectorStackAccess<P,Em: DeriveValues>
+    = BitVecVectorStackAccess<P,IndexedIter<Em>>;
 
-impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
+impl<T: Composite> BitVecVectorStack<T> {
     pub fn empty<Em: Embed>(bw: usize,res: &mut Vec<Em::Expr>,em: &mut Em)
                             -> Result<Self,Em::Error> {
         let top = em.const_bitvec(bw,BigUint::from(0u8))?;
@@ -41,49 +40,51 @@ impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
         Ok(BitVecVectorStack { bitwidth: bw,
                                elements: vec })
     }
-    pub fn elements() -> BitVecVectorStackElements<T> {
-        BitVecVectorStackElements(PhantomData)
+    pub fn elements() -> BitVecVectorStackElements {
+        BitVecVectorStackElements
     }
-    fn top_iter<Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+    fn top_iter<'a,Em: DeriveValues,From,P: Path<'a,Em,From,To=Self>>(
         path: &P,
-        from: &P::From,
+        from: &From,
         arr:  &[Em::Expr],
         em:   &mut Em
-    ) -> Result<IndexedIter<Em>,Em::Error> {
+    ) -> Result<IndexedIter<Em>,Em::Error>
+        where T: 'a {
         let top = path.read(from,0,arr,em)?;
         let len = path.get(from).elements.len();
         let it = IndexValue::new(&top,len,em)?;
         Ok(IndexIterator::new(top,it))
     }
-    pub fn top<Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+    pub fn top<'a,Em: DeriveValues,From,P: Path<'a,Em,From,To=Self>>(
         path:  P,
-        from:  &P::From,
+        from:  &From,
         arr:   &[Em::Expr],
         em:    &mut Em
-    ) -> Result<DynBitVecVectorStackAccess<T,P,Em>,
-                Em::Error> {
+    ) -> Result<DynBitVecVectorStackAccess<P,Em>,
+                Em::Error>
+        where T: 'a {
         let it = Self::top_iter(&path,from,arr,em)?;
         Ok(BitVecVectorStackAccess { path: path,
-                                     index: it,
-                                     phantom: PhantomData })
+                                     index: it })
     }
-    pub fn push<Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+    pub fn push<'a,Em: DeriveValues,From,P: Path<'a,Em,From,To=Self>>(
         path:  &P,
-        from:  &mut P::From,
+        from:  &mut From,
         arr:   &mut Vec<Em::Expr>,
         conds: &mut Vec<Em::Expr>,
         el:    &T,
         elc:   &Vec<Em::Expr>,
         em:    &mut Em
-    ) -> Result<(),Em::Error> {
+    ) -> Result<(),Em::Error>
+        where T: 'a {
         let mut it = Self::top_iter(path,from,arr,em)?;
         let cond_pos = conds.len();
         let n_elem = path.get(from).elements.len();
         while let Some(idx) = it.next(conds,cond_pos,em)? {
             if n_elem > 0 && idx < n_elem-1 {
-                let el_path = path.clone()
-                    .then(BitVecVectorStack::elements())
-                    .then(CompVec::element(idx+1));
+                let el_path = Then { first: Then { first: path.clone(),
+                                                   then: BitVecVectorStackElements },
+                                     then: CompVecP(idx+1) };
                 if conds.len()==0 {
                     let old_len = {
                         let el_ref = el_path.get_mut(from);
@@ -98,13 +99,14 @@ impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
                     let old_len = el_path.get(from).num_elem();
                     let nel = ite(&cond,
                                   &el_path,from,arr,
-                                  &Id(PhantomData),el,&elc[..],
+                                  &Id,el,&elc[..],
                                   &mut nelc,em)?.expect("Failed to merge");
                     *(el_path.get_mut(from)) = nel;
                     el_path.write_slice(from,0,old_len,&mut nelc,arr,em)?;
                 }
             } else {
-                CompVec::push(&path.clone().then(BitVecVectorStack::elements()),
+                CompVec::push(&Then { first: path.clone(),
+                                      then: BitVecVectorStackElements },
                               from,arr,
                               el.clone(),
                               &mut elc.clone(),
@@ -125,13 +127,14 @@ impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
         path.write(from,0,new_top,arr,em)?;
         Ok(())
     }
-    pub fn pop<Em: DeriveValues,P: Path<'a,Em,To=Self>>(
+    pub fn pop<'a,Em: DeriveValues,From,P: Path<'a,Em,From,To=Self>>(
         path:  &P,
-        from:  &mut P::From,
+        from:  &mut From,
         arr:   &mut Vec<Em::Expr>,
         conds: &mut Vec<Em::Expr>,
         em:    &mut Em
-    ) -> Result<(),Em::Error> {
+    ) -> Result<(),Em::Error>
+        where T: 'a {
         let bw      = path.get(from).bitwidth;
         let old_top = path.read(from,0,arr,em)?;
         let one     = em.const_bitvec(bw,BigUint::from(0u8))?;
@@ -149,12 +152,6 @@ impl<'a,T: Composite<'a>> BitVecVectorStack<T> {
     }
 }
 
-impl<T> Clone for BitVecVectorStackElements<T> {
-    fn clone(&self) -> Self {
-        BitVecVectorStackElements(PhantomData)
-    }
-}
-
 impl<T : HasSorts> HasSorts for BitVecVectorStack<T> {
     fn num_elem(&self) -> usize {
         self.elements.num_elem()+1
@@ -169,40 +166,41 @@ impl<T : HasSorts> HasSorts for BitVecVectorStack<T> {
     }
 }
 
-impl<'a,T: 'a> SimplePathEl<'a> for BitVecVectorStackElements<T> {
-    type From = BitVecVectorStack<T>;
+impl<'a,T: 'a> SimplePathEl<'a,BitVecVectorStack<T>> for BitVecVectorStackElements {
     type To   = CompVec<T>;
-    fn get<'b>(&self,from: &'b Self::From) -> &'b Self::To where 'a: 'b {
+    fn get<'b>(&self,from: &'b BitVecVectorStack<T>)
+               -> &'b Self::To where 'a: 'b {
         &from.elements
     }
-    fn get_mut<'b>(&self,from: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
+    fn get_mut<'b>(&self,from: &'b mut BitVecVectorStack<T>)
+                   -> &'b mut Self::To where 'a: 'b {
         &mut from.elements
     }
 }
 
-impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for BitVecVectorStackElements<T> {
-    fn read<Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,pos: usize,arr: &[Em::Expr],em: &mut Em)
+impl<'a,Em: Embed,T: 'a> PathEl<'a,Em,BitVecVectorStack<T>> for BitVecVectorStackElements {
+    fn read<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=BitVecVectorStack<T>>>(
+        &self,prev: &Prev,from: &PrevFrom,pos: usize,arr: &[Em::Expr],em: &mut Em)
         -> Result<Em::Expr,Em::Error> {
         prev.read(from,pos+1,arr,em)
     }
-    fn read_slice<'b,Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,pos: usize,len: usize,arr: &'b [Em::Expr])
+    fn read_slice<'b,PrevFrom,Prev: Path<'a,Em,PrevFrom,To=BitVecVectorStack<T>>>(
+        &self,prev: &Prev,from: &PrevFrom,pos: usize,len: usize,arr: &'b [Em::Expr])
         -> Option<&'b [Em::Expr]> {
         match prev.read_slice(from,pos+1,len,arr) {
             None => None,
             Some(sl) => Some(sl)
         }
     }
-    fn write<Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,pos: usize,expr: Em::Expr,
+    fn write<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=BitVecVectorStack<T>>>(
+        &self,prev: &Prev,from: &PrevFrom,pos: usize,expr: Em::Expr,
         arr: &mut Vec<Em::Expr>,em: &mut Em)
         -> Result<(),Em::Error> {
 
         prev.write(from,pos+1,expr,arr,em)
     }
-    fn write_slice<Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &mut Prev::From,
+    fn write_slice<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=BitVecVectorStack<T>>>(
+        &self,prev: &Prev,from: &mut PrevFrom,
         pos: usize,old_len: usize,
         src: &mut Vec<Em::Expr>,
         trg: &mut Vec<Em::Expr>,
@@ -213,19 +211,20 @@ impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for BitVecVectorStackElements<T> {
     }
 }
 
-impl<'a,T: Composite<'a>> Composite<'a> for BitVecVectorStack<T> {
+impl<T: Composite> Composite for BitVecVectorStack<T> {
 
-    fn combine<Em,PL,PR,FComb,FL,FR>(
-        pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
-        pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
+    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &FromL,arrl: &[Em::Expr],
+        pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,
         res: &mut Vec<Em::Expr>,
         em: &mut Em)
         -> Result<Option<Self>,Em::Error>
         where
+        Self: 'a,
         Em: Embed,
-        PL: Path<'a,Em,To=Self>,
-        PR: Path<'a,Em,To=Self>,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
         FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
@@ -243,44 +242,50 @@ impl<'a,T: Composite<'a>> Composite<'a> for BitVecVectorStack<T> {
         let ntop = comb(topl,topr,em)?;
         res.push(ntop);
 
-        match CompVec::combine(&pl.clone().then(BitVecVectorStack::elements()),
-                               froml,arrl,
-                               &pr.clone().then(BitVecVectorStack::elements()),
-                               fromr,arrr,
-                               comb,fl,fr,
-                               res,em)? {
+        match CompVec::<T>::combine(
+            &Then { first: pl.clone(),
+                    then: BitVecVectorStackElements },
+            froml,arrl,
+            &Then { first: pr.clone(),
+                    then: BitVecVectorStackElements },
+            fromr,arrr,
+            comb,fl,fr,
+            res,em)? {
             None => Ok(None),
             Some(nelem) => Ok(Some(BitVecVectorStack { bitwidth: bwl,
                                                        elements: nelem }))
         }
     }
 
-    fn invariant<Em,P>(path: &P,from: &P::From,arr: &[Em::Expr],
-                          res: &mut Vec<Em::Expr>,
-                          em: &mut Em)
-                          -> Result<(),Em::Error>
-        where Em: Embed,
-              P: Path<'a,Em,To=Self> {
-        CompVec::invariant(&path.clone().then(BitVecVectorStack::elements()),
-                           from,arr,res,em)
+    fn invariant<'a,Em,From,P>(
+        path: &P,from: &From,arr: &[Em::Expr],
+        res: &mut Vec<Em::Expr>,
+        em: &mut Em)
+        -> Result<(),Em::Error>
+        where Self: 'a,
+              Em: Embed,
+              P: Path<'a,Em,From,To=Self> {
+        CompVec::<T>::invariant(
+            &Then { first: path.clone(),
+                    then: BitVecVectorStackElements },
+            from,arr,res,em)
     }
 }
 
-impl<'a,Em,T,P,It> CondIterator<Em> for BitVecVectorStackAccess<T,P,It>
-    where Em: Embed,
-          T: 'a+Composite<'a>,
-          P: Path<'a,Em,To=BitVecVectorStack<T>>,
+impl<'a,Em,P,It> CondIterator<Em> for BitVecVectorStackAccess<P,It>
+    where P: Clone,
+          Em: Embed,
           It: CondIterator<Em,Item=usize> {
-    type Item = Then<Then<P,BitVecVectorStackElements<T>>,
-                     CompVecP<T>>;
+    type Item = Then<Then<P,BitVecVectorStackElements>,
+                     CompVecP>;
     fn next(&mut self,conds: &mut Vec<Em::Expr>,cond_pos: usize,em: &mut Em)
             -> Result<Option<Self::Item>,Em::Error> {
         match self.index.next(conds,cond_pos,em)? {
             None => Ok(None),
             Some(idx) => {
-                let npath = self.path.clone()
-                    .then(BitVecVectorStack::elements())
-                    .then(CompVec::element(idx));
+                let npath = Then { first: Then { first: self.path.clone(),
+                                                 then: BitVecVectorStackElements },
+                                   then: CompVecP(idx) };
                 Ok(Some(npath))
             }
         }

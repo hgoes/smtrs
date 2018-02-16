@@ -6,17 +6,12 @@ use std::hash::Hasher;
 #[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct Assoc<K,V>(Vec<(usize,K,V)>);
 
-pub struct AssocP<K,V>(usize,PhantomData<(K,V)>);
+#[derive(Clone)]
+pub struct AssocP(usize);
 
 pub struct AssocMeaning<K,T : Semantic> {
     pub key: K,
     pub meaning: T::Meaning
-}
-
-impl<K,V> Clone for AssocP<K,V> {
-    fn clone(&self) -> Self {
-        AssocP(self.0,PhantomData)
-    }
 }
 
 impl<K: Ord,V: HasSorts> Assoc<K,V> {
@@ -62,7 +57,8 @@ impl<K: Ord,V: HasSorts> Assoc<K,V> {
             Ok(Assoc(vec))
         } else {
             let off = res.len();
-            let path = Id::new().then(Offset::new(off));
+            let path = Then { first: Id,
+                              then: Offset::new(off) };
             let mut cassoc = Assoc(vec);
             let mut buf = Vec::new();
             for i in it {
@@ -81,30 +77,37 @@ impl<K: Ord,V: HasSorts> Assoc<K,V> {
             self.0[i-1].0
         }
     }
-    pub fn element(i: usize) -> AssocP<K,V> {
-        AssocP(i,PhantomData)
+    pub fn element(i: usize) -> AssocP {
+        AssocP(i)
     }
-    pub fn lookup<'a,P: SimplePath<'a,To=Self>>(path: P,from: &P::From,key: &K)
-                                                -> Option<Then<P,AssocP<K,V>>> {
+    pub fn lookup<'a,From,P: SimplePath<'a,From,To=Self>>(
+        path: P,
+        from: &From,
+        key: &K) -> Option<Then<P,AssocP>>
+        where V: 'a,
+              K: 'a {
         let assoc = path.get(from);
         match assoc.0.binary_search_by(|&(_,ref k,_)| key.cmp(k)) {
             Ok(idx) => Some(Then { first: path,
-                                   then: AssocP(idx,PhantomData) }),
+                                   then: AssocP(idx) }),
             Err(_) => None
         }
     }
-    pub fn insert<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
+    pub fn insert<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
         assoc: &P,
-        assoc_from: &mut P::From,
+        assoc_from: &mut From,
         assoc_cont: &mut Vec<Em::Expr>,
         key: K,
         el: V,
         el_cont: &mut Vec<Em::Expr>,
         em: &mut Em
-    ) -> Result<AssocP<K,V>,Em::Error> {
+    ) -> Result<AssocP,Em::Error>
+        where V: 'a,
+              K: 'a {
         match assoc.get(assoc_from).0.binary_search_by(|&(_,ref k,_)| k.cmp(&key)) {
             Ok(idx) => {
-                let path = assoc.clone().then(Assoc::element(idx));
+                let path = Then { first: assoc.clone(),
+                                  then: AssocP(idx) };
                 let old_len = {
                     let el_ref = path.get_mut(assoc_from);
                     let old_len = el_ref.num_elem();
@@ -130,20 +133,22 @@ impl<K: Ord,V: HasSorts> Assoc<K,V> {
             }
         }
     }
-    pub fn insert_cond<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
+    pub fn insert_cond<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
         assoc: P,
-        assoc_from: &mut P::From,
+        assoc_from: &mut From,
         assoc_cont: &mut Vec<Em::Expr>,
         key: K,
         el: V,
         el_cont: &mut Vec<Em::Expr>,
         cond: &Em::Expr,
         em: &mut Em
-    ) -> Result<AssocP<K,V>,Em::Error>
-        where V: Composite<'a> {
+    ) -> Result<AssocP,Em::Error>
+        where V: 'a+Composite,
+              K: 'a {
         match assoc.get(assoc_from).0.binary_search_by(|&(_,ref k,_)| k.cmp(&key)) {
             Ok(idx) => {
-                let path = assoc.clone().then(Assoc::element(idx));
+                let path = Then { first: assoc.clone(),
+                                  then: AssocP(idx) };
                 let mut res_cont = Vec::new();
                 let res = ite(cond,
                               &path,assoc_from,&assoc_cont[..],
@@ -175,19 +180,21 @@ impl<K: Ord,V: HasSorts> Assoc<K,V> {
             }
         }
     }
-    pub fn lookup_or_insert<'a,Em: Embed,P: Path<'a,Em,To=Self>,
+    pub fn lookup_or_insert<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>,
                             F: FnOnce(&mut Vec<Em::Expr>,&mut Em) -> Result<V,Em::Error>
                             >(
         path: P,
-        from: &mut P::From,
+        from: &mut From,
         arr:  &mut Vec<Em::Expr>,
         key: K,
         create: F,
         em: &mut Em
-    ) -> Result<(bool,Then<P,AssocP<K,V>>),Em::Error> {
+    ) -> Result<(bool,Then<P,AssocP>),Em::Error>
+        where V: 'a,
+              K: 'a {
         match path.get(from).0.binary_search_by(|&(_,ref k,_)| key.cmp(k)) {
             Ok(idx) => Ok((true,Then { first: path,
-                                       then: AssocP(idx,PhantomData) })),
+                                       then: AssocP(idx) })),
             Err(idx) => {
                 let mut inp = Vec::new();
                 let el = create(&mut inp,em)?;
@@ -204,7 +211,7 @@ impl<K: Ord,V: HasSorts> Assoc<K,V> {
                 };
                 path.write_slice(from,off,0,&mut inp,arr,em)?;
                 Ok((false,Then { first: path,
-                                 then: AssocP(idx,PhantomData) }))
+                                 then: AssocP(idx) }))
             }
         }
     }
@@ -238,18 +245,19 @@ impl<K: Ord+Hash,V: HasSorts> HasSorts for Assoc<K,V> {
     }
 }
 
-impl<'a,K: Ord+Hash+Clone,V: Composite<'a>> Composite<'a> for Assoc<K,V> {
-    fn combine<Em,PL,PR,FComb,FL,FR>(
-        pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
-        pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
+impl<K: Ord+Hash+Clone,V: Composite> Composite for Assoc<K,V> {
+    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &FromL,arrl: &[Em::Expr],
+        pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,
         res: &mut Vec<Em::Expr>,
         em: &mut Em)
         -> Result<Option<Self>,Em::Error>
         where
+        Self: 'a,
         Em: Embed,
-        PL: Path<'a,Em,To=Self>,
-        PR: Path<'a,Em,To=Self>,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
         FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
@@ -265,7 +273,8 @@ impl<'a,K: Ord+Hash+Clone,V: Composite<'a>> Composite<'a> for Assoc<K,V> {
         loop {
             if pos_l >= vecl.0.len() {
                 for i in pos_r..vecr.0.len() {
-                    let path = pr.clone().then(Assoc::element(i));
+                    let path = Then { first: pr.clone(),
+                                      then: AssocP(i) };
                     let key  = &vecr.0[i].1;
                     let el   = &vecr.0[i].2;
                     let len  = el.num_elem();
@@ -280,7 +289,8 @@ impl<'a,K: Ord+Hash+Clone,V: Composite<'a>> Composite<'a> for Assoc<K,V> {
             }
             if pos_r >= vecr.0.len() {
                 for i in pos_l..vecl.0.len() {
-                    let path = pl.clone().then(Assoc::element(i));
+                    let path = Then { first: pl.clone(),
+                                      then: AssocP(i) };
                     let key  = &vecl.0[i].1;
                     let el   = &vecl.0[i].2;
                     let len  = el.num_elem();
@@ -297,8 +307,10 @@ impl<'a,K: Ord+Hash+Clone,V: Composite<'a>> Composite<'a> for Assoc<K,V> {
             let key_r = &vecr.0[pos_r].1;
             match key_l.cmp(key_r) {
                 Ordering::Equal => {
-                    match V::combine(&pl.clone().then(Assoc::element(pos_l)),froml,arrl,
-                                     &pr.clone().then(Assoc::element(pos_r)),fromr,arrr,
+                    match V::combine(&Then { first: pl.clone(),
+                                             then: AssocP(pos_l) },froml,arrl,
+                                     &Then { first: pr.clone(),
+                                             then: AssocP(pos_r) },fromr,arrr,
                                      comb,fl,fr,res,em)? {
                         None => return Ok(None),
                         Some(el) => {
@@ -310,7 +322,8 @@ impl<'a,K: Ord+Hash+Clone,V: Composite<'a>> Composite<'a> for Assoc<K,V> {
                     }
                 },
                 Ordering::Less => {
-                    let path = pl.clone().then(Assoc::element(pos_l));
+                    let path = Then { first: pl.clone(),
+                                      then: AssocP(pos_l) };
                     let key  = &vecl.0[pos_l].1;
                     let el   = &vecl.0[pos_l].2;
                     let len  = el.num_elem();
@@ -323,7 +336,8 @@ impl<'a,K: Ord+Hash+Clone,V: Composite<'a>> Composite<'a> for Assoc<K,V> {
                     pos_l+=1;
                 },
                 Ordering::Greater => {
-                    let path = pr.clone().then(Assoc::element(pos_r));
+                    let path = Then { first: pr.clone(),
+                                      then: AssocP(pos_r) };
                     let key  = &vecr.0[pos_r].1;
                     let el   = &vecr.0[pos_r].2;
                     let len  = el.num_elem();
@@ -341,22 +355,21 @@ impl<'a,K: Ord+Hash+Clone,V: Composite<'a>> Composite<'a> for Assoc<K,V> {
     }
 }
 
-impl<'a,K: 'a+Ord,V: 'a+HasSorts> SimplePathEl<'a> for AssocP<K,V> {
-    type From = Assoc<K,V>;
-    type To   = V;
-    fn get<'b>(&self,assoc: &'b Self::From) -> &'b Self::To where 'a: 'b {
+impl<'a,K: 'a+Ord,V: 'a+HasSorts> SimplePathEl<'a,Assoc<K,V>> for AssocP {
+    type To = V;
+    fn get<'b>(&self,assoc: &'b Assoc<K,V>) -> &'b Self::To where 'a: 'b {
         &assoc.0[self.0].2
     }
-    fn get_mut<'b>(&self,assoc: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
+    fn get_mut<'b>(&self,assoc: &'b mut Assoc<K,V>) -> &'b mut Self::To where 'a: 'b {
         &mut assoc.0[self.0].2
     }
 }
 
-impl<'a,K: 'a+Ord,V: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for AssocP<K,V> {
-    fn read<Prev: Path<'a,Em,To=Self::From>>(
+impl<'a,K: 'a+Ord,V: 'a+HasSorts,Em: Embed> PathEl<'a,Em,Assoc<K,V>> for AssocP {
+    fn read<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Assoc<K,V>>>(
         &self,
         prev: &Prev,
-        from: &Prev::From,
+        from: &PrevFrom,
         pos: usize,
         arr: &[Em::Expr],
         em: &mut Em)
@@ -366,25 +379,25 @@ impl<'a,K: 'a+Ord,V: 'a+HasSorts,Em: Embed> PathEl<'a,Em> for AssocP<K,V> {
         let off = assoc.offset(self.0);
         prev.read(from,off+pos,arr,em)
     }
-    fn read_slice<'b,Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,pos: usize,len: usize,arr: &'b [Em::Expr])
+    fn read_slice<'b,PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Assoc<K,V>>>(
+        &self,prev: &Prev,from: &PrevFrom,pos: usize,len: usize,arr: &'b [Em::Expr])
         -> Option<&'b [Em::Expr]> {
         let vec = prev.get(from);
         let off = vec.offset(self.0);
         prev.read_slice(from,off+pos,len,arr)
     }
-    fn write<Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,pos: usize,expr: Em::Expr,
+    fn write<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Assoc<K,V>>>(
+        &self,prev: &Prev,from: &PrevFrom,pos: usize,expr: Em::Expr,
         arr: &mut Vec<Em::Expr>,em: &mut Em)
         -> Result<(),Em::Error> {
         let vec = prev.get(from);
         let off = vec.offset(self.0);
         prev.write(from,off+pos,expr,arr,em)
     }
-    fn write_slice<Prev: Path<'a,Em,To=Self::From>>(
+    fn write_slice<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Assoc<K,V>>>(
         &self,
         prev: &Prev,
-        from: &mut Prev::From,
+        from: &mut PrevFrom,
         pos: usize,
         old_len: usize,
         src: &mut Vec<Em::Expr>,

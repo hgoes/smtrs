@@ -1,15 +1,16 @@
 use composite::*;
 
-pub struct SomeP<T>(PhantomData<T>);
+#[derive(Clone)]
+pub struct SomeP;
 
-pub fn set_some<'a,Em: Embed,T: HasSorts+Clone,
-                P: Path<'a,Em,To=Option<T>>,
-                PSrc: Path<'a,Em,To=T>>(
+pub fn set_some<'a,Em: Embed,From,T: 'a+HasSorts+Clone,
+                P: Path<'a,Em,From,To=Option<T>>,
+                FromSrc,PSrc: Path<'a,Em,FromSrc,To=T>>(
     path: &P,
-    from: &mut P::From,
+    from: &mut From,
     arr:  &mut Vec<Em::Expr>,
     path_src: &PSrc,
-    from_src: &PSrc::From,
+    from_src: &FromSrc,
     arr_src:  &[Em::Expr],
     em: &mut Em
 ) -> Result<(),Em::Error> {
@@ -25,57 +26,53 @@ pub fn set_some<'a,Em: Embed,T: HasSorts+Clone,
     path.write_slice(from,0,old_sz,arr,&mut buf,em)
 }
 
-pub fn option<'a,T,P: SimplePath<'a,To=Option<T>>>(path: P,from: &P::From)
-                                                   -> Option<Then<P,SomeP<T>>> {
+pub fn option<'a,T: 'a,From,P: SimplePath<'a,From,To=Option<T>>>(
+    path: P,
+    from: &From) -> Option<Then<P,SomeP>> {
     match path.get(from) {
         &None => None,
-        &Some(_) => Some(path.then(some()))
+        &Some(_) => Some(Then { first: path,
+                                then: SomeP })
     }
 }
 
-pub fn some<T>() -> SomeP<T> {
-    SomeP(PhantomData)
+pub fn some() -> SomeP {
+    SomeP
 }
 
-impl<T> Clone for SomeP<T> {
-    fn clone(&self) -> Self {
-        SomeP(PhantomData)
-    }
-}
-
-impl<'a,T: 'a> SimplePathEl<'a> for SomeP<T> {
-    type From = Option<T>;
-    type To   = T;
-    fn get<'b>(&self,from: &'b Self::From) -> &'b Self::To where 'a: 'b {
+impl<'a,T: 'a> SimplePathEl<'a,Option<T>> for SomeP {
+    type To = T;
+    fn get<'b>(&self,from: &'b Option<T>) -> &'b Self::To where 'a: 'b {
         from.as_ref().expect("get called on None")
     }
-    fn get_mut<'b>(&self,from: &'b mut Self::From) -> &'b mut Self::To where 'a: 'b {
+    fn get_mut<'b>(&self,from: &'b mut Option<T>)
+                   -> &'b mut Self::To where 'a: 'b {
         from.as_mut().expect("get_mut called on None")
     }
 }
 
-impl<'a,Em: Embed,T: 'a> PathEl<'a,Em> for SomeP<T> {
-    fn read<Prev: Path<'a,Em,To=Self::From>>(
+impl<'a,Em: Embed,T: 'a> PathEl<'a,Em,Option<T>> for SomeP {
+    fn read<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Option<T>>>(
         &self,
-        prev: &Prev,from: &Prev::From,
+        prev: &Prev,from: &PrevFrom,
         pos: usize,src: &[Em::Expr],em: &mut Em)
         -> Result<Em::Expr,Em::Error> {
         prev.read(from,pos,src,em)
     }
-    fn read_slice<'b,Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,pos: usize,len: usize,src: &'b [Em::Expr])
+    fn read_slice<'b,PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Option<T>>>(
+        &self,prev: &Prev,from: &PrevFrom,pos: usize,len: usize,src: &'b [Em::Expr])
         -> Option<&'b [Em::Expr]> {
         prev.read_slice(from,pos,len,src)
     }
-    fn write<Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &Prev::From,
+    fn write<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Option<T>>>(
+        &self,prev: &Prev,from: &PrevFrom,
         pos: usize,ne: Em::Expr,
         trg: &mut Vec<Em::Expr>,em: &mut Em)
         -> Result<(),Em::Error> {
         prev.write(from,pos,ne,trg,em)
     }
-    fn write_slice<Prev: Path<'a,Em,To=Self::From>>(
-        &self,prev: &Prev,from: &mut Prev::From,pos: usize,old_len: usize,
+    fn write_slice<PrevFrom,Prev: Path<'a,Em,PrevFrom,To=Option<T>>>(
+        &self,prev: &Prev,from: &mut PrevFrom,pos: usize,old_len: usize,
         src: &mut Vec<Em::Expr>,trg: &mut Vec<Em::Expr>,em: &mut Em)
         -> Result<(),Em::Error> {
         prev.write_slice(from,pos,old_len,src,trg,em)
@@ -98,18 +95,19 @@ impl<T: HasSorts> HasSorts for Option<T> {
     }
 }
 
-impl<'a,T: Composite<'a>> Composite<'a> for Option<T> {
-    fn combine<Em,PL,PR,FComb,FL,FR>(
-        pl: &PL,froml: &PL::From,srcl: &[Em::Expr],
-        pr: &PR,fromr: &PR::From,srcr: &[Em::Expr],
+impl<T: Composite> Composite for Option<T> {
+    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &FromL,srcl: &[Em::Expr],
+        pr: &PR,fromr: &FromR,srcr: &[Em::Expr],
         comb: &FComb,only_l: &FL,only_r: &FR,
         res: &mut Vec<Em::Expr>,
         em: &mut Em)
         -> Result<Option<Self>,Em::Error>
         where
+        Self: 'a,
         Em: Embed,
-        PL: Path<'a,Em,To=Self>,
-        PR: Path<'a,Em,To=Self>,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
         FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
@@ -155,7 +153,7 @@ impl<'a,T: Composite<'a>> Composite<'a> for Option<T> {
     }
 }
 
-impl<T : Semantic> Semantic for Option<T> {
+impl<T: Semantic> Semantic for Option<T> {
     type Meaning = T::Meaning;
     type MeaningCtx = T::MeaningCtx;
     fn meaning(&self,n: usize) -> Self::Meaning {

@@ -5,7 +5,8 @@ use types;
 pub struct Data<T>(pub T);
 
 impl<T> Data<T> {
-    pub fn get<'a,'b,Em: Embed,P: Path<'a,Em,To=Self>>(path: &P,from: &'b P::From) -> &'b T where 'a: 'b {
+    pub fn get<'a,'b,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(path: &P,from: &'b From) -> &'b T
+        where 'a: 'b, T: 'a {
         &path.get(from).0
     }
 }
@@ -18,18 +19,19 @@ impl<T> HasSorts for Data<T> {
     }
 }
 
-impl<'a,T: Clone+Hash+Eq> Composite<'a> for Data<T> {
-    fn combine<Em,PL,PR,FComb,FL,FR>(
-        pl: &PL,froml: &PL::From,_: &[Em::Expr],
-        pr: &PR,fromr: &PR::From,_: &[Em::Expr],
+impl<T: Clone+Hash+Eq> Composite for Data<T> {
+    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &FromL,_: &[Em::Expr],
+        pr: &PR,fromr: &FromR,_: &[Em::Expr],
         _: &FComb,_: &FL,_: &FR,
         _: &mut Vec<Em::Expr>,
         _: &mut Em)
         -> Result<Option<Self>,Em::Error>
         where
+        Self: 'a,
         Em: Embed,
-        PL: Path<'a,Em,To=Self>,
-        PR: Path<'a,Em,To=Self>,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
         FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
@@ -48,17 +50,17 @@ impl<'a,T: Clone+Hash+Eq> Composite<'a> for Data<T> {
 pub struct Singleton(pub types::Sort);
 
 impl Singleton {
-    pub fn get<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
+    pub fn get<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
         path: &P,
-        from: &P::From,
+        from: &From,
         src:  &[Em::Expr],
         em:   &mut Em
     ) -> Result<Em::Expr,Em::Error> {
         path.read(from,0,src,em)
     }
-    pub fn set<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
+    pub fn set<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
         path: &P,
-        from: &mut P::From,
+        from: &mut From,
         src:  &mut Vec<Em::Expr>,
         expr: Em::Expr,
         em:   &mut Em
@@ -69,24 +71,24 @@ impl Singleton {
         path.get_mut(from).0 = nsort;
         Ok(())
     }
-    pub fn set_same_type<'a,Em: Embed,P: Path<'a,Em,To=Self>>(
+    pub fn set_same_type<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
         path: &P,
-        from: &mut P::From,
+        from: &mut From,
         src:  &mut Vec<Em::Expr>,
         expr: Em::Expr,
         em:   &mut Em
     ) -> Result<(),Em::Error> {
         path.write(from,0,expr,src,em)
     }
-    pub fn update<'a,Em,P,F>(
+    pub fn update<'a,Em,From,P,F>(
         path: &P,
-        from: &mut P::From,
+        from: &mut From,
         src:  &mut Vec<Em::Expr>,
         fun:  F,
         em:   &mut Em
     ) -> Result<(),Em::Error>
         where Em: Embed,
-              P: Path<'a,Em,To=Self>,
+              P: Path<'a,Em,From,To=Self>,
               F: FnOnce(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
         let expr = path.read(from,0,&src[..],em)?;
         let nexpr = fun(expr,em)?;
@@ -97,15 +99,15 @@ impl Singleton {
         sing.0 = nsort;
         Ok(())
     }
-    pub fn update_same_type<'a,Em,P,F>(
+    pub fn update_same_type<'a,Em,From,P,F>(
         path: &P,
-        from: &P::From,
+        from: &From,
         src:  &mut Vec<Em::Expr>,
         fun:  F,
         em:   &mut Em
     ) -> Result<(),Em::Error>
         where Em: Embed,
-              P: Path<'a,Em,To=Self>,
+              P: Path<'a,Em,From,To=Self>,
               F: FnOnce(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
         let expr = path.read(from,0,&src[..],em)?;
         let nexpr = fun(expr,em)?;
@@ -122,18 +124,19 @@ impl HasSorts for Singleton {
     }
 }
 
-impl<'a> Composite<'a> for Singleton {
-    fn combine<Em,PL,PR,FComb,FL,FR>(
-        pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
-        pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
+impl Composite for Singleton {
+    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &FromL,arrl: &[Em::Expr],
+        pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,_: &FL,_: &FR,
         res: &mut Vec<Em::Expr>,
         em: &mut Em)
         -> Result<Option<Self>,Em::Error>
         where
+        Self: 'a,
         Em: Embed,
-        PL: Path<'a,Em,To=Self>,
-        PR: Path<'a,Em,To=Self>,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
         FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
@@ -166,18 +169,19 @@ impl HasSorts for SingletonBool {
     }
 }
 
-impl<'a> Composite<'a> for SingletonBool {
-    fn combine<Em,PL,PR,FComb,FL,FR>(
-        pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
-        pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
+impl Composite for SingletonBool {
+    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &FromL,arrl: &[Em::Expr],
+        pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,_: &FL,_: &FR,
         res: &mut Vec<Em::Expr>,
         em: &mut Em)
         -> Result<Option<Self>,Em::Error>
         where
+        Self: 'a,
         Em: Embed,
-        PL: Path<'a,Em,To=Self>,
-        PR: Path<'a,Em,To=Self>,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
         FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
@@ -221,18 +225,19 @@ impl HasSorts for SingletonBitVec {
     }
 }
 
-impl<'a> Composite<'a> for SingletonBitVec {
-    fn combine<Em,PL,PR,FComb,FL,FR>(
-        pl: &PL,froml: &PL::From,arrl: &[Em::Expr],
-        pr: &PR,fromr: &PR::From,arrr: &[Em::Expr],
+impl Composite for SingletonBitVec {
+    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &FromL,arrl: &[Em::Expr],
+        pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,_: &FL,_: &FR,
         res: &mut Vec<Em::Expr>,
         em: &mut Em)
         -> Result<Option<Self>,Em::Error>
         where
+        Self: 'a,
         Em: Embed,
-        PL: Path<'a,Em,To=Self>,
-        PR: Path<'a,Em,To=Self>,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
         FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
