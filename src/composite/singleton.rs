@@ -19,8 +19,8 @@ impl<T> HasSorts for Data<T> {
     }
 }
 
-impl<T: Clone+Hash+Eq> Composite for Data<T> {
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+impl<'a,T: Clone+Hash+Eq> Composite<'a> for Data<T> {
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         pl: &PL,froml: &FromL,_: &[Em::Expr],
         pr: &PR,fromr: &FromR,_: &[Em::Expr],
         _: &FComb,_: &FL,_: &FR,
@@ -124,8 +124,8 @@ impl HasSorts for Singleton {
     }
 }
 
-impl Composite for Singleton {
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+impl<'a> Composite<'a> for Singleton {
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         pl: &PL,froml: &FromL,arrl: &[Em::Expr],
         pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,_: &FL,_: &FR,
@@ -169,8 +169,8 @@ impl HasSorts for SingletonBool {
     }
 }
 
-impl Composite for SingletonBool {
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+impl<'a> Composite<'a> for SingletonBool {
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         pl: &PL,froml: &FromL,arrl: &[Em::Expr],
         pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,_: &FL,_: &FR,
@@ -196,7 +196,7 @@ impl Composite for SingletonBool {
     }
 }
 
-impl<D : Eq+Clone+Hash> Semantic for Data<D> {
+impl<D: Eq+Clone+Hash> Semantic for Data<D> {
     type Meaning = ();
     type MeaningCtx = ();
     fn meaning(&self,_:usize) -> Self::Meaning {
@@ -225,8 +225,8 @@ impl HasSorts for SingletonBitVec {
     }
 }
 
-impl Composite for SingletonBitVec {
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+impl<'a> Composite<'a> for SingletonBitVec {
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         pl: &PL,froml: &FromL,arrl: &[Em::Expr],
         pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,_: &FL,_: &FR,

@@ -191,7 +191,7 @@ impl<T: Ord+HasSorts> Choice<T> {
         cond:    Em::Expr,
         em:      &mut Em
     ) -> Result<(),Em::Error>
-        where T: Composite,
+        where T: Composite<'a>,
               Self: 'a {
         let limit = path.get(from).0.len();
         let mut pos = 0;
@@ -382,8 +382,8 @@ impl<T: HasSorts> HasSorts for Choice<T> {
     }
 }
 
-impl<T: Ord+Composite> Composite for Choice<T> {
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+impl<'a,T: Ord+Composite<'a>> Composite<'a> for Choice<T> {
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         pl: &PL,froml: &FromL,arrl: &[Em::Expr],
         pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,

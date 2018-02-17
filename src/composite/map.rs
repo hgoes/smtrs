@@ -143,7 +143,7 @@ impl<K: Ord,V: HasSorts> Assoc<K,V> {
         cond: &Em::Expr,
         em: &mut Em
     ) -> Result<AssocP,Em::Error>
-        where V: 'a+Composite,
+        where V: 'a+Composite<'a>,
               K: 'a {
         match assoc.get(assoc_from).0.binary_search_by(|&(_,ref k,_)| k.cmp(&key)) {
             Ok(idx) => {
@@ -245,8 +245,8 @@ impl<K: Ord+Hash,V: HasSorts> HasSorts for Assoc<K,V> {
     }
 }
 
-impl<K: Ord+Hash+Clone,V: Composite> Composite for Assoc<K,V> {
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+impl<'a,K: Ord+Hash+Clone,V: Composite<'a>> Composite<'a> for Assoc<K,V> {
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         pl: &PL,froml: &FromL,arrl: &[Em::Expr],
         pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,

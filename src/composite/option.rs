@@ -95,8 +95,8 @@ impl<T: HasSorts> HasSorts for Option<T> {
     }
 }
 
-impl<T: Composite> Composite for Option<T> {
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+impl<'a,T: Composite<'a>> Composite<'a> for Option<T> {
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         pl: &PL,froml: &FromL,srcl: &[Em::Expr],
         pr: &PR,fromr: &FromR,srcr: &[Em::Expr],
         comb: &FComb,only_l: &FL,only_r: &FR,

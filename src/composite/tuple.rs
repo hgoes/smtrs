@@ -120,8 +120,8 @@ impl<A: HasSorts,B: HasSorts> HasSorts for (A,B) {
     }
 }
 
-impl<A: Composite,B: Composite> Composite for (A,B) {
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+impl<'a,A: Composite<'a>,B: Composite<'a>> Composite<'a> for (A,B) {
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         pl: &PL,froml: &FromL,srcl: &[Em::Expr],
         pr: &PR,fromr: &FromR,srcr: &[Em::Expr],
         comb: &FComb,only_l: &FL,only_r: &FR,
@@ -164,10 +164,10 @@ impl<A: Composite,B: Composite> Composite for (A,B) {
         }
     }
 
-    fn invariant<'a,Em,From,P>(path: &P,from: &From,src: &[Em::Expr],
-                               res: &mut Vec<Em::Expr>,
-                               em: &mut Em)
-                               -> Result<(),Em::Error>
+    fn invariant<Em,From,P>(path: &P,from: &From,src: &[Em::Expr],
+                            res: &mut Vec<Em::Expr>,
+                            em: &mut Em)
+                            -> Result<(),Em::Error>
         where Self: 'a,
               Em: Embed,
               P: Path<'a,Em,From,To=Self> {

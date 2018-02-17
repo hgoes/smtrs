@@ -19,9 +19,9 @@ pub trait HasSorts {
                             -> Result<Em::Sort,Em::Error>;
 }
 
-pub trait Composite: HasSorts + Sized + Eq + Hash + Clone {
+pub trait Composite<'a>: HasSorts + Sized + Eq + Hash + Clone {
 
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         &PL,&FromL,&[Em::Expr],
         &PR,&FromR,&[Em::Expr],
         &FComb,&FL,&FR,
@@ -37,10 +37,10 @@ pub trait Composite: HasSorts + Sized + Eq + Hash + Clone {
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>;
 
-    fn invariant<'a,Em,From,P>(&P,&From,&[Em::Expr],
-                               &mut Vec<Em::Expr>,
-                               &mut Em)
-                               -> Result<(),Em::Error>
+    fn invariant<Em,From,P>(&P,&From,&[Em::Expr],
+                            &mut Vec<Em::Expr>,
+                            &mut Em)
+                            -> Result<(),Em::Error>
         where Self: 'a,
               Em: Embed,
               P: Path<'a,Em,From,To=Self> {
@@ -57,7 +57,7 @@ pub fn ite<'a,FromL,PL,FromR,PR,Em>(
 ) -> Result<Option<PL::To>,Em::Error>
     where PL: Path<'a,Em,FromL>,
           PR: Path<'a,Em,FromR,To=PL::To>,
-          PL::To: Composite,
+          PL::To: Composite<'a>,
           Em: Embed {
     PL::To::combine(pl,froml,arrl,
                     pr,fromr,arrr,
@@ -71,10 +71,15 @@ pub trait SimplePath<'a,From>: Sized {
     type To: 'a;
     fn get<'b>(&self,&'b From) -> &'b Self::To where 'a: 'b;
     fn get_mut<'b>(&self,&'b mut From) -> &'b mut Self::To where 'a: 'b;
-    fn then<P: SimplePathEl<'a,Self::To>>(self,then: P) -> Then<Self,P> {
+    fn then<P>(self,then: P) -> Then<Self,P> {
         Then { first: self,
                then: then }
     }
+}
+
+pub fn then<X,Y>(first: X,then: Y) -> Then<X,Y> {
+    Then { first: first,
+           then: then }
 }
 
 pub trait Path<'a,Em: Embed,From>: SimplePath<'a,From>+Clone {
@@ -124,7 +129,7 @@ pub trait Path<'a,Em: Embed,From>: SimplePath<'a,From>+Clone {
                 new_cont: &mut Vec<Em::Expr>,
                 cond: &Em::Expr,
                 em: &mut Em) -> Result<bool,Em::Error>
-        where Self::To: Composite {
+        where Self::To: Composite<'a> {
 
         let mut res_inp = Vec::new();
         match ite(cond,self,from,&from_cont[..],

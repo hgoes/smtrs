@@ -53,8 +53,8 @@ impl<T: HasSorts> HasSorts for CompVec<T> {
     }
 }
 
-impl<T: Composite> Composite for CompVec<T> {
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+impl<'a,T: Composite<'a>> Composite<'a> for CompVec<T> {
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         pl: &PL,froml: &FromL,arrl: &[Em::Expr],
         pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,

@@ -20,7 +20,7 @@ pub struct BitVecVectorStackAccess<P,It> {
 pub type DynBitVecVectorStackAccess<P,Em: DeriveValues>
     = BitVecVectorStackAccess<P,IndexedIter<Em>>;
 
-impl<T: Composite> BitVecVectorStack<T> {
+impl<T: HasSorts> BitVecVectorStack<T> {
     pub fn empty<Em: Embed>(bw: usize,res: &mut Vec<Em::Expr>,em: &mut Em)
                             -> Result<Self,Em::Error> {
         let top = em.const_bitvec(bw,BigUint::from(0u8))?;
@@ -76,7 +76,7 @@ impl<T: Composite> BitVecVectorStack<T> {
         elc:   &Vec<Em::Expr>,
         em:    &mut Em
     ) -> Result<(),Em::Error>
-        where T: 'a {
+        where T: 'a+Composite<'a>+Clone {
         let mut it = Self::top_iter(path,from,arr,em)?;
         let cond_pos = conds.len();
         let n_elem = path.get(from).elements.len();
@@ -211,9 +211,9 @@ impl<'a,Em: Embed,T: 'a> PathEl<'a,Em,BitVecVectorStack<T>> for BitVecVectorStac
     }
 }
 
-impl<T: Composite> Composite for BitVecVectorStack<T> {
+impl<'a,T: Composite<'a>> Composite<'a> for BitVecVectorStack<T> {
 
-    fn combine<'a,Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+    fn combine<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
         pl: &PL,froml: &FromL,arrl: &[Em::Expr],
         pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
         comb: &FComb,fl: &FL,fr: &FR,
@@ -257,7 +257,7 @@ impl<T: Composite> Composite for BitVecVectorStack<T> {
         }
     }
 
-    fn invariant<'a,Em,From,P>(
+    fn invariant<Em,From,P>(
         path: &P,from: &From,arr: &[Em::Expr],
         res: &mut Vec<Em::Expr>,
         em: &mut Em)
