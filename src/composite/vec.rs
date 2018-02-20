@@ -207,9 +207,9 @@ impl<T: HasSorts> CompVec<T> {
         path.write_slice(from,old_len,0,cont,from_cont,em)
     }
     pub fn pop<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
+        path: &P,
         from: &mut From,
         from_cont: &mut Vec<Em::Expr>,
-        path: &P,
         em: &mut Em
     ) -> Result<(),Em::Error>
         where T: 'a {
@@ -223,9 +223,9 @@ impl<T: HasSorts> CompVec<T> {
         path.write_slice(from,old_len,0,&mut cont,from_cont,em)
     }
     pub fn insert<'a,Em: Embed,From,P: Path<'a,Em,From,To=Self>>(
+        path: &P,
         from: &mut From,
         from_cont: &mut Vec<Em::Expr>,
-        path: &P,
         at: usize,
         elem: T,
         cont: &mut Vec<Em::Expr>,
@@ -291,7 +291,7 @@ impl<T: HasSorts> CompVec<T> {
         for n in 0..size {
             if is_free(&path.clone().then(Self::element(n)),
                        from,&arr[..],em)? {
-                Self::insert(from,arr,path,n,el,el_cont,em)?;
+                Self::insert(path,from,arr,n,el,el_cont,em)?;
                 return Ok(Self::element(n))
             }
         }

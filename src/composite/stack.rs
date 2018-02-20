@@ -140,8 +140,8 @@ impl<T: HasSorts> BitVecVectorStack<T> {
         let one     = em.const_bitvec(bw,BigUint::from(0u8))?;
         let sub_top = em.bvsub(old_top.clone(),one)?;
         let new_top = if conds.len()==0 {
-            CompVec::pop(from,arr,&path.clone()
-                         .then(Self::elements()),em)?;
+            CompVec::pop(&path.clone()
+                         .then(Self::elements()),from,arr,em)?;
             sub_top
         } else {
             let cond = em.and(conds.clone())?;
