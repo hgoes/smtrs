@@ -18,6 +18,9 @@ impl<K: Ord,V: HasSorts> Assoc<K,V> {
     pub fn empty<Em: Embed>(_: &mut Vec<Em::Expr>,_: &mut Em) -> Result<Self,Em::Error> {
         Ok(Assoc(Vec::new()))
     }
+    pub fn empty_sig() -> Self {
+        Assoc(Vec::new())
+    }
     pub fn singleton<Em: Embed,
                      FEl: FnOnce(&mut Vec<Em::Expr>,&mut Em) -> Result<V,Em::Error>>(
         key: K,

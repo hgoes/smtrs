@@ -117,6 +117,31 @@ impl<'a,T: Composite<'a>> Composite<'a> for CompVec<T> {
         }
         Ok(Some(CompVec(rvec)))
     }
+    /*fn combine_into<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &mut FromL,arrl: &mut Vec<Em::Expr>,
+        pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
+        comb: &FComb,only_l: &FL,only_r: &FR,
+        em: &mut Em)
+        -> Result<bool,Em::Error>
+        where
+        Self: 'a,
+        Em: Embed,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
+        FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+        FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+        FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+
+        let vecl = pl.get_mut(froml);
+        let vecr = pr.get(fromr);
+
+        let shared = min(vecl.0.len(),vecr.0.len());
+        let res_len = max(vecl.0.len(),vecr.0.len());
+
+        vecl.0.reserve(res_len-vecl.0.len());
+        
+        
+    }*/
 }
 
 pub type IndexedIter<Em: DeriveValues>
@@ -129,6 +154,15 @@ impl<T: HasSorts> CompVec<T> {
     pub fn new<Em: Embed>(_: &mut Vec<Em::Expr>,_: &mut Em)
                           -> Result<Self,Em::Error> {
         Ok(CompVec(Vec::new()))
+    }
+    pub fn from_vec(els: Vec<T>) -> Self {
+        let mut res = Vec::with_capacity(els.len());
+        let mut off = 0;
+        for el in els.into_iter() {
+            off+=el.num_elem();
+            res.push((off,el));
+        }
+        CompVec(res)
     }
     pub fn singleton<Em,FEl>(el: FEl,res: &mut Vec<Em::Expr>,em: &mut Em)
                              -> Result<Self,Em::Error>

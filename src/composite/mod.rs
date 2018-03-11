@@ -1,9 +1,11 @@
-use embed::{Embed};
+use embed::Embed;
+use types::Sort;
 use std::hash::Hash;
 use std;
 use std::fmt;
 use std::fmt::Debug;
 
+pub mod expr;
 pub mod vec;
 pub mod map;
 pub mod choice;
@@ -37,6 +39,36 @@ pub trait Composite<'a>: HasSorts + Sized + Eq + Hash + Clone {
         FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
         FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>;
 
+    fn combine_into<Em,FromL,PL,FromR,PR,FComb,FL,FR>(
+        pl: &PL,froml: &mut FromL,arrl: &mut Vec<Em::Expr>,
+        pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
+        comb: &FComb,only_l: &FL,only_r: &FR,
+        em: &mut Em)
+        -> Result<bool,Em::Error>
+        where
+        Self: 'a,
+        Em: Embed,
+        PL: Path<'a,Em,FromL,To=Self>,
+        PR: Path<'a,Em,FromR,To=Self>,
+        FComb: Fn(Em::Expr,Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+        FL: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error>,
+        FR: Fn(Em::Expr,&mut Em) -> Result<Em::Expr,Em::Error> {
+
+        let old_len = pl.get(froml).num_elem();
+        let mut res_arr = Vec::new();
+        let res = Self::combine(pl,froml,&arrl[..],
+                                pr,fromr,arrr,
+                                comb,only_l,only_r,
+                                &mut res_arr,em)?;
+        match res {
+            None => Ok(false),
+            Some(r) => {
+                pl.set(froml,arrl,r,&mut res_arr,em)?;
+                Ok(true)
+            }
+        }
+    }
+    
     fn invariant<Em,From,P>(&P,&From,&[Em::Expr],
                             &mut Vec<Em::Expr>,
                             &mut Em)
@@ -65,6 +97,35 @@ pub fn ite<'a,FromL,PL,FromR,PR,Em>(
                     &|x,_| Ok(x),
                     &|y,_| Ok(y),
                     res,em)
+}
+
+pub fn comp_eq<'a,FromL,PL,FromR,PR,Em>(
+    pl: &PL,froml: &FromL,arrl: &[Em::Expr],
+    pr: &PR,fromr: &FromR,arrr: &[Em::Expr],
+    em: &mut Em
+) -> Result<Option<Em::Expr>,Em::Error>
+    where PL: Path<'a,Em,FromL>,
+          PR: Path<'a,Em,FromR,To=PL::To>,
+          PL::To: Composite<'a>,
+          Em: Embed {
+    let objl = pl.get(froml);
+    let objr = pr.get(fromr);
+    if *objl==*objr {
+        let sz = objl.num_elem();
+        if sz==0 {
+            return Ok(Some(em.const_bool(true)?))
+        }
+        let mut conj = Vec::with_capacity(sz);
+        for i in 0..sz {
+            let el_l = pl.read(froml,i,arrl,em)?;
+            let el_r = pr.read(fromr,i,arrr,em)?;
+            let cmp = em.eq(el_l,el_r)?;
+            conj.push(cmp);
+        }
+        Ok(Some(em.and(conj)?))
+    } else {
+        Ok(None)
+    }
 }
 
 pub trait SimplePath<'a,From>: Sized {
@@ -479,5 +540,25 @@ impl<'a,T: 'a,Em: Embed> PathEl<'a,Em,T> for Offset {
         trg: &mut Vec<Em::Expr>,
         em: &mut Em) -> Result<(),Em::Error> {
         prev.write_slice(from,pos+self.0,len,src,trg,em)
+    }
+}
+
+impl<'a,C: HasSorts> HasSorts for &'a C {
+    fn num_elem(&self) -> usize {
+        (*self).num_elem()
+    }
+    fn elem_sort<Em: Embed>(&self,pos: usize,em: &mut Em)
+                            -> Result<Em::Sort,Em::Error> {
+        (*self).elem_sort(pos,em)
+    }
+}
+
+impl HasSorts for Vec<Sort> {
+    fn num_elem(&self) -> usize {
+        self.len()
+    }
+    fn elem_sort<Em: Embed>(&self,pos: usize,em: &mut Em)
+                            -> Result<Em::Sort,Em::Error> {
+        self[pos].embed(em)
     }
 }

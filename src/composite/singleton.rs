@@ -46,7 +46,7 @@ impl<'a,T: Clone+Hash+Eq> Composite<'a> for Data<T> {
     }
 }
 
-#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord)]
+#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct Singleton(pub types::Sort);
 
 impl Singleton {
@@ -155,7 +155,26 @@ impl<'a> Composite<'a> for Singleton {
     }
 }
 
-#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord)]
+impl Semantic for Singleton {
+    type Meaning = ();
+    type MeaningCtx = ();
+    fn meaning(&self,_:usize) -> Self::Meaning {
+        ()
+    }
+    fn fmt_meaning<F : fmt::Write>(&self,_: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+       write!(fmt,"#")
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        Some(((),()))
+    }
+    fn next_meaning(&self,
+                    _: &mut Self::MeaningCtx,
+                    _: &mut Self::Meaning) -> bool {
+        false
+    }
+}
+
+#[derive(Clone,Hash,PartialEq,Eq,PartialOrd,Ord,Debug)]
 pub struct SingletonBool;
 
 pub static SINGLETON_BOOL: SingletonBool = SingletonBool;
@@ -193,6 +212,25 @@ impl<'a> Composite<'a> for SingletonBool {
 
         res.push(ne);
         Ok(Some(SingletonBool))
+    }
+}
+
+impl Semantic for SingletonBool {
+    type Meaning = ();
+    type MeaningCtx = ();
+    fn meaning(&self,_:usize) -> Self::Meaning {
+        ()
+    }
+    fn fmt_meaning<F : fmt::Write>(&self,_: &Self::Meaning,fmt: &mut F) -> Result<(),fmt::Error> {
+       write!(fmt,"#")
+    }
+    fn first_meaning(&self) -> Option<(Self::MeaningCtx,Self::Meaning)> {
+        Some(((),()))
+    }
+    fn next_meaning(&self,
+                    _: &mut Self::MeaningCtx,
+                    _: &mut Self::Meaning) -> bool {
+        false
     }
 }
 

@@ -131,7 +131,7 @@ impl<T: HasSorts> BitVecVectorStack<T> {
         path:  &P,
         from:  &mut From,
         arr:   &mut Vec<Em::Expr>,
-        conds: &mut Vec<Em::Expr>,
+        conds: &Vec<Em::Expr>,
         em:    &mut Em
     ) -> Result<(),Em::Error>
         where T: 'a {

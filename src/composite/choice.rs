@@ -32,6 +32,9 @@ impl<T: Ord+HasSorts> Choice<T> {
                             -> Result<Self,Em::Error> {
         Ok(Choice(Vec::new()))
     }
+    pub fn empty_sig() -> Self {
+        Choice(Vec::new())
+    }
     pub fn singleton<Em,FEl>(el: FEl,
                              res: &mut Vec<Em::Expr>,
                              em: &mut Em)
